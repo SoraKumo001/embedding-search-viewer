@@ -13,6 +13,9 @@ public class LibrarySettings
     /// <summary>Length of one video segment in seconds (one frame is searched per segment). Applies to videos indexed from now on.</summary>
     public int VideoSegmentSeconds { get; set; } = 15;
 
+    /// <summary>Lengthens the segments of long videos so that none needs more than <see cref="Ingestion.IngestionPipelineWorker.AutoMaxVideoSegments"/> segments.</summary>
+    public bool VideoAutoSegment { get; set; } = true;
+
     /// <summary>Model that produced the current index; a different model makes the stored embeddings incomparable.</summary>
     public string? IndexModelTag { get; set; }
 }

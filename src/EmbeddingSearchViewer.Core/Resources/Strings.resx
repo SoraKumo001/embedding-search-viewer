@@ -199,6 +199,9 @@
   <data name="Library.Cleared" xml:space="preserve">
     <value>インデックスをクリアしました ({0} 件)</value>
   </data>
+  <data name="Library.CheckBox01.Content" xml:space="preserve">
+    <value>長い動画は、場面の間隔を自動で広げる（1 本あたり、最大 400 場面まで）</value>
+  </data>
   <data name="Library.ComboBox01.Header" xml:space="preserve">
     <value>動画の場面の間隔（1 場面につき 1 枚のフレームを検索の対象にします）</value>
   </data>

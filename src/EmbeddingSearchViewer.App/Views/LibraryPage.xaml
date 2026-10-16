@@ -177,6 +177,9 @@
                               ItemsSource="{x:Bind ViewModel.VideoSegmentOptions}"
                               SelectedIndex="{x:Bind ViewModel.VideoSegmentIndex, Mode=TwoWay}"
                               AutomationProperties.Name="Video Segment Length" />
+                    <CheckBox loc:L.Uid="Library.CheckBox01"
+                              IsChecked="{x:Bind ViewModel.VideoAutoSegment, Mode=TwoWay}"
+                              AutomationProperties.Name="Auto Adjust Video Segment Length" />
                     <TextBlock loc:L.Uid="Library.TextBlock17"
                                Style="{ThemeResource CaptionTextBlockStyle}" TextWrapping="Wrap"
                                Foreground="{ThemeResource TextFillColorSecondaryBrush}" />

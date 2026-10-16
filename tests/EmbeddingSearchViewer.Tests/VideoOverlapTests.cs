@@ -48,10 +48,10 @@ public sealed class VideoOverlapTests : IDisposable
         public StreamingExtractor(params VideoSegmentContent[] segments) { _segments = segments; }
 
         public Task<IReadOnlyList<VideoSegmentContent>> ExtractAsync(string videoPath, string outputDirectory, int segmentSeconds, int overlapSeconds, CancellationToken cancellationToken = default)
-            => ExtractAsync(videoPath, outputDirectory, segmentSeconds, overlapSeconds, null, null, null, cancellationToken);
+            => ExtractAsync(videoPath, outputDirectory, segmentSeconds, overlapSeconds, null, null, null, 0, cancellationToken);
 
         public async Task<IReadOnlyList<VideoSegmentContent>> ExtractAsync(string videoPath, string outputDirectory, int segmentSeconds, int overlapSeconds,
-            Action<VideoSegmentContent>? onSegmentReady, IReadOnlySet<int>? alreadyDone, Action<int, int>? onProgress, CancellationToken cancellationToken = default)
+            Action<VideoSegmentContent>? onSegmentReady, IReadOnlySet<int>? alreadyDone, Action<int, int>? onProgress, int maxSegments, CancellationToken cancellationToken = default)
         {
             try
             {
@@ -212,7 +212,7 @@ public sealed class VideoOverlapTests : IDisposable
         var partial = new SingleSource(() => new Session(TimeSpan.FromSeconds(30), call => call != 1));
 
         var result = await new VideoSegmentExtractor(new[] { noFrames, partial })
-            .ExtractAsync(@"C:\v\clip.mp4", _dir, 15, 3, s => reported.Add(s.Index), null, null);
+            .ExtractAsync(@"C:\v\clip.mp4", _dir, 15, 3, s => reported.Add(s.Index), null, null, 0);
 
         Assert.Equal(new[] { 0, 2 }, reported);
         Assert.Equal(3, result.Count);

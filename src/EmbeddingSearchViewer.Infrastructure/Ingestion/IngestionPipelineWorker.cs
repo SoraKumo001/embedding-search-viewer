@@ -52,6 +52,11 @@ public class IngestionPipelineWorker
     /// <summary>Length of the video segments in seconds when the settings do not say otherwise.</summary>
     public const int DefaultVideoSegmentSeconds = 15;
 
+    /// <summary>With auto-adjustment on, a video gets at most this many segments (longer videos get longer segments).</summary>
+    public const int AutoMaxVideoSegments = 400;
+
+    private readonly Func<bool> _videoAutoSegment;
+
     /// <summary>Where video indexing time goes (frame extraction vs. embedding); reset at the start of each run.</summary>
     public VideoIngestStats VideoStats { get; } = new();
     private readonly Func<string> _cacheDirectoryProvider;
@@ -103,9 +108,11 @@ public class IngestionPipelineWorker
         Func<string>? cacheDirectoryProvider = null,
         int videoParallelism = DefaultVideoParallelism,
         Func<int>? videoSegmentSeconds = null,
-        IndexExclusionStore? exclusions = null)
+        IndexExclusionStore? exclusions = null,
+        Func<bool>? videoAutoSegment = null)
     {
         _exclusions = exclusions;
+        _videoAutoSegment = videoAutoSegment ?? (() => false);
         _videoSegmentSeconds = videoSegmentSeconds ?? (() => DefaultVideoSegmentSeconds);
         _repository = repository;
         _pdfIngestor = new PdfMediaIngestor(embeddingService, pdfExtractor);
@@ -546,7 +553,8 @@ public class IngestionPipelineWorker
             (asset, chunks) = await _videoIngestor.IngestAsync(
                 filePath, _cacheDirectory, segmentSeconds, overlapSeconds,
                 onProgress: (done, total) => OnVideoProgress(filePath, done, total),
-                cancellationToken: cancellationToken);
+                cancellationToken: cancellationToken,
+                maxSegments: _videoAutoSegment() ? AutoMaxVideoSegments : 0);
         }
         else
         {

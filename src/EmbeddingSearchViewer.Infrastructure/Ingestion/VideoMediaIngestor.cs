@@ -40,7 +40,8 @@ public class VideoMediaIngestor
         int overlapSec = 3,
         int truncateDim = 768,
         Action<int, int>? onProgress = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        int maxSegments = 0)
     {
         var fi = new FileInfo(filePath);
         var asset = new MediaAsset
@@ -56,7 +57,7 @@ public class VideoMediaIngestor
 
         // The folder is named after the file and the settings, not the new asset id, so that a later run of the same
         // video finds the frames and the checkpoint of an interrupted one.
-        string key = VideoCheckpoint.KeyFor(filePath, fi.Length, fi.LastWriteTimeUtc.Ticks, segmentDurationSec, overlapSec, truncateDim, _checkpointTag);
+        string key = VideoCheckpoint.KeyFor(filePath, fi.Length, fi.LastWriteTimeUtc.Ticks, segmentDurationSec, overlapSec, truncateDim, _checkpointTag, maxSegments);
         string videoCacheDir = Path.Combine(cacheDirectory, "video", key);
         var checkpoint = new VideoCheckpoint(videoCacheDir, truncateDim);
         long videoStart = Stopwatch.GetTimestamp();
@@ -66,7 +67,7 @@ public class VideoMediaIngestor
         if (_extractor is IStreamingVideoSegmentExtractor streaming)
         {
             (segments, chunks) = await ExtractAndEmbedStreamingAsync(
-                streaming, asset, fi.Name, videoCacheDir, checkpoint, segmentDurationSec, overlapSec, truncateDim, onProgress, cancellationToken);
+                streaming, asset, fi.Name, videoCacheDir, checkpoint, segmentDurationSec, overlapSec, truncateDim, maxSegments, onProgress, cancellationToken);
         }
         else
         {
@@ -105,7 +106,7 @@ public class VideoMediaIngestor
     /// </summary>
     private async Task<(IReadOnlyList<VideoSegmentContent> Segments, List<MediaChunk> Chunks)> ExtractAndEmbedStreamingAsync(
         IStreamingVideoSegmentExtractor extractor, MediaAsset asset, string fileName, string videoCacheDir, VideoCheckpoint checkpoint,
-        int segmentDurationSec, int overlapSec, int truncateDim, Action<int, int>? onProgress, CancellationToken cancellationToken)
+        int segmentDurationSec, int overlapSec, int truncateDim, int maxSegments, Action<int, int>? onProgress, CancellationToken cancellationToken)
     {
         // Segments finished by an interrupted run. One whose frame is gone cannot be previewed, so it is done again.
         var embeddings = checkpoint.Load();
@@ -127,7 +128,7 @@ public class VideoMediaIngestor
             try
             {
                 return await extractor.ExtractAsync(
-                    asset.FilePath, videoCacheDir, segmentDurationSec, overlapSec, s => ready.Writer.TryWrite(s), alreadyDone, onProgress, cts.Token);
+                    asset.FilePath, videoCacheDir, segmentDurationSec, overlapSec, s => ready.Writer.TryWrite(s), alreadyDone, onProgress, maxSegments, cts.Token);
             }
             catch (Exception ex)
             {

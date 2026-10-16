@@ -92,6 +92,14 @@ public partial class LibraryViewModel : ObservableObject
         if (!_loadingSettings && value >= 0) SaveSettings();
     }
 
+    [ObservableProperty]
+    private bool _videoAutoSegment = true;
+
+    partial void OnVideoAutoSegmentChanged(bool value)
+    {
+        if (!_loadingSettings) SaveSettings();
+    }
+
     // ---- files left out of the index because reading them failed repeatedly ----
 
     public ObservableCollection<ExcludedFile> ExcludedFiles { get; } = new();
@@ -202,6 +210,7 @@ public partial class LibraryViewModel : ObservableObject
             }
             AutoIndex = saved.AutoIndex;
             VideoSegmentIndex = Math.Max(0, VideoSegmentChoices.ToList().IndexOf(saved.VideoSegmentSeconds));
+            VideoAutoSegment = saved.VideoAutoSegment;
             _loadingSettings = false;
             HasFolders = TargetFolders.Count > 0;
         }
@@ -377,6 +386,7 @@ public partial class LibraryViewModel : ObservableObject
             var settings = _store.Load();
             settings.Folders = TargetFolders.ToList();
             settings.AutoIndex = AutoIndex;
+            settings.VideoAutoSegment = VideoAutoSegment;
             if (VideoSegmentIndex >= 0 && VideoSegmentIndex < VideoSegmentChoices.Count)
             {
                 settings.VideoSegmentSeconds = VideoSegmentChoices[VideoSegmentIndex];

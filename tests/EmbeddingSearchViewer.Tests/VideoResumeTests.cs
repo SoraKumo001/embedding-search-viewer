@@ -195,8 +195,11 @@ public sealed class VideoResumeTests : IDisposable
         string K(string path = @"C:\v\a.mp4", long len = 10, long ticks = 5, int seg = 15, int ov = 3, int dim = 768, string tag = "m")
             => VideoCheckpoint.KeyFor(path, len, ticks, seg, ov, dim, tag);
 
-        var keys = new[] { K(), K(path: @"C:\v\b.mp4"), K(len: 11), K(ticks: 6), K(seg: 30), K(ov: 2), K(dim: 512), K(tag: "n") };
+        string KMax(int max) => VideoCheckpoint.KeyFor(@"C:\v\a.mp4", 10, 5, 15, 3, 768, "m", max);
+
+        var keys = new[] { K(), K(path: @"C:\v\b.mp4"), K(len: 11), K(ticks: 6), K(seg: 30), K(ov: 2), K(dim: 512), K(tag: "n"), KMax(400), KMax(200) };
         Assert.Equal(keys.Length, keys.Distinct().Count());
+        Assert.Equal(K(), KMax(0)); // adjustment off: the same folder as before the setting existed
         Assert.Equal(K(), K());
         Assert.Equal(K(), K(path: @"C:\V\A.MP4")); // Windows paths are case-insensitive
     }
@@ -209,7 +212,7 @@ public sealed class VideoResumeTests : IDisposable
         var reports = new List<(int Done, int Total)>();
         var extractor = Extractor(TimeSpan.FromSeconds(60)); // 5 segments
 
-        await extractor.ExtractAsync(@"C:\v\clip.mp4", _dir, 15, 3, null, new HashSet<int> { 0, 1 }, (d, t) => reports.Add((d, t)));
+        await extractor.ExtractAsync(@"C:\v\clip.mp4", _dir, 15, 3, null, new HashSet<int> { 0, 1 }, (d, t) => reports.Add((d, t)), 0);
 
         Assert.Equal(new[] { (1, 5), (2, 5), (3, 5), (4, 5), (5, 5) }, reports);
     }
@@ -243,6 +246,29 @@ public sealed class VideoResumeTests : IDisposable
     }
 
     // ---- segment length setting ----
+
+    [Theory]
+    [InlineData(3600, 15, 400, 15)]     // 1 h: about 300 segments, fits
+    [InlineData(7200, 15, 400, 30)]     // 2 h: 15 s would need about 600
+    [InlineData(36000, 15, 400, 120)]   // 10 h
+    [InlineData(7200, 15, 0, 15)]       // adjustment off
+    [InlineData(7200, 60, 400, 60)]     // already coarse enough
+    [InlineData(20000, 45, 400, 60)]    // base between steps: next longer step
+    [InlineData(360000, 15, 400, 300)]  // nothing fits: the longest step
+    public void ResolveSegmentSeconds_WidensOnlyAsFarAsNeeded(int durationSec, int baseSec, int max, int expected)
+        => Assert.Equal(expected, VideoSegmentExtractor.ResolveSegmentSeconds(TimeSpan.FromSeconds(durationSec), baseSec, max));
+
+    [Fact]
+    public async Task Extractor_KeepsLongVideosWithinTheSegmentLimit()
+    {
+        var extractor = Extractor(TimeSpan.FromHours(2));
+
+        var limited = await extractor.ExtractAsync(@"C:\v\long.mp4", _dir, 15, 3, null, null, null, 400);
+        var unlimited = await extractor.ExtractAsync(@"C:\v\long2.mp4", _dir, 15, 3, null, null, null, 0);
+
+        Assert.InRange(limited.Count, 1, 400);
+        Assert.True(unlimited.Count > 400);
+    }
 
     [Fact]
     public async Task Worker_UsesTheConfiguredSegmentLength()

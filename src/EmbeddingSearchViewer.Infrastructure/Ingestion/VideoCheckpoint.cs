@@ -27,11 +27,13 @@ internal sealed class VideoCheckpoint
 
     /// <summary>
     /// A folder name that changes whenever anything that affects the frames or their embeddings changes:
-    /// the file (path, size, modification time), the segment layout, the embedding size and the model.
+    /// the file (path, size, modification time), the segment layout (including the segment limit that lengthens the
+    /// segments of long videos), the embedding size and the model.
     /// </summary>
-    public static string KeyFor(string videoPath, long length, long modifiedTicks, int segmentSeconds, int overlapSeconds, int dimension, string tag)
+    public static string KeyFor(string videoPath, long length, long modifiedTicks, int segmentSeconds, int overlapSeconds, int dimension, string tag, int maxSegments = 0)
     {
         string text = $"{Path.GetFullPath(videoPath).ToLowerInvariant()}|{length}|{modifiedTicks}|{segmentSeconds}|{overlapSeconds}|{dimension}|{tag}";
+        if (maxSegments > 0) text += $"|max{maxSegments}"; // unchanged for 0, so existing checkpoints keep their folder
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(text)))[..20].ToLowerInvariant();
     }
 

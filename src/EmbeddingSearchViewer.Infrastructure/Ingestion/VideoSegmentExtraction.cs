@@ -30,11 +30,13 @@ public interface IStreamingVideoSegmentExtractor : IVideoSegmentExtractor
     /// Segments listed in <paramref name="alreadyDone"/> were finished by an earlier, interrupted run: their frames are
     /// not read again and <paramref name="onSegmentReady"/> is not called for them, but they still appear in the result.
     /// <paramref name="onProgress"/> reports (segments handled, segments in total) after every segment.
+    /// When <paramref name="maxSegments"/> is above 0 and the video is so long that it would need more segments, the
+    /// segments are made longer (see <see cref="VideoSegmentExtractor.ResolveSegmentSeconds"/>); 0 keeps the given length.
     /// </summary>
     Task<IReadOnlyList<VideoSegmentContent>> ExtractAsync(
         string videoPath, string outputDirectory, int segmentSeconds, int overlapSeconds,
         Action<VideoSegmentContent>? onSegmentReady, IReadOnlySet<int>? alreadyDone, Action<int, int>? onProgress,
-        CancellationToken cancellationToken = default);
+        int maxSegments, CancellationToken cancellationToken = default);
 }
 
 /// <summary>An open video from which single frames can be grabbed.</summary>
@@ -92,18 +94,39 @@ public sealed class VideoSegmentExtractor : IStreamingVideoSegmentExtractor
         return result;
     }
 
+    private static readonly int[] SegmentSteps = { 15, 30, 60, 120, 180, 300 };
+
+    /// <summary>
+    /// The segment length to use for a video of the given duration: <paramref name="baseSeconds"/>, or, when that would
+    /// make more than <paramref name="maxSegments"/> segments, the shortest longer step (30, 60, 120, 180, 300 s) that
+    /// fits (the longest one if none does). The result depends only on its arguments, so a resumed run plans the same
+    /// segments. <paramref name="maxSegments"/> of 0 or less turns the adjustment off.
+    /// </summary>
+    public static int ResolveSegmentSeconds(TimeSpan duration, int baseSeconds, int maxSegments)
+    {
+        if (maxSegments <= 0 || baseSeconds <= 0) return baseSeconds;
+
+        int current = baseSeconds;
+        foreach (int step in SegmentSteps.Where(s => s > baseSeconds).Prepend(baseSeconds))
+        {
+            current = step;
+            if (PlanSegments(duration, step, Math.Min(3, step / 4)).Count <= maxSegments) break;
+        }
+        return current;
+    }
+
     /// <summary>Where the frame of a segment is written, so a later run can find it again.</summary>
     public static string FramePath(string outputDirectory, string videoPath, int segmentIndex)
         => Path.Combine(outputDirectory, $"{Path.GetFileNameWithoutExtension(videoPath)}_seg_{segmentIndex:D4}.jpg");
 
     public Task<IReadOnlyList<VideoSegmentContent>> ExtractAsync(
         string videoPath, string outputDirectory, int segmentSeconds, int overlapSeconds, CancellationToken cancellationToken = default)
-        => ExtractAsync(videoPath, outputDirectory, segmentSeconds, overlapSeconds, null, null, null, cancellationToken);
+        => ExtractAsync(videoPath, outputDirectory, segmentSeconds, overlapSeconds, null, null, null, 0, cancellationToken);
 
     public async Task<IReadOnlyList<VideoSegmentContent>> ExtractAsync(
         string videoPath, string outputDirectory, int segmentSeconds, int overlapSeconds,
         Action<VideoSegmentContent>? onSegmentReady, IReadOnlySet<int>? alreadyDone, Action<int, int>? onProgress,
-        CancellationToken cancellationToken = default)
+        int maxSegments, CancellationToken cancellationToken = default)
     {
         Directory.CreateDirectory(outputDirectory);
 
@@ -124,7 +147,9 @@ public sealed class VideoSegmentExtractor : IStreamingVideoSegmentExtractor
 
             await using (session)
             {
-                var plan = PlanSegments(session.Duration, segmentSeconds, overlapSeconds);
+                int effectiveSeconds = ResolveSegmentSeconds(session.Duration, segmentSeconds, maxSegments);
+                int effectiveOverlap = effectiveSeconds == segmentSeconds ? overlapSeconds : Math.Min(3, effectiveSeconds / 4);
+                var plan = PlanSegments(session.Duration, effectiveSeconds, effectiveOverlap);
                 if (plan.Count == 0) continue;
 
                 var segments = new List<VideoSegmentContent>(plan.Count);

@@ -64,6 +64,7 @@ public partial class App : Application
             var profiles = sp.GetRequiredService<ProfileManager>();
             return new IngestionPipelineWorker(repo, embeddingService, videoExtractor: videoExtractor, cacheDirectoryProvider: () => profiles.CacheDirectory,
                 videoSegmentSeconds: () => sp.GetRequiredService<LibrarySettingsStore>().Load().VideoSegmentSeconds,
+                videoAutoSegment: () => sp.GetRequiredService<LibrarySettingsStore>().Load().VideoAutoSegment,
                 exclusions: sp.GetRequiredService<IndexExclusionStore>());
         });
 
