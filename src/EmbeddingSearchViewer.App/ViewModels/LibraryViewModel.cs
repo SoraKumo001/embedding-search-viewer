@@ -24,6 +24,7 @@ public partial class LibraryViewModel : ObservableObject
     private readonly LibrarySettingsStore _store;
     private readonly FolderWatcher _watcher;
     private bool _loadingSettings;
+    private readonly LibraryStatsRefresher _statsRefresher;
 
     [ObservableProperty]
     private string _sidecarStatus = "ONNX DirectML エンジン";
@@ -142,6 +143,9 @@ public partial class LibraryViewModel : ObservableObject
         _repository = repository;
 
         _worker.ProgressChanged += OnProgressChanged;
+
+        // While an index is being built, keep the statistics cards current (only when the data has changed).
+        _statsRefresher = new LibraryStatsRefresher(repository, () => OnUiThreadAsync(RefreshLibraryStatsAsync), TimeSpan.FromSeconds(3));
     }
 
     public async Task InitializeAsync()
@@ -220,6 +224,30 @@ public partial class LibraryViewModel : ObservableObject
         {
             System.Diagnostics.Debug.WriteLine($"Error refreshing library stats: {ex.Message}");
         }
+    }
+
+    partial void OnIsIndexingChanged(bool value)
+    {
+        if (value) _statsRefresher.Start();
+        else _statsRefresher.Stop();
+    }
+
+    /// <summary>Runs <paramref name="work"/> on the UI thread (the statistics are bound properties) and waits for it.</summary>
+    private Task OnUiThreadAsync(Func<Task> work)
+    {
+        var dq = _dispatcherQueue ?? App.MainWindowDispatcherQueue;
+        if (dq == null || dq.HasThreadAccess) return work();
+
+        var done = new TaskCompletionSource();
+        if (!dq.TryEnqueue(async () =>
+            {
+                try { await work(); done.SetResult(); }
+                catch (Exception ex) { done.SetException(ex); }
+            }))
+        {
+            done.SetCanceled();
+        }
+        return done.Task;
     }
 
     private Microsoft.UI.Dispatching.DispatcherQueue? _dispatcherQueue;
@@ -356,6 +384,7 @@ public partial class LibraryViewModel : ObservableObject
         await _worker.StopAsync();
         IsIndexing = false;
         CurrentStatusMessage = "中断されました";
+        _ = RefreshLibraryStatsAsync(); // what was stored before the stop
     }
 
     [RelayCommand]
