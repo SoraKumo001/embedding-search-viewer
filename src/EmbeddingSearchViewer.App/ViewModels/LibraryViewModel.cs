@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.IO;
 using System.Linq;
@@ -72,6 +73,26 @@ public partial class LibraryViewModel : ObservableObject
     [ObservableProperty]
     private bool _autoIndex;
 
+    /// <summary>The choices for the length of a video segment, in seconds; the first is the standard.</summary>
+    public static IReadOnlyList<int> VideoSegmentChoices { get; } = new[] { 15, 30, 60, 120 };
+
+    public static IReadOnlyList<string> VideoSegmentLabels { get; } =
+        new[] { "15 秒（標準）", "30 秒", "60 秒", "120 秒" };
+
+    public IReadOnlyList<string> VideoSegmentOptions => VideoSegmentLabels;
+
+    [ObservableProperty]
+    private int _videoSegmentIndex;
+
+    partial void OnVideoSegmentIndexChanged(int value)
+    {
+        if (!_loadingSettings && value >= 0) SaveSettings();
+    }
+
+    /// <summary>One line per video being processed ("動画 a.mp4: 420 / 1,050 場面 (40%)"); empty otherwise.</summary>
+    [ObservableProperty]
+    private string _videoProgressText = string.Empty;
+
     private static readonly string CurrentModelTag = EmbeddingModelLocation.ModelTag(EmbeddingModelLocation.DefaultPrecision);
 
     /// <summary>Non-empty when the index was built with a different embedding model and must be rebuilt.</summary>
@@ -137,6 +158,7 @@ public partial class LibraryViewModel : ObservableObject
                 TargetFolders.Add(folder);
             }
             AutoIndex = saved.AutoIndex;
+            VideoSegmentIndex = Math.Max(0, VideoSegmentChoices.ToList().IndexOf(saved.VideoSegmentSeconds));
             _loadingSettings = false;
             HasFolders = TargetFolders.Count > 0;
         }
@@ -214,6 +236,7 @@ public partial class LibraryViewModel : ObservableObject
             TotalFiles = progress.TotalFiles;
             ProcessedFiles = progress.ProcessedFiles;
             IsIndexing = progress.IsRunning;
+            VideoProgressText = progress.IsRunning ? progress.Detail ?? string.Empty : string.Empty;
 
             if (progress.IsRunning)
             {
@@ -280,7 +303,14 @@ public partial class LibraryViewModel : ObservableObject
     {
         try
         {
-            _store.Save(new LibrarySettings { Folders = TargetFolders.ToList(), AutoIndex = AutoIndex, IndexModelTag = _store.Load().IndexModelTag });
+            var settings = _store.Load();
+            settings.Folders = TargetFolders.ToList();
+            settings.AutoIndex = AutoIndex;
+            if (VideoSegmentIndex >= 0 && VideoSegmentIndex < VideoSegmentChoices.Count)
+            {
+                settings.VideoSegmentSeconds = VideoSegmentChoices[VideoSegmentIndex];
+            }
+            _store.Save(settings);
             _watcher.Refresh();
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)

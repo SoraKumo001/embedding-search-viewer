@@ -53,7 +53,8 @@ public partial class App : Application
             // Videos: FFmpeg first (measured faster and covers more formats), the Windows media stack as the fallback.
             var videoExtractor = new VideoSegmentExtractor(new IVideoFrameSource[] { new FFmpegFrameSource(), new MediaFoundationFrameSource() });
             var profiles = sp.GetRequiredService<ProfileManager>();
-            return new IngestionPipelineWorker(repo, embeddingService, videoExtractor: videoExtractor, cacheDirectoryProvider: () => profiles.CacheDirectory);
+            return new IngestionPipelineWorker(repo, embeddingService, videoExtractor: videoExtractor, cacheDirectoryProvider: () => profiles.CacheDirectory,
+                videoSegmentSeconds: () => sp.GetRequiredService<LibrarySettingsStore>().Load().VideoSegmentSeconds);
         });
 
         services.AddSingleton<LibrarySettingsStore>(sp =>

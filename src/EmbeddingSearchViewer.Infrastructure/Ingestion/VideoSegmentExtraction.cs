@@ -27,10 +27,14 @@ public interface IStreamingVideoSegmentExtractor : IVideoSegmentExtractor
     /// <summary>
     /// Same result as <see cref="IVideoSegmentExtractor.ExtractAsync"/>. <paramref name="onSegmentReady"/> is called, in
     /// segment order, for every segment whose frame was read (never for a decoder that is abandoned for yielding no frame).
+    /// Segments listed in <paramref name="alreadyDone"/> were finished by an earlier, interrupted run: their frames are
+    /// not read again and <paramref name="onSegmentReady"/> is not called for them, but they still appear in the result.
+    /// <paramref name="onProgress"/> reports (segments handled, segments in total) after every segment.
     /// </summary>
     Task<IReadOnlyList<VideoSegmentContent>> ExtractAsync(
         string videoPath, string outputDirectory, int segmentSeconds, int overlapSeconds,
-        Action<VideoSegmentContent>? onSegmentReady, CancellationToken cancellationToken = default);
+        Action<VideoSegmentContent>? onSegmentReady, IReadOnlySet<int>? alreadyDone, Action<int, int>? onProgress,
+        CancellationToken cancellationToken = default);
 }
 
 /// <summary>An open video from which single frames can be grabbed.</summary>
@@ -88,16 +92,20 @@ public sealed class VideoSegmentExtractor : IStreamingVideoSegmentExtractor
         return result;
     }
 
+    /// <summary>Where the frame of a segment is written, so a later run can find it again.</summary>
+    public static string FramePath(string outputDirectory, string videoPath, int segmentIndex)
+        => Path.Combine(outputDirectory, $"{Path.GetFileNameWithoutExtension(videoPath)}_seg_{segmentIndex:D4}.jpg");
+
     public Task<IReadOnlyList<VideoSegmentContent>> ExtractAsync(
         string videoPath, string outputDirectory, int segmentSeconds, int overlapSeconds, CancellationToken cancellationToken = default)
-        => ExtractAsync(videoPath, outputDirectory, segmentSeconds, overlapSeconds, null, cancellationToken);
+        => ExtractAsync(videoPath, outputDirectory, segmentSeconds, overlapSeconds, null, null, null, cancellationToken);
 
     public async Task<IReadOnlyList<VideoSegmentContent>> ExtractAsync(
         string videoPath, string outputDirectory, int segmentSeconds, int overlapSeconds,
-        Action<VideoSegmentContent>? onSegmentReady, CancellationToken cancellationToken = default)
+        Action<VideoSegmentContent>? onSegmentReady, IReadOnlySet<int>? alreadyDone, Action<int, int>? onProgress,
+        CancellationToken cancellationToken = default)
     {
         Directory.CreateDirectory(outputDirectory);
-        string baseName = Path.GetFileNameWithoutExtension(videoPath);
 
         foreach (var source in _sources)
         {
@@ -125,7 +133,17 @@ public sealed class VideoSegmentExtractor : IStreamingVideoSegmentExtractor
                 {
                     cancellationToken.ThrowIfCancellationRequested();
                     var (start, end) = plan[i];
-                    string path = Path.Combine(outputDirectory, $"{baseName}_seg_{i:D4}.jpg");
+                    string path = FramePath(outputDirectory, videoPath, i);
+
+                    if (alreadyDone != null && alreadyDone.Contains(i))
+                    {
+                        // Finished before the last interruption: keep the segment, but do not decode or embed it again.
+                        segments.Add(new VideoSegmentContent(i, start, end, File.Exists(path) ? path : null));
+                        grabbed++;
+                        onProgress?.Invoke(i + 1, plan.Count);
+                        continue;
+                    }
+
                     var middle = TimeSpan.FromMilliseconds((start + end) / 2.0);
 
                     bool ok;
@@ -146,6 +164,7 @@ public sealed class VideoSegmentExtractor : IStreamingVideoSegmentExtractor
                         grabbed++;
                         onSegmentReady?.Invoke(segment);
                     }
+                    onProgress?.Invoke(i + 1, plan.Count);
                 }
 
                 if (grabbed > 0) return segments;

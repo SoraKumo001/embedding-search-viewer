@@ -172,6 +172,13 @@
                     <ToggleSwitch Header="フォルダを監視して自動でインデックスを更新"
                                   OnContent="オン (追加・変更・削除を自動反映)" OffContent="オフ"
                                   IsOn="{x:Bind ViewModel.AutoIndex, Mode=TwoWay}" AutomationProperties.Name="Auto Index" />
+                    <ComboBox Header="動画の場面の間隔（1 場面につき 1 枚のフレームを検索の対象にします）"
+                              ItemsSource="{x:Bind ViewModel.VideoSegmentOptions}"
+                              SelectedIndex="{x:Bind ViewModel.VideoSegmentIndex, Mode=TwoWay}"
+                              AutomationProperties.Name="Video Segment Length" />
+                    <TextBlock Text="間隔を長くすると、長い動画の取り込みが速くなりますが、検索できる場面は粗くなります。変更は、これから取り込む動画に適用されます（取り込み済みの動画は、「クリア」してから作り直してください）。"
+                               Style="{ThemeResource CaptionTextBlockStyle}" TextWrapping="Wrap"
+                               Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                     <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
                         <TextBlock Text="{x:Bind ViewModel.CurrentStatusMessage, Mode=OneWay}" VerticalAlignment="Center"
                                    Style="{ThemeResource CaptionTextBlockStyle}" TextTrimming="CharacterEllipsis" />
@@ -186,6 +193,11 @@
                     </Grid>
 
                     <ProgressBar Value="{x:Bind ViewModel.ProgressPercentage, Mode=OneWay}" Maximum="100" />
+
+                    <!-- How far each video being processed has come -->
+                    <TextBlock Text="{x:Bind ViewModel.VideoProgressText, Mode=OneWay}"
+                               Style="{ThemeResource CaptionTextBlockStyle}" TextWrapping="Wrap"
+                               Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                 </StackPanel>
             </Grid>
 

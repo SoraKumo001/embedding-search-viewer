@@ -19,7 +19,8 @@ public record IngestionProgress(
     bool IsRunning,
     string? ErrorMessage = null,
     int SkippedFiles = 0,
-    string? Summary = null
+    string? Summary = null,
+    string? Detail = null
 );
 
 public class IngestionPipelineWorker
@@ -37,6 +38,16 @@ public class IngestionPipelineWorker
     // Saves come from the queue loop and from videos running in parallel; they are written one at a time.
     private readonly SemaphoreSlim _saveLock = new(1, 1);
     private readonly Stopwatch _runWatch = new();
+
+    private readonly Func<int> _videoSegmentSeconds;
+    private readonly ConcurrentDictionary<string, (int Done, int Total)> _videoProgress = new(StringComparer.OrdinalIgnoreCase);
+    private long _lastVideoNotifyTicks;
+
+    /// <summary>Seconds between two notifications that only report how far a video has come.</summary>
+    private const double VideoProgressIntervalSeconds = 0.5;
+
+    /// <summary>Length of the video segments in seconds when the settings do not say otherwise.</summary>
+    public const int DefaultVideoSegmentSeconds = 15;
 
     /// <summary>Where video indexing time goes (frame extraction vs. embedding); reset at the start of each run.</summary>
     public VideoIngestStats VideoStats { get; } = new();
@@ -85,12 +96,15 @@ public class IngestionPipelineWorker
         IPdfPageExtractor? pdfExtractor = null,
         IVideoSegmentExtractor? videoExtractor = null,
         Func<string>? cacheDirectoryProvider = null,
-        int videoParallelism = DefaultVideoParallelism)
+        int videoParallelism = DefaultVideoParallelism,
+        Func<int>? videoSegmentSeconds = null)
     {
+        _videoSegmentSeconds = videoSegmentSeconds ?? (() => DefaultVideoSegmentSeconds);
         _repository = repository;
         _pdfIngestor = new PdfMediaIngestor(embeddingService, pdfExtractor);
         _imageIngestor = new ImageMediaIngestor(embeddingService);
-        _videoIngestor = new VideoMediaIngestor(embeddingService, videoExtractor, VideoStats);
+        _videoIngestor = new VideoMediaIngestor(
+            embeddingService, videoExtractor, VideoStats, Onnx.EmbeddingModelLocation.ModelTag(Onnx.EmbeddingModelLocation.DefaultPrecision));
         _videoSlots = new SemaphoreSlim(Math.Max(1, videoParallelism));
         string fixedCacheDirectory = cacheDirectory ?? Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
@@ -337,9 +351,40 @@ public class IngestionPipelineWorker
         }
         finally
         {
+            _videoProgress.TryRemove(filePath, out _);
             Interlocked.Increment(ref _processedFiles);
             NotifyProgress(fileName);
         }
+    }
+
+    private void OnVideoProgress(string filePath, int done, int total)
+    {
+        _videoProgress[filePath] = (done, total);
+
+        // Segments come several per second; the screen only needs to follow a few times a second.
+        long now = Stopwatch.GetTimestamp();
+        long last = Interlocked.Read(ref _lastVideoNotifyTicks);
+        bool finished = done >= total;
+        if (!finished && (now - last) < VideoProgressIntervalSeconds * Stopwatch.Frequency) return;
+        if (!finished && Interlocked.CompareExchange(ref _lastVideoNotifyTicks, now, last) != last) return;
+
+        NotifyProgress($"解析中: {Path.GetFileName(filePath)}");
+    }
+
+    /// <summary>One line per video that is being processed: how many of its segments are done.</summary>
+    private string? BuildVideoDetail()
+    {
+        var active = _videoProgress.OrderBy(kv => kv.Key, StringComparer.OrdinalIgnoreCase).ToList();
+        if (active.Count == 0) return null;
+
+        var lines = active.Take(4).Select(kv =>
+        {
+            var (done, total) = kv.Value;
+            int percent = total > 0 ? done * 100 / total : 0;
+            return $"動画 {Path.GetFileName(kv.Key)}: {done:N0} / {total:N0} 場面 ({percent}%)";
+        });
+        string text = string.Join("\n", lines);
+        return active.Count > 4 ? text + $"\nほか {active.Count - 4} 本" : text;
     }
 
     private async Task SaveAsync(MediaAsset asset, IEnumerable<MediaChunk> chunks, CancellationToken cancellationToken)
@@ -455,7 +500,13 @@ public class IngestionPipelineWorker
         }
         else if (VideoExts.Contains(ext))
         {
-            (asset, chunks) = await _videoIngestor.IngestAsync(filePath, _cacheDirectory, cancellationToken: cancellationToken);
+            // Overlap of 3 s as before; shorter segments get less so that the step stays positive.
+            int segmentSeconds = Math.Clamp(_videoSegmentSeconds(), 5, 300);
+            int overlapSeconds = Math.Min(3, segmentSeconds / 4);
+            (asset, chunks) = await _videoIngestor.IngestAsync(
+                filePath, _cacheDirectory, segmentSeconds, overlapSeconds,
+                onProgress: (done, total) => OnVideoProgress(filePath, done, total),
+                cancellationToken: cancellationToken);
         }
         else
         {
@@ -474,7 +525,8 @@ public class IngestionPipelineWorker
             IsRunning: _isRunning,
             ErrorMessage: error,
             SkippedFiles: _skippedFiles,
-            Summary: summary
+            Summary: summary,
+            Detail: BuildVideoDetail()
         ));
     }
 }
