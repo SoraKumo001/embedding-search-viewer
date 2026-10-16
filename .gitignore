@@ -26,6 +26,7 @@ AppPackages/
 BundleArtifacts/
 *.msix
 *.msixbundle
+*.msixupload
 *.appx
 *.appxbundle
 *.pfx

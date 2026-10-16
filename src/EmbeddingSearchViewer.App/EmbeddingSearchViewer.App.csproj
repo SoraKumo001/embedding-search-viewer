@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <TargetFramework>net11.0-windows10.0.26100.0</TargetFramework>
@@ -11,14 +11,23 @@
     <RuntimeIdentifier Condition="'$(RuntimeIdentifier)' == ''">win-x64</RuntimeIdentifier>
     <PublishProfile Condition="Exists('Properties\PublishProfiles\win-$(Platform).pubxml')">win-$(Platform).pubxml</PublishProfile>
     <UseWinUI>true</UseWinUI>
-    <WindowsPackageType>None</WindowsPackageType>
-    <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
-    <WinUISDKReferences>false</WinUISDKReferences>
-    <EnableMsixTooling>false</EnableMsixTooling>
+    <!-- Package type: None (Unpackaged zip, default) or MSIX (Microsoft Store) -->
+    <WindowsPackageType Condition="'$(WindowsPackageType)' == ''">None</WindowsPackageType>
+    <WindowsAppSDKSelfContained Condition="'$(WindowsPackageType)' != 'MSIX'">true</WindowsAppSDKSelfContained>
+    <WinUISDKReferences Condition="'$(WindowsPackageType)' == 'MSIX'">true</WinUISDKReferences>
+    <WinUISDKReferences Condition="'$(WindowsPackageType)' != 'MSIX'">false</WinUISDKReferences>
+    <EnableMsixTooling Condition="'$(WindowsPackageType)' == 'MSIX'">true</EnableMsixTooling>
+    <EnableMsixTooling Condition="'$(WindowsPackageType)' != 'MSIX'">false</EnableMsixTooling>
     <JsonSerializerIsReflectionEnabledByDefault>true</JsonSerializerIsReflectionEnabledByDefault>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
   </PropertyGroup>
+
+  <ItemGroup Condition="'$(WindowsPackageType)' == 'MSIX'">
+    <AppxManifest Include="Package.appxmanifest">
+      <SubType>Designer</SubType>
+    </AppxManifest>
+  </ItemGroup>
 
   <ItemGroup>
     <Content Include="Assets\SplashScreen.scale-200.png" />
@@ -92,7 +101,7 @@
     Unpackaged WinUI 3: "dotnet publish" leaves out the compiled XAML (*.xbf) and the app's resource index (*.pri),
     which are only copied by a normal build. Without them the app exits at startup (0xC000027B).
   -->
-  <Target Name="IncludeWinUIResourcesInPublish" AfterTargets="ComputeResolvedFilesToPublishList">
+  <Target Name="IncludeWinUIResourcesInPublish" AfterTargets="ComputeResolvedFilesToPublishList" Condition="'$(WindowsPackageType)' != 'MSIX'">
     <ItemGroup>
       <_WinUIResource Include="$(OutDir)$(TargetName).pri" />
       <_WinUIResource Include="$(OutDir)**\*.xbf" />
@@ -100,6 +109,15 @@
         <RelativePath>$([MSBuild]::MakeRelative('$(OutDir)', '%(_WinUIResource.FullPath)'))</RelativePath>
         <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
       </ResolvedFileToPublish>
+    </ItemGroup>
+  </Target>
+  <!--
+    Resolve duplicate onnxruntime.dll in MSIX payload between Microsoft.Windows.AI.MachineLearning and Microsoft.ML.OnnxRuntime.DirectML
+  -->
+  <Target Name="RemoveDuplicateOnnxRuntimePayload" BeforeTargets="_ComputeAppxPackagePayload">
+    <ItemGroup>
+      <PackagingOutputs Remove="@(PackagingOutputs)"
+                        Condition="'%(PackagingOutputs.TargetPath)' == 'onnxruntime.dll' and $([System.String]::Copy('%(PackagingOutputs.FullPath)').ToLowerInvariant().Contains('microsoft.windows.ai.machinelearning'))" />
     </ItemGroup>
   </Target>
 </Project>

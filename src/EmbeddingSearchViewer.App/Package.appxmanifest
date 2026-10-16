@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 
 <Package
   xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
@@ -6,19 +6,16 @@
   xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
   xmlns:uap10="http://schemas.microsoft.com/appx/manifest/uap/windows10/10"
   xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
-  xmlns:systemai="http://schemas.microsoft.com/appx/manifest/systemai/windows10"
-  IgnorableNamespaces="uap uap10 rescap systemai">
+  IgnorableNamespaces="uap uap10 rescap">
 
   <Identity
-    Name="A6B315D1-DFE5-4932-85E3-FD8B7B876A7A"
-    Publisher="CN=AppPublisher"
-    Version="1.0.0.0" />
-
-  <mp:PhoneIdentity PhoneProductId="A6B315D1-DFE5-4932-85E3-FD8B7B876A7A" PhonePublisherId="00000000-0000-0000-0000-000000000000"/>
+    Name="5A5F4AA2.EmbeddingSearchViewer"
+    Publisher="CN=2ABC7F34-7AF6-4C95-8D60-39CD8D415607"
+    Version="0.1.0.0" />
 
   <Properties>
-    <DisplayName>EmbeddingSearchViewer.App</DisplayName>
-    <PublisherDisplayName>AppPublisher</PublisherDisplayName>
+    <DisplayName>Embedding Search Viewer</DisplayName>
+    <PublisherDisplayName>空雲</PublisherDisplayName>
     <Logo>Assets\StoreLogo.png</Logo>
     <uap10:PackageIntegrity>
       <uap10:Content Enforcement="on"/>
@@ -39,8 +36,8 @@
       Executable="$targetnametoken$.exe"
       EntryPoint="$targetentrypoint$">
       <uap:VisualElements
-        DisplayName="EmbeddingSearchViewer.App"
-        Description="EmbeddingSearchViewer.App"
+        DisplayName="Embedding Search Viewer"
+        Description="Embedding Search Viewer"
         BackgroundColor="transparent"
         Square150x150Logo="Assets\Square150x150Logo.png"
         Square44x44Logo="Assets\Square44x44Logo.png">
@@ -52,6 +49,5 @@
 
   <Capabilities>
     <rescap:Capability Name="runFullTrust" />
-    <systemai:Capability Name="systemAIModels"/>
   </Capabilities>
 </Package>
