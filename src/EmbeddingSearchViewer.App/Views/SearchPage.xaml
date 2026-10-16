@@ -160,7 +160,7 @@
                                 </Grid.ContextFlyout>
                                 <!-- Thumbnail -->
                                 <Border Grid.Column="0" Width="56" Height="56" CornerRadius="4" Background="{ThemeResource CardBackgroundFillColorSecondaryBrush}">
-                                    <Image Source="{x:Bind Chunk.PreviewImagePath, Mode=OneWay}" Stretch="UniformToFill" />
+                                    <Image Source="{x:Bind Chunk.PreviewImagePath, Mode=OneWay}" Stretch="Uniform" />
                                 </Border>
 
                                 <!-- Details -->
@@ -242,7 +242,7 @@
                              IsOpen="{x:Bind ViewModel.SceneErrorMessage, Mode=OneWay, Converter={StaticResource StringNotEmptyConverter}}"
                              Message="{x:Bind ViewModel.SceneErrorMessage, Mode=OneWay}" />
 
-                    <ListView Grid.Row="3" x:Name="SceneListView" Height="140"
+                    <ListView Grid.Row="3" x:Name="SceneListView" MinHeight="150"
                               ItemsSource="{x:Bind ViewModel.Scenes, Mode=OneWay}"
                               SelectedItem="{x:Bind ViewModel.SelectedScene, Mode=TwoWay}"
                               SelectionMode="Single"
@@ -256,9 +256,9 @@
                         </ListView.ItemsPanel>
                         <ListView.ItemTemplate>
                             <DataTemplate x:DataType="models:SearchResultItem">
-                                <StackPanel Width="132" Spacing="4" Padding="2">
-                                    <Border Width="128" Height="72" CornerRadius="4" Background="{ThemeResource CardBackgroundFillColorSecondaryBrush}">
-                                        <Image Source="{x:Bind Chunk.PreviewImagePath, Mode=OneWay}" Stretch="UniformToFill" />
+                                <StackPanel Width="180" Spacing="4" Padding="2">
+                                    <Border Width="176" Height="99" CornerRadius="4" Background="{ThemeResource CardBackgroundFillColorSecondaryBrush}">
+                                        <Image Source="{x:Bind Chunk.PreviewImagePath, Mode=OneWay}" Stretch="Uniform" />
                                     </Border>
                                     <Grid ColumnDefinitions="*,Auto">
                                         <TextBlock Text="{x:Bind SceneTimeText}" Style="{ThemeResource CaptionTextBlockStyle}"
