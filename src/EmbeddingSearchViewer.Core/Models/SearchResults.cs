@@ -21,6 +21,15 @@ public class SearchQuery
     public long? MaxSizeBytes { get; set; }          // inclusive
     public string? FolderContains { get; set; }      // case-insensitive substring of the file's directory path
 
+    /// <summary>Only the chunks of this asset are searched (looking for scenes inside one video).</summary>
+    public Guid? AssetIdFilter { get; set; }
+
+    /// <summary>
+    /// Merges the matching scenes of one video into a single result: the best scene stands for the video and the
+    /// others are listed in <see cref="SearchResultItem.Scenes"/>.
+    /// </summary>
+    public bool GroupVideoSegments { get; set; }
+
     public bool HasMetadataFilters =>
         ModifiedFromUtc.HasValue || ModifiedToUtc.HasValue || MinSizeBytes.HasValue || MaxSizeBytes.HasValue ||
         !string.IsNullOrWhiteSpace(FolderContains);
@@ -39,6 +48,18 @@ public class SearchResultItem
     public int DuplicateCount => DuplicatePaths.Count;
     public string DuplicateText => DuplicateCount > 0 ? $"同一画像 他{DuplicateCount}件" : string.Empty;
     public string SimilarityPercentageText => SimilarityScore.ToString("P0");
+
+    /// <summary>
+    /// On a grouped video result: all matching scenes of that video, best first (the result itself included).
+    /// Empty for everything else.
+    /// </summary>
+    public List<SearchResultItem> Scenes { get; } = new();
+    public bool IsVideoGroup => Scenes.Count > 0;
+    public int SceneCount => Scenes.Count;
+    public string GroupText => Scenes.Count > 1 ? $"一致した場面 {Scenes.Count} 件" : string.Empty;
+
+    /// <summary>Where this scene starts in its video ("12:30"), empty when it has no time.</summary>
+    public string SceneTimeText => Chunk.StartTimeMs.HasValue ? FormatTime(Chunk.StartTimeMs.Value) : string.Empty;
 
     public string DisplayTitle => Asset.FileName;
     public string Subtitle => Chunk.Modality switch

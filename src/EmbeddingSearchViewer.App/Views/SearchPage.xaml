@@ -72,7 +72,7 @@
             </Grid>
 
             <!-- Search Options -->
-            <Grid Grid.Row="2" ColumnDefinitions="Auto,220,Auto,Auto,Auto" ColumnSpacing="16" VerticalAlignment="Center">
+            <Grid Grid.Row="2" ColumnDefinitions="Auto,220,Auto,Auto,Auto,Auto" ColumnSpacing="16" VerticalAlignment="Center">
                 <CheckBox Grid.Column="0" Content="キーワード検索を併用" MinWidth="0"
                           IsChecked="{x:Bind ViewModel.EnableFts, Mode=TwoWay}" AutomationProperties.Name="Enable FTS" />
                 <Slider Grid.Column="1" Minimum="0" Maximum="1" StepFrequency="0.05"
@@ -87,6 +87,10 @@
                     <ComboBoxItem Content="類似度" />
                     <ComboBoxItem Content="ファイル名" />
                 </ComboBox>
+                <CheckBox Grid.Column="5" Content="動画を 1 件にまとめる" MinWidth="0"
+                          IsChecked="{x:Bind ViewModel.GroupVideos, Mode=TwoWay}"
+                          ToolTipService.ToolTip="同じ動画の場面を 1 件にまとめます。選ぶと、プレビューの下に、一致した場面が並びます"
+                          AutomationProperties.Name="Group Video Scenes" />
             </Grid>
 
             <!-- Metadata Filters -->
@@ -172,6 +176,10 @@
                                                Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"
                                                ToolTipService.ToolTip="埋め込みが完全に一致する別ファイルがあります (結果には1件だけ表示)"
                                                Visibility="{x:Bind DuplicateText, Converter={StaticResource StringNotEmptyToVisibilityConverter}}" />
+                                    <TextBlock Text="{x:Bind GroupText}" Style="{ThemeResource CaptionTextBlockStyle}"
+                                               Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"
+                                               ToolTipService.ToolTip="この動画の、一致した場面の数です。選ぶと、プレビューの下に一覧が出ます"
+                                               Visibility="{x:Bind GroupText, Converter={StaticResource StringNotEmptyToVisibilityConverter}}" />
                                     <TextBlock Text="{x:Bind Chunk.SnippetText}" Style="{ThemeResource CaptionTextBlockStyle}"
                                                MaxLines="2" TextTrimming="CharacterEllipsis" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                                 </StackPanel>
@@ -190,7 +198,7 @@
             </Grid>
 
             <!-- Right: Preview Detail Pane -->
-            <Grid Grid.Column="1">
+            <Grid Grid.Column="1" RowDefinitions="*,Auto">
                 <!-- PDF Viewer -->
                 <controls:PdfPreviewControl x:Name="PdfViewer" Visibility="Collapsed" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" />
 
@@ -199,6 +207,69 @@
 
                 <!-- Image Viewer -->
                 <controls:ImagePreviewControl x:Name="ImageViewer" Visibility="Collapsed" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" />
+
+                <!-- Scenes of the selected video, and a search inside it -->
+                <Grid Grid.Row="1" Margin="0,12,0,0" Padding="12" RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="8"
+                      Background="{ThemeResource LayerFillColorDefaultBrush}" CornerRadius="8"
+                      Visibility="{x:Bind ViewModel.IsVideoSelected, Mode=OneWay}">
+                    <Grid Grid.Row="0" ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+                        <TextBlock Text="{x:Bind ViewModel.ScenesHeaderText, Mode=OneWay}" FontWeight="SemiBold" VerticalAlignment="Center" />
+                        <TextBlock Grid.Column="1" Text="並べ替え" VerticalAlignment="Center" Style="{ThemeResource CaptionTextBlockStyle}" />
+                        <ComboBox Grid.Column="2" SelectedIndex="{x:Bind ViewModel.SceneSortIndex, Mode=TwoWay}" AutomationProperties.Name="Scene Sort Order">
+                            <ComboBoxItem Content="一致順" />
+                            <ComboBoxItem Content="動画の時間順" />
+                        </ComboBox>
+                    </Grid>
+
+                    <Grid Grid.Row="1" ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="8">
+                        <TextBox x:Name="SceneSearchBox"
+                                 PlaceholderText="この動画の中を検索 (例: 花火、赤い服)"
+                                 Text="{x:Bind ViewModel.SceneQueryText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                 KeyDown="SceneSearchBox_KeyDown"
+                                 AutomationProperties.Name="Search Inside Video" />
+                        <Button Grid.Column="1" Content="動画内を検索"
+                                Command="{x:Bind ViewModel.SearchInVideoCommand}"
+                                IsEnabled="{x:Bind ViewModel.IsSceneSearching, Mode=OneWay, Converter={StaticResource InverseBoolConverter}}"
+                                AutomationProperties.Name="Search In Video" />
+                        <Button Grid.Column="2" Content="一致した場面に戻す"
+                                Command="{x:Bind ViewModel.ResetScenesCommand}"
+                                ToolTipService.ToolTip="最初の検索で一致した場面の一覧に戻します"
+                                AutomationProperties.Name="Reset Scenes" />
+                        <ProgressRing Grid.Column="3" IsActive="{x:Bind ViewModel.IsSceneSearching, Mode=OneWay}" Width="20" Height="20" />
+                    </Grid>
+
+                    <InfoBar Grid.Row="2" Severity="Error" IsClosable="False"
+                             IsOpen="{x:Bind ViewModel.SceneErrorMessage, Mode=OneWay, Converter={StaticResource StringNotEmptyConverter}}"
+                             Message="{x:Bind ViewModel.SceneErrorMessage, Mode=OneWay}" />
+
+                    <ListView Grid.Row="3" x:Name="SceneListView" Height="140"
+                              ItemsSource="{x:Bind ViewModel.Scenes, Mode=OneWay}"
+                              SelectedItem="{x:Bind ViewModel.SelectedScene, Mode=TwoWay}"
+                              SelectionMode="Single"
+                              ScrollViewer.HorizontalScrollMode="Enabled" ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                              ScrollViewer.VerticalScrollMode="Disabled" ScrollViewer.VerticalScrollBarVisibility="Hidden"
+                              AutomationProperties.Name="Video Scenes">
+                        <ListView.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <ItemsStackPanel Orientation="Horizontal" />
+                            </ItemsPanelTemplate>
+                        </ListView.ItemsPanel>
+                        <ListView.ItemTemplate>
+                            <DataTemplate x:DataType="models:SearchResultItem">
+                                <StackPanel Width="132" Spacing="4" Padding="2">
+                                    <Border Width="128" Height="72" CornerRadius="4" Background="{ThemeResource CardBackgroundFillColorSecondaryBrush}">
+                                        <Image Source="{x:Bind Chunk.PreviewImagePath, Mode=OneWay}" Stretch="UniformToFill" />
+                                    </Border>
+                                    <Grid ColumnDefinitions="*,Auto">
+                                        <TextBlock Text="{x:Bind SceneTimeText}" Style="{ThemeResource CaptionTextBlockStyle}"
+                                                   Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" />
+                                        <TextBlock Grid.Column="1" Text="{x:Bind SimilarityPercentageText}" Style="{ThemeResource CaptionTextBlockStyle}" />
+                                    </Grid>
+                                </StackPanel>
+                            </DataTemplate>
+                        </ListView.ItemTemplate>
+                    </ListView>
+                </Grid>
 
                 <!-- Empty State Placeholder -->
                 <Grid x:Name="EmptyPreviewPlaceholder"

@@ -32,6 +32,31 @@ public sealed partial class SearchPage : Page
         {
             await DisplayResultAsync(ViewModel.SelectedResult);
         }
+        else if (e.PropertyName == nameof(ViewModel.SelectedScene))
+        {
+            ShowScene(ViewModel.SelectedScene);
+        }
+    }
+
+    // The scene the video player was last pointed at (the one shown when the video was opened, or the one clicked since).
+    private SearchResultItem? _playerScene;
+
+    /// <summary>Plays the clicked scene of the selected video from its start.</summary>
+    private void ShowScene(SearchResultItem? scene)
+    {
+        if (scene == null || scene.Asset.MediaType != MediaType.Video) return;
+        if (scene.Chunk.Id == _playerScene?.Chunk.Id) return; // the scene that was opened with the video: already there
+
+        _playerScene = scene;
+        VideoViewer.JumpTo(scene);
+    }
+
+    private async void SceneSearchBox_KeyDown(object sender, KeyRoutedEventArgs e)
+    {
+        if (e.Key == Windows.System.VirtualKey.Enter)
+        {
+            await ViewModel.SearchInVideoCommand.ExecuteAsync(null);
+        }
     }
 
     private async void SearchBox_KeyDown(object sender, KeyRoutedEventArgs e)
@@ -118,6 +143,7 @@ public sealed partial class SearchPage : Page
                 PdfViewer.Visibility = Visibility.Collapsed;
                 ImageViewer.Visibility = Visibility.Collapsed;
                 VideoViewer.Visibility = Visibility.Visible;
+                _playerScene = item;
                 VideoViewer.LoadItem(item);
                 break;
 

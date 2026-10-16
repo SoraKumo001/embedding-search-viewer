@@ -192,9 +192,43 @@ public class HybridSearchEngine
             .OrderByDescending(r => r.CombinedScore)
             .ThenBy(r => r.Asset.FilePath, StringComparer.OrdinalIgnoreCase);
 
-        return CollapseDuplicates(ranked, snapshot.EmbeddingGroups)
+        var collapsed = CollapseDuplicates(ranked, snapshot.EmbeddingGroups);
+        if (query.GroupVideoSegments)
+        {
+            // Group everything first (a video's scenes can be spread over the whole ranking), then cut the list.
+            return GroupByVideo(collapsed).ToList().Take(query.TopK).ToList();
+        }
+
+        return collapsed
             .Take(query.TopK)
             .ToList();
+    }
+
+    /// <summary>
+    /// Replaces the scenes of each video by one result at the rank of its best scene; that result lists all the matching
+    /// scenes of the video (best first, itself included). Images and PDF pages pass through unchanged.
+    /// </summary>
+    private static IEnumerable<SearchResultItem> GroupByVideo(IEnumerable<SearchResultItem> ranked)
+    {
+        var videos = new Dictionary<Guid, SearchResultItem>();
+        foreach (var item in ranked)
+        {
+            if (item.Asset.MediaType != MediaType.Video)
+            {
+                yield return item;
+                continue;
+            }
+
+            if (videos.TryGetValue(item.Asset.Id, out var representative))
+            {
+                representative.Scenes.Add(item);
+                continue;
+            }
+
+            item.Scenes.Add(item);
+            videos[item.Asset.Id] = item;
+            yield return item;
+        }
     }
 
     /// <summary>Gives chunks with exactly the same embedding the same non-zero group id (0 = no embedding).</summary>
@@ -239,6 +273,7 @@ public class HybridSearchEngine
     public static bool PassesFilters(SearchQuery query, MediaAsset asset)
     {
         if (query.MediaTypeFilter is { } mediaType && asset.MediaType != mediaType) return false;
+        if (query.AssetIdFilter is { } assetId && asset.Id != assetId) return false;
         if (query.ModifiedFromUtc is { } from && asset.LastModifiedUtc < from) return false;
         if (query.ModifiedToUtc is { } to && asset.LastModifiedUtc >= to) return false;
         if (query.MinSizeBytes is { } min && asset.FileSizeBytes < min) return false;

@@ -13,6 +13,7 @@ public sealed partial class VideoPreviewControl : UserControl
 {
     private SearchResultItem? _currentItem;
     private MediaPlayer? _mediaPlayer;
+    private string? _loadedPath;
 
     public VideoPreviewControl()
     {
@@ -22,6 +23,7 @@ public sealed partial class VideoPreviewControl : UserControl
     public void LoadItem(SearchResultItem item)
     {
         _currentItem = item;
+        _loadedPath = item.Asset.FilePath;
         if (!File.Exists(item.Asset.FilePath))
         {
             FileInfoTextBlock.Text = "動画ファイルが見つかりません: " + item.Asset.FilePath;
@@ -53,6 +55,22 @@ public sealed partial class VideoPreviewControl : UserControl
         {
             FileInfoTextBlock.Text = $"動画読み込み失敗: {ex.Message}";
         }
+    }
+
+    /// <summary>Starts playing from the beginning of a scene (another scene of the video that is open, or of another video).</summary>
+    public void JumpTo(SearchResultItem scene)
+    {
+        if (_mediaPlayer == null || !string.Equals(_loadedPath, scene.Asset.FilePath, StringComparison.OrdinalIgnoreCase))
+        {
+            LoadItem(scene);
+            return;
+        }
+
+        _currentItem = scene;
+        var start = TimeSpan.FromMilliseconds(scene.Chunk.StartTimeMs ?? 0);
+        HitMomentTextBlock.Text = $"一致箇所へジャンプ ({start:mm\\:ss})";
+        _mediaPlayer.PlaybackSession.Position = start;
+        _mediaPlayer.Play();
     }
 
     private void OnMediaOpened(MediaPlayer sender, object args)

@@ -93,6 +93,146 @@ public partial class SearchViewModel : ObservableObject
         }
     }
 
+    /// <summary>Shows a video once in the results (its best scene) instead of one row per matching scene.</summary>
+    [ObservableProperty]
+    private bool _groupVideos = true;
+
+    partial void OnGroupVideosChanged(bool value)
+    {
+        // Show the same search in the other form right away.
+        bool hasQuery = !string.IsNullOrWhiteSpace(QueryText) || !string.IsNullOrWhiteSpace(QueryImagePath);
+        if (hasQuery && SearchResults.Count > 0 && !IsSearching) _ = SearchCommand.ExecuteAsync(null);
+    }
+
+    // ---- scenes of the selected video (below the preview) ----
+
+    public ObservableCollection<SearchResultItem> Scenes { get; } = new();
+
+    /// <summary>True while a video is selected: the scene list and the search inside the video are shown.</summary>
+    [ObservableProperty]
+    private bool _isVideoSelected;
+
+    [ObservableProperty]
+    private string _scenesHeaderText = string.Empty;
+
+    /// <summary>A text to look for inside the selected video only.</summary>
+    [ObservableProperty]
+    private string _sceneQueryText = string.Empty;
+
+    [ObservableProperty]
+    private int _sceneSortIndex; // 0: best match first, 1: in the order of the video
+
+    [ObservableProperty]
+    private SearchResultItem? _selectedScene;
+
+    [ObservableProperty]
+    private bool _isSceneSearching;
+
+    [ObservableProperty]
+    private string? _sceneErrorMessage;
+
+    private List<SearchResultItem> _sceneSource = new();
+    private string _sceneSearchText = string.Empty; // empty: the scenes that matched the main search
+
+    partial void OnSelectedResultChanged(SearchResultItem? value) => LoadScenesFor(value);
+
+    partial void OnSceneSortIndexChanged(int value) => ApplyScenes(SelectedScene);
+
+    /// <summary>Lists the scenes of a video result: the ones that matched the main search.</summary>
+    private void LoadScenesFor(SearchResultItem? result)
+    {
+        SceneQueryText = string.Empty;
+        SceneErrorMessage = null;
+        _sceneSearchText = string.Empty;
+
+        if (result == null || result.Asset.MediaType != MediaType.Video)
+        {
+            IsVideoSelected = false;
+            _sceneSource = new List<SearchResultItem>();
+            ApplyScenes(null);
+            return;
+        }
+
+        IsVideoSelected = true;
+        _sceneSource = (result.Scenes.Count > 0
+                ? result.Scenes
+                : _rawResults.Where(r => r.Asset.Id == result.Asset.Id))
+            .ToList();
+        if (_sceneSource.Count == 0) _sceneSource.Add(result);
+        ApplyScenes(_sceneSource.FirstOrDefault(s => s.Chunk.Id == result.Chunk.Id));
+    }
+
+    private void ApplyScenes(SearchResultItem? select)
+    {
+        IEnumerable<SearchResultItem> ordered = SceneSortIndex == 1
+            ? _sceneSource.OrderBy(s => s.Chunk.StartTimeMs ?? 0)
+            : _sceneSource.OrderByDescending(s => s.CombinedScore);
+
+        Scenes.Clear();
+        foreach (var scene in ordered) Scenes.Add(scene);
+        SelectedScene = select != null && Scenes.Contains(select) ? select : null;
+
+        ScenesHeaderText = !IsVideoSelected
+            ? string.Empty
+            : _sceneSearchText.Length == 0
+                ? $"一致した場面 ({Scenes.Count} 件)"
+                : $"この動画の中の「{_sceneSearchText}」 ({Scenes.Count} 件)";
+    }
+
+    /// <summary>Looks for scenes inside the selected video only; an empty text goes back to the scenes of the main search.</summary>
+    [RelayCommand]
+    public async Task SearchInVideoAsync(CancellationToken cancellationToken)
+    {
+        var video = SelectedResult;
+        if (video == null || video.Asset.MediaType != MediaType.Video) return;
+
+        string text = SceneQueryText.Trim();
+        if (text.Length == 0)
+        {
+            ResetScenes();
+            return;
+        }
+
+        IsSceneSearching = true;
+        SceneErrorMessage = null;
+        try
+        {
+            var query = new SearchQuery
+            {
+                QueryText = text,
+                MediaTypeFilter = MediaType.Video,
+                AssetIdFilter = video.Asset.Id,
+                MinSimilarity = MinSimilarity,
+                TruncateDim = TruncateDim,
+                EnableFts = EnableFts,
+                TopK = 200
+            };
+
+            var results = await _searchEngine.SearchAsync(query, cancellationToken);
+            if (SelectedResult?.Asset.Id != video.Asset.Id) return; // another video was selected meanwhile
+
+            _sceneSource = results.ToList();
+            _sceneSearchText = text;
+            ApplyScenes(null);
+        }
+        catch (OperationCanceledException)
+        {
+            // Cancelled
+        }
+        catch (Exception ex)
+        {
+            SceneErrorMessage = $"動画内の検索中にエラーが発生しました: {ex.Message}";
+        }
+        finally
+        {
+            IsSceneSearching = false;
+        }
+    }
+
+    /// <summary>Back to the scenes that matched the main search.</summary>
+    [RelayCommand]
+    public void ResetScenes() => LoadScenesFor(SelectedResult);
+
     [ObservableProperty]
     private int _truncateDim = 768;
 
@@ -172,6 +312,7 @@ public partial class SearchViewModel : ObservableObject
                 MinSizeBytes = MbToBytes(FilterMinSizeMb),
                 MaxSizeBytes = MbToBytes(FilterMaxSizeMb),
                 FolderContains = string.IsNullOrWhiteSpace(FilterFolder) ? null : FilterFolder.Trim(),
+                GroupVideoSegments = GroupVideos,
                 TopK = 50
             };
 
