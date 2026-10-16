@@ -101,6 +101,29 @@ jobs:
           dotnet publish src/EmbeddingSearchViewer.App/EmbeddingSearchViewer.App.csproj
           -c Release -p:Platform=x64 -r win-x64 --self-contained true -o artifacts/publish
 
+      - name: Code Sign
+        if: steps.exists.outputs.skip != 'true'
+        shell: pwsh
+        env:
+          SIGNING_CERT_BASE64: ${{ secrets.CODE_SIGNING_PFX_BASE64 }}
+          SIGNING_PASSWORD: ${{ secrets.CODE_SIGNING_PASSWORD }}
+        run: |
+          if (-not $env:SIGNING_CERT_BASE64) {
+            Write-Host "::notice::CODE_SIGNING_PFX_BASE64 secret is not configured; skipping code signing."
+            exit 0
+          }
+
+          $pfxPath = "$env:RUNNER_TEMP\signing_cert.pfx"
+          try {
+            [System.IO.File]::WriteAllBytes($pfxPath, [System.Convert]::FromBase64String($env:SIGNING_CERT_BASE64))
+            ./tools/Sign-Package.ps1 -TargetPath "artifacts/publish" -PfxPath $pfxPath -Password $env:SIGNING_PASSWORD
+          }
+          finally {
+            if (Test-Path $pfxPath) {
+              Remove-Item $pfxPath -Force -ErrorAction SilentlyContinue
+            }
+          }
+
       - name: Package
         if: steps.exists.outputs.skip != 'true'
         id: package

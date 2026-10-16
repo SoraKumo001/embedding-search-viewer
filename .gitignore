@@ -29,6 +29,8 @@ BundleArtifacts/
 *.appx
 *.appxbundle
 *.pfx
+*.cer
+certs/
 
 # ---- Logs and temporary files ----
 *.log
