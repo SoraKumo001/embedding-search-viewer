@@ -13,7 +13,7 @@
 | リポジトリ | https://github.com/SoraKumo001/embedding-search-viewer（公開） |
 | 既定ブランチ | `master` |
 | 最新リリース | `v0.1.0`（タグはコミット `ad1948f`） |
-| 配布物 | `EmbeddingSearchViewer-<version>-win-x64.zip`（約 164 MB）と `SHA256SUMS.txt` |
+| 配布物 | `EmbeddingSearchViewer-<version>-win-x64-setup.exe`（インストーラー）、`EmbeddingSearchViewer-<version>-win-x64.zip`（約 164 MB）、`SHA256SUMS.txt` |
 | 対応環境 | Windows x64 のみ（ARM64 は未対応。理由は 12 章） |
 | ログ | ログファイルはありません（`Console` への出力のみで、GUI では見えません） |
 
@@ -35,7 +35,7 @@ git push
 3. GitHub Actions の「Release」が起動し、次を自動で行います（所要は約 5 分）。
    - ビルドとテスト
    - タグ `v0.2.0` の作成
-   - 公開（publish）、zip と `SHA256SUMS.txt` の作成
+   - 公開（publish）、フォルダの配置、インストーラーと zip、`SHA256SUMS.txt` の作成
    - GitHub のリリースへの登録（変更点のノートは自動生成。`-` を含むバージョンはプレリリースになる）
 
 4. 結果の確認:
@@ -100,8 +100,23 @@ gh release delete v0.1.0 --cleanup-tag --yes
 | Build | `dotnet build EmbeddingSearchViewer.slnx -c Release` |
 | Test | `--filter "Requires!=WindowsMedia"`（下記） |
 | Publish | `-c Release -p:Platform=x64 -r win-x64 --self-contained true` |
-| Package | フォルダ名にバージョンを入れ、`README.md`、`LICENSE`、サードパーティのライセンス（7 章）を加えて zip にし、SHA-256 を作る |
-| Keep the package | ドライランのときだけ、zip を成果物として残す |
+| Code Sign | 署名用の証明書（Secrets）があるときだけ、`artifacts/publish` の exe とアプリの DLL に署名する |
+| Arrange the package folder | `tools/New-PackageLayout.ps1`。一番上は、`EmbeddingSearchViewer.cmd`（起動用）、`README.md`、`LICENSE`、`THIRD-PARTY-NOTICES.md`、`licenses\`。アプリ本体の約 400 ファイルは、`app\` に入る（7 章） |
+| Install Inno Setup | `choco install innosetup`（入っていなければ） |
+| Build the installer | `tools/Build-Installer.ps1`（`installer/EmbeddingSearchViewer.iss`）。`EmbeddingSearchViewer-<version>-win-x64-setup.exe` を作る |
+| Code Sign the installer | 証明書があるときだけ、インストーラーに署名する |
+| Package | 配置したフォルダを zip にし、zip とインストーラーの SHA-256 を `SHA256SUMS.txt` に書く |
+| Keep the package | ドライランのときだけ、zip とインストーラーを成果物として残す |
+
+**配布物の形**: zip の直下を、短く保つために、`app\` と、起動用の `.cmd` に分けています（約 400 個のファイルの中から、exe を探さなくて済むように）。`.cmd` は、`start "" "%~dp0app\EmbeddingSearchViewer.App.exe"` だけで、一瞬、黒い画面が出ます。インストーラーは、同じフォルダの `app\` の中身を、`{app}` に入れ、README と、ライセンス類も、あわせて入れます。
+
+**インストーラー（Inno Setup）**
+- ユーザー単位で、`%LOCALAPPDATA%\Programs\EmbeddingSearchViewer` に入ります（`PrivilegesRequired=lowest`。管理者権限は不要。ダイアログで、全ユーザーを選ぶこともできます）。スタートメニューに登録され（デスクトップは、任意）、「アプリ」から、アンインストールできます。
+- **`AppId` の GUID は、変えないでください**（同じ GUID で、上書きの更新になります）。
+- アンインストールのとき、`%LOCALAPPDATA%\EmbeddingSearchViewer`（インデックス、履歴、AI モデル）を消すかどうかを、聞きます（既定は「いいえ」。`/SILENT` では聞かず、消しません）。
+- スクリプト（`.iss`）は、日本語を含むので、**BOM つきの UTF-8** で保存します（BOM がないと、Inno Setup は、ANSI として読みます）。
+- ローカルで作るには、Inno Setup 6 を入れて（`choco install innosetup`）、`tools/Build-Package.ps1` を実行します（入っていなければ、zip だけを作ります）。
+- 署名がないと、インストーラーにも、SmartScreen の警告が出ます（README に対処があります）。
 | Create the tag and the release | `gh release create`。`--target $GITHUB_SHA` でタグも作る。`-` を含むバージョンは `--prerelease`、そうでなければ `--latest` |
 
 **テストの除外**: `PDF の描画` と `Media Foundation` に依存するテスト（`WindowsMediaExtractionTests`、`[Trait("Requires", "WindowsMedia")]`）は、サーバー用の環境で動かない可能性があるので、CI では除外しています。モデルが必要なテストは、モデルがないと自動でスキップされます（CI の結果: 145 件中、合格 132、スキップ 13、失敗 0）。
@@ -168,7 +183,7 @@ dotnet publish src/EmbeddingSearchViewer.App/EmbeddingSearchViewer.App.csproj -c
 
 ## 7. サードパーティのライセンス
 
-リリースの zip には、`THIRD-PARTY-NOTICES.md` と `licenses/` が入ります。
+リリースの zip（の一番上）と、インストーラーには、`THIRD-PARTY-NOTICES.md` と `licenses/` が入ります。
 
 - 作成: `tools/New-ThirdPartyNotices.ps1`（ワークフローの Package ステップが呼ぶ）。ビルド後の `obj/project.assets.json` から、実際に使われているパッケージを列挙するので、手で更新する必要はありません。
 - 各パッケージのライセンス文を、パッケージから集めます。文書を持たない MIT / Apache-2.0 / BSD-3-Clause のパッケージには、`tools/license-texts/` の標準全文（SPDX の公式テキスト）を添えます。

@@ -61,28 +61,23 @@ if ($LASTEXITCODE -ne 0) {
     throw "dotnet publish failed."
 }
 
-# フォルダ移動
-Move-Item -Path $publishDir -Destination $packageDir
-
-# 2. README / LICENSE / サードパーティライセンス通知の配置
-Write-Host "2. Copying licenses and notices..." -ForegroundColor White
-Copy-Item (Join-Path $rootDir "README.md") $packageDir -Force
-Copy-Item (Join-Path $rootDir "LICENSE") $packageDir -Force
-& (Join-Path $PSScriptRoot "New-ThirdPartyNotices.ps1") -OutputDirectory $packageDir
-
-# 3. コード署名
+# 2. コード署名（フォルダの配置の前に、発行したファイルに対して行う）
 if (-not $SkipSign) {
     if (Test-Path $PfxPath) {
-        Write-Host "3. Signing binaries..." -ForegroundColor White
+        Write-Host "2. Signing binaries..." -ForegroundColor White
         $signScript = Join-Path $PSScriptRoot "Sign-Package.ps1"
-        & $signScript -TargetPath $packageDir -PfxPath $PfxPath -Password $Password
+        & $signScript -TargetPath $publishDir -PfxPath $PfxPath -Password $Password
     } else {
-        Write-Host "3. Skipping code signing (Certificate '$PfxPath' not found)." -ForegroundColor Yellow
+        Write-Host "2. Skipping code signing (Certificate '$PfxPath' not found)." -ForegroundColor Yellow
         Write-Host "   Run .\tools\New-DevCertificate.ps1 to generate a test certificate." -ForegroundColor Gray
     }
 } else {
-    Write-Host "3. Skipping code signing (-SkipSign specified)." -ForegroundColor Yellow
+    Write-Host "2. Skipping code signing (-SkipSign specified)." -ForegroundColor Yellow
 }
+
+# 3. フォルダの配置: 一番上に、起動用の .cmd、README、LICENSE、ライセンス通知。アプリ本体の約 400 ファイルは app\ に入る
+Write-Host "3. Arranging the package folder..." -ForegroundColor White
+& (Join-Path $PSScriptRoot "New-PackageLayout.ps1") -PublishDir $publishDir -Destination $packageDir
 
 # 4. ZIP アーカイブの作成
 Write-Host "4. Creating zip archive..." -ForegroundColor White
@@ -95,3 +90,18 @@ $hash = (Get-FileHash $zipPath -Algorithm SHA256).Hash.ToLower()
 $zipSizeMb = [Math]::Round(((Get-Item $zipPath).Length / 1MB), 2)
 Write-Host "Successfully packaged: $zipPath ($zipSizeMb MB)" -ForegroundColor Green
 Write-Host "SHA256: $hash" -ForegroundColor Gray
+
+# 5. インストーラー（Inno Setup が入っているときだけ。なければ、zip だけで終わる）
+$hasInno = (Get-Command ISCC.exe -ErrorAction SilentlyContinue) -or
+    (Test-Path "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe") -or (Test-Path "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe")
+if ($hasInno) {
+    Write-Host "5. Building the installer..." -ForegroundColor White
+    $setup = & (Join-Path $PSScriptRoot "Build-Installer.ps1") -PackageDir $packageDir -Version $version -OutputDir (Join-Path $rootDir "artifacts") | Select-Object -Last 1
+    if (-not $SkipSign -and (Test-Path $PfxPath)) {
+        & (Join-Path $PSScriptRoot "Sign-Package.ps1") -TargetPath $setup -PfxPath $PfxPath -Password $Password
+    }
+    $setupHash = (Get-FileHash $setup -Algorithm SHA256).Hash.ToLower()
+    "$setupHash  $(Split-Path -Leaf $setup)" | Add-Content -Encoding ascii (Join-Path $rootDir "artifacts\SHA256SUMS.txt")
+} else {
+    Write-Host "5. Skipping the installer (Inno Setup 6 is not installed: choco install innosetup)." -ForegroundColor Yellow
+}

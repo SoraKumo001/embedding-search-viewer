@@ -124,22 +124,72 @@ jobs:
             }
           }
 
+      - name: Arrange the package folder
+        if: steps.exists.outputs.skip != 'true'
+        id: layout
+        shell: pwsh
+        run: |
+          # Top level: the launcher, README, LICENSE and notices; the ~400 files of the app go into app\
+          $name = 'EmbeddingSearchViewer-${{ steps.version.outputs.version }}-win-x64'
+          ./tools/New-PackageLayout.ps1 -PublishDir artifacts/publish -Destination "artifacts/$name"
+          "name=$name" >> $env:GITHUB_OUTPUT
+
+      - name: Install Inno Setup
+        if: steps.exists.outputs.skip != 'true'
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe")) {
+            choco install innosetup --no-progress -y
+            if ($LASTEXITCODE -ne 0) { throw 'Could not install Inno Setup.' }
+          }
+
+      - name: Build the installer
+        if: steps.exists.outputs.skip != 'true'
+        id: installer
+        shell: pwsh
+        run: |
+          $setup = ./tools/Build-Installer.ps1 -PackageDir "artifacts/${{ steps.layout.outputs.name }}" -Version '${{ steps.version.outputs.version }}' -OutputDir artifacts |
+            Select-Object -Last 1
+          "setup=$setup" >> $env:GITHUB_OUTPUT
+
+      - name: Code Sign the installer
+        if: steps.exists.outputs.skip != 'true'
+        shell: pwsh
+        env:
+          SIGNING_CERT_BASE64: ${{ secrets.CODE_SIGNING_PFX_BASE64 }}
+          SIGNING_PASSWORD: ${{ secrets.CODE_SIGNING_PASSWORD }}
+        run: |
+          if (-not $env:SIGNING_CERT_BASE64) {
+            Write-Host "::notice::CODE_SIGNING_PFX_BASE64 secret is not configured; the installer is not signed."
+            exit 0
+          }
+
+          $pfxPath = "$env:RUNNER_TEMP\signing_cert.pfx"
+          try {
+            [System.IO.File]::WriteAllBytes($pfxPath, [System.Convert]::FromBase64String($env:SIGNING_CERT_BASE64))
+            ./tools/Sign-Package.ps1 -TargetPath '${{ steps.installer.outputs.setup }}' -PfxPath $pfxPath -Password $env:SIGNING_PASSWORD
+          }
+          finally {
+            if (Test-Path $pfxPath) {
+              Remove-Item $pfxPath -Force -ErrorAction SilentlyContinue
+            }
+          }
+
       - name: Package
         if: steps.exists.outputs.skip != 'true'
         id: package
         shell: pwsh
         run: |
-          $name = 'EmbeddingSearchViewer-${{ steps.version.outputs.version }}-win-x64'
-          $folder = "artifacts/$name"
-          Move-Item artifacts/publish $folder
-          Copy-Item README.md, LICENSE $folder
-          # license notices of everything that is shipped (FFmpeg is LGPL: its license text must travel with the DLLs)
-          ./tools/New-ThirdPartyNotices.ps1 -OutputDirectory $folder
-          Compress-Archive -Path $folder -DestinationPath "artifacts/$name.zip" -CompressionLevel Optimal
-          $hash = (Get-FileHash "artifacts/$name.zip" -Algorithm SHA256).Hash.ToLower()
-          "$hash  $name.zip" | Set-Content -Encoding ascii artifacts/SHA256SUMS.txt
+          $name = '${{ steps.layout.outputs.name }}'
+          Compress-Archive -Path "artifacts/$name" -DestinationPath "artifacts/$name.zip" -CompressionLevel Optimal
+          $setupPath = '${{ steps.installer.outputs.setup }}'
+          $setupName = Split-Path -Leaf $setupPath
+          $zipHash = (Get-FileHash "artifacts/$name.zip" -Algorithm SHA256).Hash.ToLower()
+          $setupHash = (Get-FileHash $setupPath -Algorithm SHA256).Hash.ToLower()
+          @("$zipHash  $name.zip", "$setupHash  $setupName") | Set-Content -Encoding ascii artifacts/SHA256SUMS.txt
           "zip=artifacts/$name.zip" >> $env:GITHUB_OUTPUT
           Write-Host ("{0}  ({1:N0} MB)" -f "$name.zip", ((Get-Item "artifacts/$name.zip").Length / 1MB))
+          Write-Host ("{0}  ({1:N0} MB)" -f $setupName, ((Get-Item $setupPath).Length / 1MB))
 
       - name: Keep the package (dry run only)
         if: steps.exists.outputs.skip != 'true' && inputs.dry_run == true
@@ -148,6 +198,7 @@ jobs:
           name: EmbeddingSearchViewer-${{ steps.version.outputs.version }}-win-x64
           path: |
             ${{ steps.package.outputs.zip }}
+            ${{ steps.installer.outputs.setup }}
             artifacts/SHA256SUMS.txt
           retention-days: 7
 
@@ -157,16 +208,20 @@ jobs:
         run: |
           $tag = '${{ steps.version.outputs.tag }}'
           @"
-          Windows (x64) 用のアプリです。zip を展開して ``EmbeddingSearchViewer.App.exe`` を起動してください。
+          Windows (x64) 用のアプリです。次のどちらかで、使えます。
+
+          - **インストーラー**（``EmbeddingSearchViewer-<バージョン>-win-x64-setup.exe``）: 実行すると、スタートメニューに登録されます（管理者権限は不要です）。
+          - **zip**（``EmbeddingSearchViewer-<バージョン>-win-x64.zip``）: 展開して、一番上の ``EmbeddingSearchViewer.cmd`` を、ダブルクリックします（アプリ本体は、``app`` フォルダの中です）。
 
           - 初回起動時に、AI モデル（約 1.76 GB）をアプリ内でダウンロードします。
-          - ``SHA256SUMS.txt`` で、zip のチェックサムを確認できます。
+          - ``SHA256SUMS.txt`` で、zip とインストーラーのチェックサムを確認できます。
+          - 署名がないため、Windows の SmartScreen の警告が出ることがあります（対処は、同梱の ``README.md`` を参照してください）。
           - 動作環境と使い方は、同梱の ``README.md`` を参照してください。
           - このアプリは MIT ライセンスです（同梱の ``LICENSE``）。サードパーティのライセンスは、``THIRD-PARTY-NOTICES.md`` と ``licenses/`` にまとめています。
           "@ | Set-Content -Encoding utf8 artifacts/release-notes.md
 
           $ghArgs = @(
-            $tag, '${{ steps.package.outputs.zip }}', 'artifacts/SHA256SUMS.txt',
+            $tag, '${{ steps.package.outputs.zip }}', '${{ steps.installer.outputs.setup }}', 'artifacts/SHA256SUMS.txt',
             '--target', $env:GITHUB_SHA,          # creates the tag on this commit
             '--title', $tag,
             '--notes-file', 'artifacts/release-notes.md',

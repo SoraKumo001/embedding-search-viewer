@@ -12,10 +12,16 @@ PC の中にある **画像・PDF・動画** を、**言葉や画像で探せる
 
 ## ダウンロード
 
-最新版は、[Releases ページ](https://github.com/SoraKumo001/embedding-search-viewer/releases/latest) の `EmbeddingSearchViewer-<バージョン>-win-x64.zip` です。
+最新版は、[Releases ページ](https://github.com/SoraKumo001/embedding-search-viewer/releases/latest) にあります。次のどちらかを選んでください。
 
-1. zip をダウンロードして、好きな場所に展開します（例: `C:\Apps\EmbeddingSearchViewer`）。インストーラーはありません。
-2. 展開したフォルダの `EmbeddingSearchViewer.App.exe` をダブルクリックして起動します。
+**インストーラー（おすすめ）**: `EmbeddingSearchViewer-<バージョン>-win-x64-setup.exe`
+1. ダウンロードして、実行します（管理者権限は不要です。`%LOCALAPPDATA%\Programs` に、インストールされます）。
+2. スタートメニューの「EmbeddingSearchViewer」から、起動します。
+3. アンインストールは、「設定」→「アプリ」から行います（インデックスや AI モデルも消すかどうか、聞かれます。「いいえ」なら、残ります）。
+
+**zip（インストールしたくないとき）**: `EmbeddingSearchViewer-<バージョン>-win-x64.zip`
+1. ダウンロードして、好きな場所に展開します（例: `C:\Apps\EmbeddingSearchViewer`）。
+2. 展開したフォルダの一番上にある、**`EmbeddingSearchViewer.cmd`**（種類: Windows コマンド スクリプト）を、ダブルクリックして起動します。アプリ本体のファイル（約 400 個）は、`app` フォルダの中にまとめてあります。
 
 **初回に表示されることがあるもの**
 - 「Windows によって PC が保護されました」（SmartScreen）: このアプリには、まだコードの署名がないため、表示されることがあります。次のどちらかで、起動できます。
@@ -229,7 +235,8 @@ GPU がない（または使えない）と、画像 1 枚あたり数秒かか�
 
 **アプリが起動しない**
 - ダウンロードした zip は、**展開してから**起動してください（zip の中から直接は動きません）。
-- 展開したフォルダごと移動した場合は、`EmbeddingSearchViewer.App.exe` を、そのフォルダの中から起動してください。
+- 展開したフォルダごと移動した場合は、そのフォルダの `EmbeddingSearchViewer.cmd`、または、`app` フォルダの `EmbeddingSearchViewer.App.exe` を、起動してください。
+- `EmbeddingSearchViewer.cmd` を実行したときに、一瞬、黒い画面が出るのは、正常です（アプリを起動して、すぐに閉じます）。
 
 ---
 
