@@ -54,13 +54,19 @@ public partial class App : Application
             var videoExtractor = new VideoSegmentExtractor(new IVideoFrameSource[] { new FFmpegFrameSource(), new MediaFoundationFrameSource() });
             var profiles = sp.GetRequiredService<ProfileManager>();
             return new IngestionPipelineWorker(repo, embeddingService, videoExtractor: videoExtractor, cacheDirectoryProvider: () => profiles.CacheDirectory,
-                videoSegmentSeconds: () => sp.GetRequiredService<LibrarySettingsStore>().Load().VideoSegmentSeconds);
+                videoSegmentSeconds: () => sp.GetRequiredService<LibrarySettingsStore>().Load().VideoSegmentSeconds,
+                exclusions: sp.GetRequiredService<IndexExclusionStore>());
         });
 
         services.AddSingleton<LibrarySettingsStore>(sp =>
         {
             var profiles = sp.GetRequiredService<ProfileManager>();
             return new LibrarySettingsStore(() => profiles.LibraryPath);
+        });
+        services.AddSingleton<IndexExclusionStore>(sp =>
+        {
+            var profiles = sp.GetRequiredService<ProfileManager>();
+            return new IndexExclusionStore(() => profiles.ExclusionsPath);
         });
         services.AddSingleton<SearchHistoryStore>(sp =>
         {

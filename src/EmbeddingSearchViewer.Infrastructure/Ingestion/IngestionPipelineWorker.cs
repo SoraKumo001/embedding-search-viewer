@@ -9,6 +9,7 @@ using System.Threading.Channels;
 using System.Threading.Tasks;
 using EmbeddingSearchViewer.Core.Interfaces;
 using EmbeddingSearchViewer.Core.Models;
+using EmbeddingSearchViewer.Infrastructure.Library;
 
 namespace EmbeddingSearchViewer.Infrastructure.Ingestion;
 
@@ -20,7 +21,8 @@ public record IngestionProgress(
     string? ErrorMessage = null,
     int SkippedFiles = 0,
     string? Summary = null,
-    string? Detail = null
+    string? Detail = null,
+    int ExcludedFiles = 0
 );
 
 public class IngestionPipelineWorker
@@ -79,6 +81,8 @@ public class IngestionPipelineWorker
     private int _totalFiles;
     private int _processedFiles;
     private int _skippedFiles;
+    private int _excludedFiles;
+    private readonly IndexExclusionStore? _exclusions;
     private bool _isRunning;
 
     // Guards the "is the queue finished?" decision against producers that start concurrently.
@@ -97,8 +101,10 @@ public class IngestionPipelineWorker
         IVideoSegmentExtractor? videoExtractor = null,
         Func<string>? cacheDirectoryProvider = null,
         int videoParallelism = DefaultVideoParallelism,
-        Func<int>? videoSegmentSeconds = null)
+        Func<int>? videoSegmentSeconds = null,
+        IndexExclusionStore? exclusions = null)
     {
+        _exclusions = exclusions;
         _videoSegmentSeconds = videoSegmentSeconds ?? (() => DefaultVideoSegmentSeconds);
         _repository = repository;
         _pdfIngestor = new PdfMediaIngestor(embeddingService, pdfExtractor);
@@ -130,6 +136,7 @@ public class IngestionPipelineWorker
         _totalFiles = 0;
         _processedFiles = 0;
         _skippedFiles = 0;
+        _excludedFiles = 0;
         VideoStats.Reset();
         _runWatch.Restart();
         _isRunning = true;
@@ -411,6 +418,15 @@ public class IngestionPipelineWorker
             var fi = new FileInfo(p);
             string fileHash = $"{fi.Length}_{fi.LastWriteTimeUtc.Ticks}";
 
+            // A file that failed on every retry in an earlier run (and has not changed since) is left out.
+            if (_exclusions != null && _exclusions.IsExcluded(p, fi.Length, fi.LastWriteTimeUtc.Ticks))
+            {
+                Interlocked.Increment(ref _processedFiles);
+                Interlocked.Increment(ref _excludedFiles);
+                NotifyProgress(Path.GetFileName(p));
+                continue;
+            }
+
             var existing = await _repository.GetAssetByPathAsync(p, cancellationToken);
             if (existing == null || existing.FileHash != fileHash)
             {
@@ -438,11 +454,13 @@ public class IngestionPipelineWorker
                     NotifyProgress(asset.FileName);
                 }
 
-                // Files that could not be read are left out (the next run tries them again); say which ones.
+                // Files that could not be read even after the retries are most likely damaged: leave them out of the
+                // index, remember them so that the next run does not try them again, and say which ones.
                 if (batch.FailedFiles.Count > 0)
                 {
                     Interlocked.Add(ref _processedFiles, batch.FailedFiles.Count);
-                    NotifyProgress(currentName, DescribeFailures(batch.FailedFiles));
+                    ExcludeFailedFiles(batch.FailedFiles);
+                    NotifyProgress(currentName, DescribeFailures(batch.FailedFiles, willExclude: _exclusions != null));
                 }
 
                 // Skipped files (blank pages) are done as far as progress is concerned, but are not stored.
@@ -468,13 +486,34 @@ public class IngestionPipelineWorker
     }
 
     /// <summary>Names the first few files that were left out (file names only, to keep the message short), then counts the rest.</summary>
-    internal static string DescribeFailures(IReadOnlyList<ImageFailure> failures)
+    internal static string DescribeFailures(IReadOnlyList<ImageFailure> failures, bool willExclude = false)
     {
         const int Shown = 3;
         var parts = failures.Take(Shown).Select(f => $"{Path.GetFileName(f.Path)} ({f.Error})");
         string text = $"読み込めずに飛ばしたファイル: {string.Join("、", parts)}";
         if (failures.Count > Shown) text += $" ほか {failures.Count - Shown} 件";
-        return text + "。もう一度インデックスを作成すると、再度、試します。";
+        return willExclude
+            ? text + "。壊れている可能性が高いので、次回から、インデックスの対象から外します（「ライブラリ管理」の「外したファイル」で、解除できます）。"
+            : text + "。もう一度インデックスを作成すると、再度、試します。";
+    }
+
+    private void ExcludeFailedFiles(IReadOnlyList<ImageFailure> failures)
+    {
+        if (_exclusions == null) return;
+
+        foreach (var failure in failures)
+        {
+            try
+            {
+                var info = new FileInfo(failure.Path);
+                if (!info.Exists) continue;
+                _exclusions.Add(new ExcludedFile(failure.Path, info.Length, info.LastWriteTimeUtc.Ticks, failure.Error, DateTime.UtcNow));
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                // Not being able to look at the file again is no reason to fail the run.
+            }
+        }
     }
 
     private async Task ProcessSingleNonImageFileAsync(string filePath, CancellationToken cancellationToken)
@@ -526,7 +565,8 @@ public class IngestionPipelineWorker
             ErrorMessage: error,
             SkippedFiles: _skippedFiles,
             Summary: summary,
-            Detail: BuildVideoDetail()
+            Detail: BuildVideoDetail(),
+            ExcludedFiles: _excludedFiles
         ));
     }
 }

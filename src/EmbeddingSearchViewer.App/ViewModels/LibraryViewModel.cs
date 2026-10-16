@@ -25,6 +25,7 @@ public partial class LibraryViewModel : ObservableObject
     private readonly FolderWatcher _watcher;
     private bool _loadingSettings;
     private readonly LibraryStatsRefresher _statsRefresher;
+    private readonly IndexExclusionStore _exclusions;
 
     [ObservableProperty]
     private string _sidecarStatus = "ONNX DirectML エンジン";
@@ -90,6 +91,41 @@ public partial class LibraryViewModel : ObservableObject
         if (!_loadingSettings && value >= 0) SaveSettings();
     }
 
+    // ---- files left out of the index because reading them failed repeatedly ----
+
+    public ObservableCollection<ExcludedFile> ExcludedFiles { get; } = new();
+
+    [ObservableProperty]
+    private bool _hasExcluded;
+
+    [ObservableProperty]
+    private string _excludedHeaderText = string.Empty;
+
+    /// <summary>Re-reads the list of excluded files (they are added by the indexing worker, on its own thread).</summary>
+    public void RefreshExcluded()
+    {
+        var items = _exclusions.List();
+        ExcludedFiles.Clear();
+        foreach (var item in items) ExcludedFiles.Add(item);
+        HasExcluded = items.Count > 0;
+        ExcludedHeaderText = items.Count > 0 ? $"インデックスから外したファイル ({items.Count} 件)" : string.Empty;
+    }
+
+    /// <summary>Lets one file be tried again by the next indexing run.</summary>
+    public void RemoveExclusion(ExcludedFile file)
+    {
+        if (_exclusions.Remove(file.Path)) CurrentStatusMessage = $"{file.FileName} を、次回のインデックスの対象に戻しました";
+        RefreshExcluded();
+    }
+
+    [RelayCommand]
+    public void ClearExclusions()
+    {
+        int count = _exclusions.Clear();
+        CurrentStatusMessage = count == 0 ? "外したファイルはありません" : $"外していた {count} 件を、次回のインデックスの対象に戻しました";
+        RefreshExcluded();
+    }
+
     /// <summary>One line per video being processed ("動画 a.mp4: 420 / 1,050 場面 (40%)"); empty otherwise.</summary>
     [ObservableProperty]
     private string _videoProgressText = string.Empty;
@@ -134,8 +170,10 @@ public partial class LibraryViewModel : ObservableObject
         IEmbeddingService embeddingService,
         IMediaRepository repository,
         LibrarySettingsStore store,
-        FolderWatcher watcher)
+        FolderWatcher watcher,
+        IndexExclusionStore exclusions)
     {
+        _exclusions = exclusions;
         _store = store;
         _watcher = watcher;
         _worker = worker;
@@ -170,6 +208,7 @@ public partial class LibraryViewModel : ObservableObject
             ? "ONNX DirectML エンジン準備完了"
             : UnavailableEmbeddingService.ReasonOf(_embeddingService) ?? "エンジン初期化中";
 
+        RefreshExcluded();
         await RefreshLibraryStatsAsync();
     }
 
@@ -281,6 +320,7 @@ public partial class LibraryViewModel : ObservableObject
                 CurrentStatusMessage = progress.ProcessedFiles >= progress.TotalFiles && progress.TotalFiles > 0
                     ? $"すべてのインデックス作成が完了しました ({progress.ProcessedFiles}/{progress.TotalFiles} 件)"
                       + (progress.SkippedFiles > 0 ? $"。うち {progress.SkippedFiles} 件は白紙(ほぼ一色)のため対象外にしました" : string.Empty)
+                      + (progress.ExcludedFiles > 0 ? $"。前回、読み込めなかった {progress.ExcludedFiles} 件は、対象から外しています" : string.Empty)
                       + (string.IsNullOrEmpty(progress.Summary) ? string.Empty : $"。{progress.Summary}")
                     : progress.CurrentFileName;
 
@@ -289,11 +329,13 @@ public partial class LibraryViewModel : ObservableObject
                     ProgressPercentage = 100.0;
                     _ = RefreshLibraryStatsAsync();
                 }
+                RefreshExcluded();
             }
 
             if (!string.IsNullOrEmpty(progress.ErrorMessage))
             {
                 ErrorMessage = progress.ErrorMessage;
+                RefreshExcluded(); // a failed file may have just been added to the list of excluded files
             }
         }
 

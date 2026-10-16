@@ -23,6 +23,14 @@ public sealed partial class LibraryPage : Page
         Loaded += async (_, _) => await ViewModel.InitializeAsync();
     }
 
+    private void RestoreExcluded_Click(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.Tag is EmbeddingSearchViewer.Infrastructure.Library.ExcludedFile file)
+        {
+            ViewModel.RemoveExclusion(file);
+        }
+    }
+
     private async void AddFolderButton_Click(object sender, RoutedEventArgs e)
     {
         var picker = new FolderPicker();

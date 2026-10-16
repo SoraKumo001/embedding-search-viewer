@@ -55,6 +55,7 @@ public sealed class ProfileManager
     public string DatabasePath => Path.Combine(CurrentDirectory, "media_index.db");
     public string LibraryPath => Path.Combine(CurrentDirectory, "library.json");
     public string HistoryPath => Path.Combine(CurrentDirectory, "search_history.json");
+    public string ExclusionsPath => Path.Combine(CurrentDirectory, "excluded_files.json");
     public string CacheDirectory => Path.Combine(CurrentDirectory, "cache");
 
     private string DirectoryOf(string id) => Path.Combine(_root, "profiles", id);

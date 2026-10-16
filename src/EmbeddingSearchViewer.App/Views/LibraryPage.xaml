@@ -4,6 +4,7 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:lib="using:EmbeddingSearchViewer.Infrastructure.Library"
     mc:Ignorable="d">
 
     <ScrollViewer Padding="24">
@@ -200,6 +201,39 @@
                                Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                 </StackPanel>
             </Grid>
+
+            <!-- Files left out of the index because reading them failed repeatedly -->
+            <Expander Header="{x:Bind ViewModel.ExcludedHeaderText, Mode=OneWay}"
+                      HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"
+                      Visibility="{x:Bind ViewModel.HasExcluded, Mode=OneWay}">
+                <StackPanel Spacing="8">
+                    <TextBlock Text="読み込みを、何度か試しても失敗したファイルは、壊れている可能性が高いので、次回から、インデックスの対象から外しています。ファイルを直したり、置き換えたりして、サイズや更新日時が変わると、自動で、対象に戻ります。"
+                               Style="{ThemeResource CaptionTextBlockStyle}" TextWrapping="Wrap"
+                               Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                    <ListView ItemsSource="{x:Bind ViewModel.ExcludedFiles, Mode=OneWay}" MaxHeight="220" SelectionMode="None"
+                              AutomationProperties.Name="Excluded Files">
+                        <ListView.ItemTemplate>
+                            <DataTemplate x:DataType="lib:ExcludedFile">
+                                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8" Padding="0,4">
+                                    <StackPanel Spacing="2">
+                                        <TextBlock Text="{x:Bind Path}" TextTrimming="CharacterEllipsis"
+                                                   ToolTipService.ToolTip="{x:Bind Path}" />
+                                        <TextBlock Text="{x:Bind Error}" Style="{ThemeResource CaptionTextBlockStyle}" TextTrimming="CharacterEllipsis"
+                                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                        <TextBlock Text="{x:Bind FailedAtText}" Style="{ThemeResource CaptionTextBlockStyle}"
+                                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                    </StackPanel>
+                                    <Button Grid.Column="1" Content="対象に戻す" Tag="{x:Bind}" Click="RestoreExcluded_Click"
+                                            ToolTipService.ToolTip="次回のインデックス作成で、もう一度、試します"
+                                            VerticalAlignment="Center" />
+                                </Grid>
+                            </DataTemplate>
+                        </ListView.ItemTemplate>
+                    </ListView>
+                    <Button Content="すべて対象に戻す" Command="{x:Bind ViewModel.ClearExclusionsCommand}"
+                            AutomationProperties.Name="Restore All Excluded Files" />
+                </StackPanel>
+            </Expander>
 
             <!-- Index / model mismatch -->
             <InfoBar IsOpen="{x:Bind ViewModel.IndexModelWarning, Mode=OneWay, Converter={StaticResource StringNotEmptyConverter}}"
