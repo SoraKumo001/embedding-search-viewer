@@ -1,0 +1,44 @@
+<UserControl
+    x:Class="EmbeddingSearchViewer_App.Controls.PdfPreviewControl"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="d">
+
+    <Grid RowDefinitions="Auto,*,Auto" Background="{ThemeResource LayerFillColorDefaultBrush}" CornerRadius="8" Padding="12">
+        <!-- Top Toolbar -->
+        <Grid Grid.Row="0" Margin="0,0,0,8" ColumnDefinitions="Auto,*,Auto">
+            <StackPanel Orientation="Horizontal" Spacing="8">
+                <Button x:Name="PrevPageButton" Click="PrevPageButton_Click" ToolTipService.ToolTip="前のページ" AutomationProperties.Name="Previous Page">
+                    <FontIcon Glyph="&#xE76B;" FontSize="14" />
+                </Button>
+                <TextBlock x:Name="PageInfoTextBlock" Text="ページ 1 / 1" VerticalAlignment="Center" FontWeight="SemiBold" />
+                <Button x:Name="NextPageButton" Click="NextPageButton_Click" ToolTipService.ToolTip="次のページ" AutomationProperties.Name="Next Page">
+                    <FontIcon Glyph="&#xE76C;" FontSize="14" />
+                </Button>
+            </StackPanel>
+
+            <Button Grid.Column="2" x:Name="OpenPdfExternalButton" Click="OpenPdfExternalButton_Click" ToolTipService.ToolTip="既定のPDFアプリで開く" AutomationProperties.Name="Open in External App">
+                <StackPanel Orientation="Horizontal" Spacing="4">
+                    <FontIcon Glyph="&#xE8A7;" FontSize="14" />
+                    <TextBlock Text="外部アプリで開く" />
+                </StackPanel>
+            </Button>
+        </Grid>
+
+        <!-- Main Page Viewer (Fit to Viewport, Aspect Ratio Preserved, No Scroll) -->
+        <Grid Grid.Row="1" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" CornerRadius="6"
+              HorizontalAlignment="Stretch" VerticalAlignment="Stretch">
+            <Image x:Name="PageImageControl" Stretch="Uniform" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" />
+            <ProgressRing x:Name="LoadingRing" IsActive="False" Width="48" Height="48" HorizontalAlignment="Center" VerticalAlignment="Center" />
+        </Grid>
+
+        <!-- Bottom Text Snippet Expander -->
+        <Expander Grid.Row="2" Margin="0,8,0,0" Header="ページ抽出テキスト" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+            <ScrollViewer MaxHeight="120">
+                <TextBox x:Name="SnippetTextBox" IsReadOnly="True" TextWrapping="Wrap" BorderThickness="0" Background="Transparent" />
+            </ScrollViewer>
+        </Expander>
+    </Grid>
+</UserControl>

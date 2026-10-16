@@ -1,0 +1,150 @@
+name: Release
+
+# Edit version.txt and push to the default branch: if that version has not been released yet, the workflow tags the
+# commit (v<version>), builds the app and registers a GitHub release with the packaged app.
+# A version that already has a tag or a release is skipped, so unrelated edits to version.txt are harmless.
+# To try the pipeline without publishing anything, run it manually (Actions > Release > Run workflow) with "dry_run".
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - version.txt
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Build, test and package only (no tag, no release); the zip is kept as a workflow artifact
+        type: boolean
+        default: false
+
+permissions:
+  contents: write # create the tag and the release
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    env:
+      GH_TOKEN: ${{ github.token }}
+      DOTNET_NOLOGO: true
+      DOTNET_CLI_TELEMETRY_OPTOUT: true
+
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Read and validate the version
+        id: version
+        shell: pwsh
+        run: |
+          $version = ((Get-Content -Raw version.txt) ?? '').Trim() # an empty file reads as $null
+          # 1.2.3 or a pre-release such as 1.2.3-beta.1
+          if ($version -notmatch '^\d+\.\d+\.\d+(-[0-9A-Za-z]+(\.[0-9A-Za-z]+)*)?$') {
+            throw "version.txt must contain a version like 1.2.3 or 1.2.3-beta.1, but contains '$version'."
+          }
+          $tag = "v$version"
+          "version=$version" >> $env:GITHUB_OUTPUT
+          "tag=$tag" >> $env:GITHUB_OUTPUT
+          "prerelease=$($version.Contains('-').ToString().ToLower())" >> $env:GITHUB_OUTPUT
+          Write-Host "Version $version, tag $tag"
+
+      - name: Skip if this version is already released
+        id: exists
+        shell: pwsh
+        run: |
+          $tag = '${{ steps.version.outputs.tag }}'
+          $skip = 'false'
+          gh release view $tag *> $null
+          if ($LASTEXITCODE -eq 0) { $skip = 'true'; Write-Host "::notice::Release $tag already exists. Nothing to do." }
+          elseif (git ls-remote --exit-code --tags origin "refs/tags/$tag" 2>$null) {
+            $skip = 'true'
+            Write-Host "::warning::Tag $tag already exists without a release. Nothing to do; bump version.txt to publish a new version."
+          }
+          "skip=$skip" >> $env:GITHUB_OUTPUT
+          $global:LASTEXITCODE = 0
+
+      - name: Set up .NET
+        if: steps.exists.outputs.skip != 'true'
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 11.0.x
+          dotnet-quality: preview # the project targets .NET 11; drop this line once it is generally available
+
+      - name: Cache NuGet packages
+        if: steps.exists.outputs.skip != 'true'
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj', 'Directory.Build.props') }}
+          restore-keys: nuget-${{ runner.os }}-
+
+      - name: Build
+        if: steps.exists.outputs.skip != 'true'
+        run: dotnet build EmbeddingSearchViewer.slnx -c Release
+
+      - name: Test
+        if: steps.exists.outputs.skip != 'true'
+        # Tests that need the AI model skip themselves when it is not installed. The ones that use the Windows PDF
+        # renderer and Media Foundation are excluded: server images may lack those components.
+        run: dotnet test tests/EmbeddingSearchViewer.Tests/EmbeddingSearchViewer.Tests.csproj -c Release --no-build --filter "Requires!=WindowsMedia"
+
+      - name: Publish
+        if: steps.exists.outputs.skip != 'true'
+        run: >
+          dotnet publish src/EmbeddingSearchViewer.App/EmbeddingSearchViewer.App.csproj
+          -c Release -p:Platform=x64 -r win-x64 --self-contained true -o artifacts/publish
+
+      - name: Package
+        if: steps.exists.outputs.skip != 'true'
+        id: package
+        shell: pwsh
+        run: |
+          $name = 'EmbeddingSearchViewer-${{ steps.version.outputs.version }}-win-x64'
+          $folder = "artifacts/$name"
+          Move-Item artifacts/publish $folder
+          Copy-Item README.md $folder
+          # license notices of everything that is shipped (FFmpeg is LGPL: its license text must travel with the DLLs)
+          ./tools/New-ThirdPartyNotices.ps1 -OutputDirectory $folder
+          Compress-Archive -Path $folder -DestinationPath "artifacts/$name.zip" -CompressionLevel Optimal
+          $hash = (Get-FileHash "artifacts/$name.zip" -Algorithm SHA256).Hash.ToLower()
+          "$hash  $name.zip" | Set-Content -Encoding ascii artifacts/SHA256SUMS.txt
+          "zip=artifacts/$name.zip" >> $env:GITHUB_OUTPUT
+          Write-Host ("{0}  ({1:N0} MB)" -f "$name.zip", ((Get-Item "artifacts/$name.zip").Length / 1MB))
+
+      - name: Keep the package (dry run only)
+        if: steps.exists.outputs.skip != 'true' && inputs.dry_run == true
+        uses: actions/upload-artifact@v4
+        with:
+          name: EmbeddingSearchViewer-${{ steps.version.outputs.version }}-win-x64
+          path: |
+            ${{ steps.package.outputs.zip }}
+            artifacts/SHA256SUMS.txt
+          retention-days: 7
+
+      - name: Create the tag and the release
+        if: steps.exists.outputs.skip != 'true' && inputs.dry_run != true
+        shell: pwsh
+        run: |
+          $tag = '${{ steps.version.outputs.tag }}'
+          @"
+          Windows (x64) 用のアプリです。zip を展開して ``EmbeddingSearchViewer.App.exe`` を起動してください。
+
+          - 初回起動時に、AI モデル（約 1.76 GB）をアプリ内でダウンロードします。
+          - ``SHA256SUMS.txt`` で、zip のチェックサムを確認できます。
+          - 動作環境と使い方は、同梱の ``README.md`` を参照してください。
+          - サードパーティのライセンスは、同梱の ``THIRD-PARTY-NOTICES.md`` と ``licenses/`` にまとめています。
+          "@ | Set-Content -Encoding utf8 artifacts/release-notes.md
+
+          $ghArgs = @(
+            $tag, '${{ steps.package.outputs.zip }}', 'artifacts/SHA256SUMS.txt',
+            '--target', $env:GITHUB_SHA,          # creates the tag on this commit
+            '--title', $tag,
+            '--notes-file', 'artifacts/release-notes.md',
+            '--generate-notes'                    # appends the changes since the previous release
+          )
+          if ('${{ steps.version.outputs.prerelease }}' -eq 'true') { $ghArgs += '--prerelease' } else { $ghArgs += '--latest' }
+          gh release create @ghArgs

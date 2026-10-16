@@ -1,0 +1,182 @@
+using System;
+using System.Diagnostics;
+using System.IO;
+using System.Threading.Tasks;
+using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Media.Imaging;
+using Windows.Storage;
+using EmbeddingSearchViewer.Core.Models;
+
+namespace EmbeddingSearchViewer_App.Controls;
+
+public sealed partial class ImagePreviewControl : UserControl
+{
+    private SearchResultItem? _currentItem;
+    private int _loadVersion;
+
+    public ImagePreviewControl()
+    {
+        InitializeComponent();
+    }
+
+    public async void LoadItem(SearchResultItem item)
+    {
+        await LoadItemAsync(item);
+    }
+
+    public async Task LoadItemAsync(SearchResultItem item)
+    {
+        _currentItem = item;
+        int version = ++_loadVersion;
+        ResetZoom();
+        string? targetPath = item.Chunk.PreviewImagePath ?? item.Asset.FilePath;
+
+        if (string.IsNullOrEmpty(targetPath) || !File.Exists(targetPath))
+        {
+            ImageTitleTextBlock.Text = item.Asset.FileName ?? "画像ファイルが見つかりません";
+            ImageViewerControl.Source = null;
+            MetadataTextBlock.Text = "ファイルが見つかりません";
+            return;
+        }
+
+        ImageTitleTextBlock.Text = item.Asset.FileName;
+
+        try
+        {
+            LoadingRing.IsActive = true;
+
+            // Load file via Windows Storage API for rock-solid WinUI 3 rendering
+            var file = await StorageFile.GetFileFromPathAsync(targetPath);
+            using var stream = await file.OpenAsync(FileAccessMode.Read);
+            var bmp = new BitmapImage();
+            await bmp.SetSourceAsync(stream);
+            if (version != _loadVersion) return; // a newer selection superseded this load
+            ImageViewerControl.Source = bmp;
+
+            var fi = new FileInfo(targetPath);
+            MetadataTextBlock.Text = $"{targetPath} ({fi.Length / 1024:N0} KB) - 最終更新: {fi.LastWriteTime:yyyy/MM/dd HH:mm}";
+        }
+        catch (Exception ex) when (version == _loadVersion)
+        {
+            System.Diagnostics.Debug.WriteLine($"Failed to load image via StorageFile: {ex.Message}");
+            // Fallback via memory stream copy
+            try
+            {
+                using var fs = new FileStream(targetPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+                using var ms = new MemoryStream();
+                await fs.CopyToAsync(ms);
+                ms.Position = 0;
+                var ras = ms.AsRandomAccessStream();
+                var bmp = new BitmapImage();
+                await bmp.SetSourceAsync(ras);
+                if (version != _loadVersion) return;
+                ImageViewerControl.Source = bmp;
+
+                var fi = new FileInfo(targetPath);
+                MetadataTextBlock.Text = $"{targetPath} ({fi.Length / 1024:N0} KB) - 最終更新: {fi.LastWriteTime:yyyy/MM/dd HH:mm}";
+            }
+            catch (Exception exFallback)
+            {
+                System.Diagnostics.Debug.WriteLine($"Fallback load failed: {exFallback.Message}");
+                ImageViewerControl.Source = null;
+                MetadataTextBlock.Text = $"読み込みエラー: {targetPath}";
+            }
+        }
+        finally
+        {
+            if (version == _loadVersion) LoadingRing.IsActive = false;
+        }
+    }
+
+    private const float WheelZoomStep = 1.2f;
+    private const float DoubleTapZoom = 2.5f;
+    private bool _isPanning;
+    private Windows.Foundation.Point _lastPanPoint;
+
+    private void ImageScroller_SizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        ImageHost.Width = ImageScroller.ActualWidth;
+        ImageHost.Height = ImageScroller.ActualHeight;
+    }
+
+    private void ResetZoom() => ImageScroller.ChangeView(0, 0, 1f, true);
+
+    private void ImageHost_PointerWheelChanged(object sender, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs e)
+    {
+        var point = e.GetCurrentPoint(ImageScroller);
+        int delta = point.Properties.MouseWheelDelta;
+        if (delta == 0) return;
+
+        float oldZoom = ImageScroller.ZoomFactor;
+        float newZoom = Math.Clamp(delta > 0 ? oldZoom * WheelZoomStep : oldZoom / WheelZoomStep,
+            ImageScroller.MinZoomFactor, ImageScroller.MaxZoomFactor);
+        double ratio = newZoom / oldZoom;
+
+        // Keep the point under the cursor fixed while zooming
+        double offsetX = (ImageScroller.HorizontalOffset + point.Position.X) * ratio - point.Position.X;
+        double offsetY = (ImageScroller.VerticalOffset + point.Position.Y) * ratio - point.Position.Y;
+        ImageScroller.ChangeView(offsetX, offsetY, newZoom, true);
+        e.Handled = true;
+    }
+
+    private void ImageHost_PointerPressed(object sender, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs e)
+    {
+        if (ImageScroller.ZoomFactor <= 1.001f) return;
+        var point = e.GetCurrentPoint(ImageScroller);
+        if (!point.Properties.IsLeftButtonPressed) return;
+        _isPanning = true;
+        _lastPanPoint = point.Position;
+        ImageHost.CapturePointer(e.Pointer);
+    }
+
+    private void ImageHost_PointerMoved(object sender, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs e)
+    {
+        if (!_isPanning) return;
+        var pos = e.GetCurrentPoint(ImageScroller).Position;
+        ImageScroller.ChangeView(
+            ImageScroller.HorizontalOffset - (pos.X - _lastPanPoint.X),
+            ImageScroller.VerticalOffset - (pos.Y - _lastPanPoint.Y),
+            null, true);
+        _lastPanPoint = pos;
+    }
+
+    private void ImageHost_PointerReleased(object sender, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs e)
+    {
+        if (!_isPanning) return;
+        _isPanning = false;
+        ImageHost.ReleasePointerCaptures();
+    }
+
+    private void ImageHost_DoubleTapped(object sender, Microsoft.UI.Xaml.Input.DoubleTappedRoutedEventArgs e)
+    {
+        if (ImageScroller.ZoomFactor > 1.001f)
+        {
+            ResetZoom();
+            return;
+        }
+
+        var pos = e.GetPosition(ImageScroller);
+        ImageScroller.ChangeView(
+            pos.X * DoubleTapZoom - pos.X,
+            pos.Y * DoubleTapZoom - pos.Y,
+            DoubleTapZoom, true);
+    }
+
+    private void OpenImageExternalButton_Click(object sender, RoutedEventArgs e)
+    {
+        string? targetPath = _currentItem?.Chunk.PreviewImagePath ?? _currentItem?.Asset.FilePath;
+        if (!string.IsNullOrEmpty(targetPath) && File.Exists(targetPath))
+        {
+            try
+            {
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = targetPath,
+                    UseShellExecute = true
+                });
+            }
+            catch { }
+        }
+    }
+}

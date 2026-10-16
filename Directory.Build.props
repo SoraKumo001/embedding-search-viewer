@@ -1,0 +1,13 @@
+<Project>
+
+  <PropertyGroup>
+    <!--
+      The version lives in version.txt only. It is used for the assembly / file / product version of every project,
+      and the release workflow reads the same file to create the tag (v<version>) and the GitHub release.
+      Plain versions (1.2.3) and pre-releases (1.2.3-beta.1) are accepted.
+    -->
+    <Version>$([System.IO.File]::ReadAllText('$(MSBuildThisFileDirectory)version.txt').Trim())</Version>
+    <ContinuousIntegrationBuild Condition="'$(GITHUB_ACTIONS)' == 'true'">true</ContinuousIntegrationBuild>
+  </PropertyGroup>
+
+</Project>

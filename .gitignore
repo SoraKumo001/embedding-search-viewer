@@ -1,0 +1,63 @@
+# ---- .NET / MSBuild output ----
+[Bb]in/
+[Oo]bj/
+[Pp]ublish/
+artifacts/
+*.nupkg
+
+# ---- Visual Studio / Rider ----
+.vs/
+.idea/
+*.user
+*.suo
+*.userprefs
+*.DotSettings.user
+
+# ---- Tests and profiling ----
+TestResults/
+*.trx
+coverage*.xml
+coverage/
+# ONNX Runtime profiler output (written to the working directory)
+onnxruntime_profile_*.json
+
+# ---- WinUI packaging ----
+AppPackages/
+BundleArtifacts/
+*.msix
+*.msixbundle
+*.appx
+*.appxbundle
+*.pfx
+
+# ---- Logs and temporary files ----
+*.log
+*.tmp
+# unfinished model downloads (resumable, see ModelDownloader)
+*.part
+
+# ---- Model files ----
+# Large ONNX weights (about 2 GB). The app downloads them on first start into
+# %LOCALAPPDATA%\EmbeddingSearchViewer\models; a copy in this folder is only for local development.
+/models/
+
+# ---- Local data ----
+# The index database and its SQLite side files live in %LOCALAPPDATA%, but may appear when running with a custom path.
+*.db
+*.db-shm
+*.db-wal
+
+# ---- Python sidecar (legacy) ----
+sidecar/.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# ---- Tool state ----
+.omc/
+.claude/settings.local.json
+
+# ---- OS files ----
+.DS_Store
+Thumbs.db
+desktop.ini
