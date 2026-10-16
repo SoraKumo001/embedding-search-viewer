@@ -26,7 +26,24 @@ public class IngestionPipelineWorker
     private readonly PdfMediaIngestor _pdfIngestor;
     private readonly ImageMediaIngestor _imageIngestor;
     private readonly VideoMediaIngestor _videoIngestor;
-    private readonly string _cacheDirectory;
+    private readonly Func<string> _cacheDirectoryProvider;
+
+    /// <summary>The cache folder of the current profile; created on demand.</summary>
+    private string _cacheDirectory
+    {
+        get
+        {
+            string dir = _cacheDirectoryProvider();
+            Directory.CreateDirectory(dir);
+            return dir;
+        }
+    }
+
+    /// <summary>True while the queue is being processed; a profile must not be switched meanwhile.</summary>
+    public bool IsRunning
+    {
+        get { lock (_stateLock) return _isRunning; }
+    }
 
     private readonly Channel<string> _channel;
     private CancellationTokenSource? _workerCts;
@@ -52,17 +69,19 @@ public class IngestionPipelineWorker
         IEmbeddingService embeddingService,
         string? cacheDirectory = null,
         IPdfPageExtractor? pdfExtractor = null,
-        IVideoSegmentExtractor? videoExtractor = null)
+        IVideoSegmentExtractor? videoExtractor = null,
+        Func<string>? cacheDirectoryProvider = null)
     {
         _repository = repository;
         _pdfIngestor = new PdfMediaIngestor(embeddingService, pdfExtractor);
         _imageIngestor = new ImageMediaIngestor(embeddingService);
         _videoIngestor = new VideoMediaIngestor(embeddingService, videoExtractor);
-        _cacheDirectory = cacheDirectory ?? Path.Combine(
+        string fixedCacheDirectory = cacheDirectory ?? Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "EmbeddingSearchViewer",
             "cache"
         );
+        _cacheDirectoryProvider = cacheDirectoryProvider ?? (() => fixedCacheDirectory);
         Directory.CreateDirectory(_cacheDirectory);
         _channel = Channel.CreateUnbounded<string>(new UnboundedChannelOptions { SingleReader = true });
     }

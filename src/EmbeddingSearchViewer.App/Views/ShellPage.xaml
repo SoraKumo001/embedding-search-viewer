@@ -37,7 +37,36 @@
 
 
             <!-- Content Area -->
-            <Frame x:Name="ContentFrame" />
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+
+                <!-- Profile switcher: each profile has its own folders, index, history and cache -->
+                <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="8" Margin="16,8,16,0">
+                    <FontIcon Glyph="&#xE77B;" FontSize="16" VerticalAlignment="Center" />
+                    <TextBlock Text="プロファイル" VerticalAlignment="Center" />
+                    <ComboBox x:Name="ProfileCombo"
+                              MinWidth="180"
+                              DisplayMemberPath="Name"
+                              SelectionChanged="ProfileCombo_SelectionChanged"
+                              AutomationProperties.Name="Profile" />
+                    <Button x:Name="ProfileMenuButton" Content="&#xE712;" FontFamily="Segoe MDL2 Assets"
+                            ToolTipService.ToolTip="プロファイルの追加・名前の変更・削除"
+                            AutomationProperties.Name="Profile actions">
+                        <Button.Flyout>
+                            <MenuFlyout>
+                                <MenuFlyoutItem Text="新しいプロファイル..." Click="NewProfile_Click" />
+                                <MenuFlyoutItem Text="名前を変更..." Click="RenameProfile_Click" />
+                                <MenuFlyoutItem Text="削除..." Click="DeleteProfile_Click" />
+                            </MenuFlyout>
+                        </Button.Flyout>
+                    </Button>
+                </StackPanel>
+
+                <Frame x:Name="ContentFrame" Grid.Row="1" />
+            </Grid>
         </NavigationView>
     </Grid>
 </Page>

@@ -34,9 +34,18 @@ public sealed class FolderWatcher : IDisposable
         _timer = new Timer(_ => _ = FlushAsync(), null, Timeout.Infinite, Timeout.Infinite);
     }
 
-    /// <summary>Re-reads the saved settings and (re)creates the watchers accordingly.</summary>
-    public void Refresh()
+    /// <summary>
+    /// Re-reads the saved settings and (re)creates the watchers accordingly.
+    /// <paramref name="discardPending"/> drops changes that were noticed but not yet queued (used when the profile changes).
+    /// </summary>
+    public void Refresh(bool discardPending = false)
     {
+        if (discardPending)
+        {
+            _timer.Change(Timeout.Infinite, Timeout.Infinite);
+            _changed.Clear();
+        }
+
         lock (_lock)
         {
             foreach (var w in _watchers) w.Dispose();

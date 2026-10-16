@@ -11,15 +11,24 @@ public class SearchHistoryStore
 {
     public const int MaxEntries = 20;
 
-    private readonly string _path;
+    private readonly Func<string> _pathProvider;
     private readonly object _lock = new();
+
+    private string _path => _pathProvider();
 
     public SearchHistoryStore(string? path = null)
     {
-        _path = path ?? Path.Combine(
+        string fixedPath = path ?? Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "EmbeddingSearchViewer",
             "search_history.json");
+        _pathProvider = () => fixedPath;
+    }
+
+    /// <summary>Follows the current profile: every call resolves the path again.</summary>
+    public SearchHistoryStore(Func<string> pathProvider)
+    {
+        _pathProvider = pathProvider;
     }
 
     public IReadOnlyList<string> Load()
@@ -28,9 +37,10 @@ public class SearchHistoryStore
         {
             try
             {
-                if (File.Exists(_path))
+                string path = _path;
+                if (File.Exists(path))
                 {
-                    return JsonSerializer.Deserialize<List<string>>(File.ReadAllText(_path)) ?? new List<string>();
+                    return JsonSerializer.Deserialize<List<string>>(File.ReadAllText(path)) ?? new List<string>();
                 }
             }
             catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException)
@@ -70,9 +80,10 @@ public class SearchHistoryStore
     {
         try
         {
-            var dir = Path.GetDirectoryName(_path);
+            string path = _path;
+            var dir = Path.GetDirectoryName(path);
             if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
-            File.WriteAllText(_path, JsonSerializer.Serialize(list));
+            File.WriteAllText(path, JsonSerializer.Serialize(list));
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {

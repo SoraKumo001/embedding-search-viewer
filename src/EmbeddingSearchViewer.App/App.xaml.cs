@@ -9,6 +9,7 @@ using EmbeddingSearchViewer.Infrastructure.Data;
 using EmbeddingSearchViewer.Infrastructure.Ingestion;
 using EmbeddingSearchViewer.Infrastructure.Library;
 using EmbeddingSearchViewer.Infrastructure.Onnx;
+using EmbeddingSearchViewer.Infrastructure.Profiles;
 using EmbeddingSearchViewer_App.Services;
 using EmbeddingSearchViewer_App.ViewModels;
 
@@ -28,10 +29,11 @@ public partial class App : Application
 
         // 1. Core Services & Infrastructure
         services.AddSingleton<INavigationService, NavigationService>();
+        services.AddSingleton<ProfileManager>(_ => new ProfileManager());
         
         services.AddSingleton<IMediaRepository>(sp =>
         {
-            var repo = new SqliteMediaRepository();
+            var repo = new ProfileScopedRepository(sp.GetRequiredService<ProfileManager>());
             repo.InitializeAsync().GetAwaiter().GetResult();
             return repo;
         });
@@ -50,15 +52,25 @@ public partial class App : Application
             var embeddingService = sp.GetRequiredService<IEmbeddingService>();
             // Videos: FFmpeg first (measured faster and covers more formats), the Windows media stack as the fallback.
             var videoExtractor = new VideoSegmentExtractor(new IVideoFrameSource[] { new FFmpegFrameSource(), new MediaFoundationFrameSource() });
-            return new IngestionPipelineWorker(repo, embeddingService, videoExtractor: videoExtractor);
+            var profiles = sp.GetRequiredService<ProfileManager>();
+            return new IngestionPipelineWorker(repo, embeddingService, videoExtractor: videoExtractor, cacheDirectoryProvider: () => profiles.CacheDirectory);
         });
 
-        services.AddSingleton<LibrarySettingsStore>();
-        services.AddSingleton<SearchHistoryStore>();
+        services.AddSingleton<LibrarySettingsStore>(sp =>
+        {
+            var profiles = sp.GetRequiredService<ProfileManager>();
+            return new LibrarySettingsStore(() => profiles.LibraryPath);
+        });
+        services.AddSingleton<SearchHistoryStore>(sp =>
+        {
+            var profiles = sp.GetRequiredService<ProfileManager>();
+            return new SearchHistoryStore(() => profiles.HistoryPath);
+        });
         services.AddSingleton<FolderWatcher>();
 
         // 2. ViewModels
         services.AddSingleton<SearchViewModel>();
+        services.AddSingleton<ProfileViewModel>();
         services.AddSingleton<LibraryViewModel>();
         services.AddSingleton<SettingsViewModel>();
         services.AddSingleton<ModelSetupViewModel>();

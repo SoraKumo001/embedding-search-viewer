@@ -124,6 +124,20 @@ public partial class SearchViewModel : ObservableObject
         _historyStore = historyStore;
     }
 
+    /// <summary>Clears the query and the results of the previous profile; they do not belong to the new index.</summary>
+    public void ResetForProfileChange()
+    {
+        QueryText = string.Empty;
+        QueryImagePath = null;
+        _rawResults = new List<SearchResultItem>();
+        SearchResults.Clear();
+        SelectedResult = null;
+        ErrorMessage = null;
+        ResultsHeaderText = "検索結果 (0 件)";
+        EmptyStateText = InitialEmptyText;
+        OnPropertyChanged(nameof(History));
+    }
+
     [RelayCommand]
     public async Task SearchAsync(CancellationToken cancellationToken)
     {

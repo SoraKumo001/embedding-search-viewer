@@ -147,6 +147,20 @@ public partial class LibraryViewModel : ObservableObject
         await RefreshLibraryStatsAsync();
     }
 
+    /// <summary>Drops everything shown for the previous profile and loads the folders and statistics of the new one.</summary>
+    public async Task ReloadForProfileChangeAsync()
+    {
+        TargetFolders.Clear();
+        HasFolders = false;
+        TotalFiles = 0;
+        ProcessedFiles = 0;
+        ProgressPercentage = 0;
+        ErrorMessage = null;
+        IndexModelWarning = string.Empty;
+        CurrentStatusMessage = "準備完了";
+        await InitializeAsync();
+    }
+
     [RelayCommand]
     public async Task RefreshLibraryStatsAsync()
     {

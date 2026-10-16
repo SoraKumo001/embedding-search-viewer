@@ -17,15 +17,24 @@ public class LibrarySettings
 /// <summary>Persists the indexed-folder list and auto-index flag as JSON under LocalAppData.</summary>
 public class LibrarySettingsStore
 {
-    private readonly string _path;
+    private readonly Func<string> _pathProvider;
     private readonly object _lock = new();
+
+    private string _path => _pathProvider();
 
     public LibrarySettingsStore(string? path = null)
     {
-        _path = path ?? Path.Combine(
+        string fixedPath = path ?? Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "EmbeddingSearchViewer",
             "library.json");
+        _pathProvider = () => fixedPath;
+    }
+
+    /// <summary>Follows the current profile: every call resolves the path again.</summary>
+    public LibrarySettingsStore(Func<string> pathProvider)
+    {
+        _pathProvider = pathProvider;
     }
 
     public bool Exists => File.Exists(_path);
@@ -36,9 +45,10 @@ public class LibrarySettingsStore
         {
             try
             {
-                if (File.Exists(_path))
+                string path = _path;
+                if (File.Exists(path))
                 {
-                    return JsonSerializer.Deserialize<LibrarySettings>(File.ReadAllText(_path)) ?? new LibrarySettings();
+                    return JsonSerializer.Deserialize<LibrarySettings>(File.ReadAllText(path)) ?? new LibrarySettings();
                 }
             }
             catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException)
@@ -53,12 +63,13 @@ public class LibrarySettingsStore
     {
         lock (_lock)
         {
-            var dir = Path.GetDirectoryName(_path);
+            string path = _path;
+            var dir = Path.GetDirectoryName(path);
             if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
 
-            var tmp = _path + ".tmp";
+            var tmp = path + ".tmp";
             File.WriteAllText(tmp, JsonSerializer.Serialize(settings, new JsonSerializerOptions { WriteIndented = true }));
-            File.Move(tmp, _path, overwrite: true);
+            File.Move(tmp, path, overwrite: true);
         }
     }
 }
