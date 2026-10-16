@@ -393,6 +393,13 @@ public class IngestionPipelineWorker
                     NotifyProgress(asset.FileName);
                 }
 
+                // Files that could not be read are left out (the next run tries them again); say which ones.
+                if (batch.FailedFiles.Count > 0)
+                {
+                    Interlocked.Add(ref _processedFiles, batch.FailedFiles.Count);
+                    NotifyProgress(currentName, DescribeFailures(batch.FailedFiles));
+                }
+
                 // Skipped files (blank pages) are done as far as progress is concerned, but are not stored.
                 if (batch.SkippedWithoutEmbedding.Count > 0)
                 {
@@ -413,6 +420,16 @@ public class IngestionPipelineWorker
         {
             NotifyProgress(Path.GetFileName(filePaths.Last()));
         }
+    }
+
+    /// <summary>Names the first few files that were left out (file names only, to keep the message short), then counts the rest.</summary>
+    internal static string DescribeFailures(IReadOnlyList<ImageFailure> failures)
+    {
+        const int Shown = 3;
+        var parts = failures.Take(Shown).Select(f => $"{Path.GetFileName(f.Path)} ({f.Error})");
+        string text = $"読み込めずに飛ばしたファイル: {string.Join("、", parts)}";
+        if (failures.Count > Shown) text += $" ほか {failures.Count - Shown} 件";
+        return text + "。もう一度インデックスを作成すると、再度、試します。";
     }
 
     private async Task ProcessSingleNonImageFileAsync(string filePath, CancellationToken cancellationToken)
