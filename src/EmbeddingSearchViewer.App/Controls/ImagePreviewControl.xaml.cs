@@ -55,7 +55,7 @@ public sealed partial class ImagePreviewControl : UserControl
             ImageViewerControl.Source = bmp;
 
             var fi = new FileInfo(targetPath);
-            MetadataTextBlock.Text = $"{targetPath} ({fi.Length / 1024:N0} KB) - 最終更新: {fi.LastWriteTime:yyyy/MM/dd HH:mm}";
+            MetadataTextBlock.Text = Describe(targetPath, bmp, fi);
         }
         catch (Exception ex) when (version == _loadVersion)
         {
@@ -74,7 +74,7 @@ public sealed partial class ImagePreviewControl : UserControl
                 ImageViewerControl.Source = bmp;
 
                 var fi = new FileInfo(targetPath);
-                MetadataTextBlock.Text = $"{targetPath} ({fi.Length / 1024:N0} KB) - 最終更新: {fi.LastWriteTime:yyyy/MM/dd HH:mm}";
+                MetadataTextBlock.Text = Describe(targetPath, bmp, fi);
             }
             catch (Exception exFallback)
             {
@@ -87,6 +87,46 @@ public sealed partial class ImagePreviewControl : UserControl
         {
             if (version == _loadVersion) LoadingRing.IsActive = false;
         }
+    }
+
+    /// <summary>"path (1,024 × 768 px, 23 KB) - last modified ..." for the footer that shows on hover.</summary>
+    private static string Describe(string path, BitmapImage bitmap, FileInfo info)
+        => $"{path} ({bitmap.PixelWidth:N0} × {bitmap.PixelHeight:N0} px, {info.Length / 1024:N0} KB) - 最終更新: {info.LastWriteTime:yyyy/MM/dd HH:mm}";
+
+    // The header and footer are only shown while the pointer is over the preview or one of the buttons has the focus.
+    private bool _pointerOver;
+    private bool _overlayFocused;
+
+    private void UpdateOverlays()
+    {
+        bool show = _pointerOver || _overlayFocused;
+        HeaderOverlay.Opacity = show ? 1 : 0;
+        HeaderOverlay.IsHitTestVisible = show; // hidden, the header must not catch clicks meant for the image
+        FooterOverlay.Opacity = show ? 1 : 0;
+    }
+
+    private void RootGrid_PointerEntered(object sender, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs e)
+    {
+        _pointerOver = true;
+        UpdateOverlays();
+    }
+
+    private void RootGrid_PointerExited(object sender, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs e)
+    {
+        _pointerOver = false;
+        UpdateOverlays();
+    }
+
+    private void Overlay_GotFocus(object sender, RoutedEventArgs e)
+    {
+        _overlayFocused = true;
+        UpdateOverlays();
+    }
+
+    private void Overlay_LostFocus(object sender, RoutedEventArgs e)
+    {
+        _overlayFocused = false;
+        UpdateOverlays();
     }
 
     private const float WheelZoomStep = 1.2f;
@@ -161,6 +201,30 @@ public sealed partial class ImagePreviewControl : UserControl
             pos.X * DoubleTapZoom - pos.X,
             pos.Y * DoubleTapZoom - pos.Y,
             DoubleTapZoom, true);
+    }
+
+    /// <summary>Opens Explorer with the file selected (the folder alone when the file is gone).</summary>
+    private void OpenInExplorerButton_Click(object sender, RoutedEventArgs e)
+    {
+        string? path = _currentItem?.Asset.FilePath;
+        if (string.IsNullOrEmpty(path)) path = _currentItem?.Chunk.PreviewImagePath;
+        if (string.IsNullOrEmpty(path)) return;
+
+        try
+        {
+            if (File.Exists(path))
+            {
+                Process.Start(new ProcessStartInfo("explorer.exe", $"/select,\"{path}\"") { UseShellExecute = true });
+            }
+            else if (Path.GetDirectoryName(path) is { } folder && Directory.Exists(folder))
+            {
+                Process.Start(new ProcessStartInfo("explorer.exe", $"\"{folder}\"") { UseShellExecute = true });
+            }
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"Could not open Explorer: {ex.Message}");
+        }
     }
 
     private void OpenImageExternalButton_Click(object sender, RoutedEventArgs e)
