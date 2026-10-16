@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using EmbeddingSearchViewer.Core.Interfaces;
+using EmbeddingSearchViewer.Core.Localization;
 using EmbeddingSearchViewer.Core.Models;
 using EmbeddingSearchViewer.Infrastructure.Ingestion;
 using EmbeddingSearchViewer.Infrastructure.Library;
@@ -28,7 +29,7 @@ public partial class LibraryViewModel : ObservableObject
     private readonly IndexExclusionStore _exclusions;
 
     [ObservableProperty]
-    private string _sidecarStatus = "ONNX DirectML エンジン";
+    private string _sidecarStatus = Loc.T("Library.Engine.Name");
 
     [ObservableProperty]
     private bool _isSidecarConnected = true;
@@ -46,7 +47,7 @@ public partial class LibraryViewModel : ObservableObject
     private double _progressPercentage;
 
     [ObservableProperty]
-    private string _currentStatusMessage = "準備完了";
+    private string _currentStatusMessage = Loc.T("Library.Status.Ready");
 
     [ObservableProperty]
     private string? _errorMessage;
@@ -79,7 +80,7 @@ public partial class LibraryViewModel : ObservableObject
     public static IReadOnlyList<int> VideoSegmentChoices { get; } = new[] { 15, 30, 60, 120 };
 
     public static IReadOnlyList<string> VideoSegmentLabels { get; } =
-        new[] { "15 秒（標準）", "30 秒", "60 秒", "120 秒" };
+        new[] { Loc.T("Library.SegmentLabel.Standard", 15), Loc.T("Library.SegmentLabel", 30), Loc.T("Library.SegmentLabel", 60), Loc.T("Library.SegmentLabel", 120) };
 
     public IReadOnlyList<string> VideoSegmentOptions => VideoSegmentLabels;
 
@@ -108,13 +109,13 @@ public partial class LibraryViewModel : ObservableObject
         ExcludedFiles.Clear();
         foreach (var item in items) ExcludedFiles.Add(item);
         HasExcluded = items.Count > 0;
-        ExcludedHeaderText = items.Count > 0 ? $"インデックスから外したファイル ({items.Count} 件)" : string.Empty;
+        ExcludedHeaderText = items.Count > 0 ? Loc.T("Library.ExcludedHeader", items.Count) : string.Empty;
     }
 
     /// <summary>Lets one file be tried again by the next indexing run.</summary>
     public void RemoveExclusion(ExcludedFile file)
     {
-        if (_exclusions.Remove(file.Path)) CurrentStatusMessage = $"{file.FileName} を、次回のインデックスの対象に戻しました";
+        if (_exclusions.Remove(file.Path)) CurrentStatusMessage = Loc.T("Library.Excluded.Restored", file.FileName);
         RefreshExcluded();
     }
 
@@ -122,7 +123,7 @@ public partial class LibraryViewModel : ObservableObject
     public void ClearExclusions()
     {
         int count = _exclusions.Clear();
-        CurrentStatusMessage = count == 0 ? "外したファイルはありません" : $"外していた {count} 件を、次回のインデックスの対象に戻しました";
+        CurrentStatusMessage = count == 0 ? Loc.T("Library.Excluded.NoneToRestore") : Loc.T("Library.Excluded.RestoredAll", count);
         RefreshExcluded();
     }
 
@@ -149,7 +150,7 @@ public partial class LibraryViewModel : ObservableObject
         {
             IndexModelWarning = saved.IndexModelTag == CurrentModelTag
                 ? string.Empty
-                : "このインデックスは別の埋め込みモデルで作成されています。検索結果が正しくならないため、「クリア」してからインデックスを作り直してください。";
+                : Loc.T("Library.IndexModelMismatch");
         }
     }
 
@@ -205,8 +206,8 @@ public partial class LibraryViewModel : ObservableObject
             HasFolders = TargetFolders.Count > 0;
         }
         SidecarStatus = ready
-            ? "ONNX DirectML エンジン準備完了"
-            : UnavailableEmbeddingService.ReasonOf(_embeddingService) ?? "エンジン初期化中";
+            ? Loc.T("Library.Engine.Ready")
+            : UnavailableEmbeddingService.ReasonOf(_embeddingService) ?? Loc.T("Library.Engine.Initializing");
 
         RefreshExcluded();
         await RefreshLibraryStatsAsync();
@@ -222,7 +223,7 @@ public partial class LibraryViewModel : ObservableObject
         ProgressPercentage = 0;
         ErrorMessage = null;
         IndexModelWarning = string.Empty;
-        CurrentStatusMessage = "準備完了";
+        CurrentStatusMessage = Loc.T("Library.Status.Ready");
         await InitializeAsync();
     }
 
@@ -308,8 +309,8 @@ public partial class LibraryViewModel : ObservableObject
             if (progress.IsRunning)
             {
                 CurrentStatusMessage = progress.TotalFiles > 0
-                    ? $"処理中 ({progress.ProcessedFiles}/{progress.TotalFiles}): {progress.CurrentFileName}"
-                    : $"処理中: {progress.CurrentFileName}";
+                    ? Loc.T("Library.Progress.WithTotal", progress.ProcessedFiles, progress.TotalFiles, progress.CurrentFileName)
+                    : Loc.T("Library.Progress.NoTotal", progress.CurrentFileName);
 
                 ProgressPercentage = progress.TotalFiles > 0
                     ? Math.Min(100.0, (double)progress.ProcessedFiles / progress.TotalFiles * 100.0)
@@ -318,10 +319,10 @@ public partial class LibraryViewModel : ObservableObject
             else
             {
                 CurrentStatusMessage = progress.ProcessedFiles >= progress.TotalFiles && progress.TotalFiles > 0
-                    ? $"すべてのインデックス作成が完了しました ({progress.ProcessedFiles}/{progress.TotalFiles} 件)"
-                      + (progress.SkippedFiles > 0 ? $"。うち {progress.SkippedFiles} 件は白紙(ほぼ一色)のため対象外にしました" : string.Empty)
-                      + (progress.ExcludedFiles > 0 ? $"。前回、読み込めなかった {progress.ExcludedFiles} 件は、対象から外しています" : string.Empty)
-                      + (string.IsNullOrEmpty(progress.Summary) ? string.Empty : $"。{progress.Summary}")
+                    ? Loc.T("Library.Done", progress.ProcessedFiles, progress.TotalFiles)
+                      + (progress.SkippedFiles > 0 ? Loc.T("Library.Done.Skipped", progress.SkippedFiles) : string.Empty)
+                      + (progress.ExcludedFiles > 0 ? Loc.T("Library.Done.Excluded", progress.ExcludedFiles) : string.Empty)
+                      + (string.IsNullOrEmpty(progress.Summary) ? string.Empty : Loc.T("Library.Done.Summary", progress.Summary))
                     : progress.CurrentFileName;
 
                 if (progress.ProcessedFiles >= progress.TotalFiles && progress.TotalFiles > 0)
@@ -385,7 +386,7 @@ public partial class LibraryViewModel : ObservableObject
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            ErrorMessage = $"設定を保存できませんでした: {ex.Message}";
+            ErrorMessage = Loc.T("Library.SettingsSaveFailed", ex.Message);
         }
     }
 
@@ -410,7 +411,7 @@ public partial class LibraryViewModel : ObservableObject
         ErrorMessage = null;
         ProcessedFiles = 0;
         ProgressPercentage = 0;
-        CurrentStatusMessage = "対象ファイルをスキャン中...";
+        CurrentStatusMessage = Loc.T("Library.Scanning");
 
         _worker.Start();
 
@@ -425,7 +426,7 @@ public partial class LibraryViewModel : ObservableObject
     {
         await _worker.StopAsync();
         IsIndexing = false;
-        CurrentStatusMessage = "中断されました";
+        CurrentStatusMessage = Loc.T("Library.Stopped");
         _ = RefreshLibraryStatsAsync(); // what was stored before the stop
     }
 
@@ -443,13 +444,13 @@ public partial class LibraryViewModel : ObservableObject
             }
 
             CurrentStatusMessage = missing.Count == 0
-                ? "存在しないファイルはありませんでした"
-                : $"存在しないファイル {missing.Count} 件をインデックスから除去しました";
+                ? Loc.T("Library.Missing.None")
+                : Loc.T("Library.Missing.Removed", missing.Count);
             await RefreshLibraryStatsAsync();
         }
         catch (Exception ex)
         {
-            ErrorMessage = $"除去中にエラーが発生しました: {ex.Message}";
+            ErrorMessage = Loc.T("Library.Missing.Error", ex.Message);
         }
     }
 
@@ -459,7 +460,7 @@ public partial class LibraryViewModel : ObservableObject
         if (IsIndexing) return;
         try
         {
-            CurrentStatusMessage = "白紙(ほぼ一色)の画像を調べています...";
+            CurrentStatusMessage = Loc.T("Library.Blank.Checking");
             var assets = await _repository.GetAllAssetsAsync();
             var blank = await BlankImageCleanup.FindBlankImagesAsync(assets);
             foreach (var asset in blank)
@@ -468,13 +469,13 @@ public partial class LibraryViewModel : ObservableObject
             }
 
             CurrentStatusMessage = blank.Count == 0
-                ? "白紙の画像はありませんでした"
-                : $"白紙(ほぼ一色)の画像 {blank.Count} 件をインデックスから除去しました (ファイルは削除していません)";
+                ? Loc.T("Library.Blank.None")
+                : Loc.T("Library.Blank.Removed", blank.Count);
             await RefreshLibraryStatsAsync();
         }
         catch (Exception ex)
         {
-            ErrorMessage = $"白紙画像の除去中にエラーが発生しました: {ex.Message}";
+            ErrorMessage = Loc.T("Library.Blank.Error", ex.Message);
         }
     }
 
@@ -490,13 +491,13 @@ public partial class LibraryViewModel : ObservableObject
                 await _repository.DeleteAssetAsync(asset.Id);
             }
 
-            CurrentStatusMessage = $"インデックスをクリアしました ({assets.Count} 件)";
+            CurrentStatusMessage = Loc.T("Library.Cleared", assets.Count);
             ProgressPercentage = 0;
             await RefreshLibraryStatsAsync();
         }
         catch (Exception ex)
         {
-            ErrorMessage = $"クリア中にエラーが発生しました: {ex.Message}";
+            ErrorMessage = Loc.T("Library.Clear.Error", ex.Message);
         }
     }
 }

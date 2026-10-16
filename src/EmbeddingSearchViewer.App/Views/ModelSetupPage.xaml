@@ -4,13 +4,14 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:loc="using:EmbeddingSearchViewer_App.Localization"
     mc:Ignorable="d">
 
     <ScrollViewer Padding="24">
         <StackPanel MaxWidth="800" HorizontalAlignment="Left" Spacing="20">
             <StackPanel Spacing="4">
-                <TextBlock Text="AIモデルのセットアップ" Style="{ThemeResource TitleTextBlockStyle}" />
-                <TextBlock Text="画像・テキストの検索には、EmbeddingGemma 2 モデルが必要です。初回のみダウンロードします。ダウンロード後は、すべてこのPC内で処理されます。"
+                <TextBlock loc:L.Uid="ModelSetup.TextBlock01" Style="{ThemeResource TitleTextBlockStyle}" />
+                <TextBlock loc:L.Uid="ModelSetup.TextBlock02"
                            Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" />
             </StackPanel>
 
@@ -18,19 +19,18 @@
             <Grid Background="{ThemeResource LayerFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
                   BorderThickness="1" CornerRadius="8" Padding="16" RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="10">
                 <StackPanel Grid.Row="0" Spacing="2">
-                    <TextBlock Text="提供元" Style="{ThemeResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                    <TextBlock loc:L.Uid="ModelSetup.TextBlock03" Style="{ThemeResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                     <HyperlinkButton Padding="0" NavigateUri="{x:Bind ViewModel.SourceUrl}" Content="{x:Bind ViewModel.SourceText}" />
                 </StackPanel>
                 <StackPanel Grid.Row="1" Spacing="2">
-                    <TextBlock Text="ダウンロードサイズ" Style="{ThemeResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                    <TextBlock loc:L.Uid="ModelSetup.TextBlock04" Style="{ThemeResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                     <TextBlock Text="{x:Bind ViewModel.TotalSizeText}" />
                 </StackPanel>
                 <StackPanel Grid.Row="2" Spacing="2">
-                    <TextBlock Text="保存先" Style="{ThemeResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                    <TextBlock loc:L.Uid="ModelSetup.TextBlock05" Style="{ThemeResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                     <TextBlock Text="{x:Bind ViewModel.LocationText}" IsTextSelectionEnabled="True" TextWrapping="Wrap" />
                 </StackPanel>
-                <TextBlock Grid.Row="3" Style="{ThemeResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap"
-                           Text="途中で中断しても、続きから再開できます。ダウンロードしたファイルは、公開されているチェックサムと照合して検証します。" />
+                <TextBlock loc:L.Uid="ModelSetup.TextBlock06" Grid.Row="3" Style="{ThemeResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" />
             </Grid>
 
             <!-- Progress -->
@@ -46,14 +46,14 @@
                             Command="{x:Bind ViewModel.DownloadCommand}"
                             Visibility="{x:Bind ViewModel.ShowDownloadButton, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
                             IsEnabled="{x:Bind ViewModel.CanDownload, Mode=OneWay}" AutomationProperties.Name="Download Model" />
-                    <Button Content="中断" Command="{x:Bind ViewModel.CancelCommand}"
+                    <Button loc:L.Uid="ModelSetup.Button01" Command="{x:Bind ViewModel.CancelCommand}"
                             IsEnabled="{x:Bind ViewModel.IsDownloading, Mode=OneWay}" AutomationProperties.Name="Cancel Download" />
-                    <Button Content="検索画面へ" Click="GoToSearch_Click" AutomationProperties.Name="Go To Search" />
+                    <Button loc:L.Uid="ModelSetup.Button02" Click="GoToSearch_Click" AutomationProperties.Name="Go To Search" />
                 </StackPanel>
             </Grid>
 
-            <InfoBar IsOpen="{x:Bind ViewModel.ErrorMessage, Mode=OneWay, Converter={StaticResource StringNotEmptyConverter}}"
-                     IsClosable="False" Severity="Error" Title="エラー" Message="{x:Bind ViewModel.ErrorMessage, Mode=OneWay}" />
+            <InfoBar loc:L.Uid="ModelSetup.InfoBar01" IsOpen="{x:Bind ViewModel.ErrorMessage, Mode=OneWay, Converter={StaticResource StringNotEmptyConverter}}"
+                     IsClosable="False" Severity="Error" Message="{x:Bind ViewModel.ErrorMessage, Mode=OneWay}" />
         </StackPanel>
     </ScrollViewer>
 </Page>

@@ -1,0 +1,826 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
+    <xsd:import namespace="http://www.w3.org/XML/1998/namespace" />
+    <xsd:element name="root" msdata:IsDataSet="true">
+      <xsd:complexType>
+        <xsd:choice maxOccurs="unbounded">
+          <xsd:element name="metadata">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" />
+              </xsd:sequence>
+              <xsd:attribute name="name" use="required" type="xsd:string" />
+              <xsd:attribute name="type" type="xsd:string" />
+              <xsd:attribute name="mimetype" type="xsd:string" />
+              <xsd:attribute ref="xml:space" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="assembly">
+            <xsd:complexType>
+              <xsd:attribute name="alias" type="xsd:string" />
+              <xsd:attribute name="name" type="xsd:string" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="data">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+                <xsd:element name="comment" type="xsd:string" minOccurs="0" msdata:Ordinal="2" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" msdata:Ordinal="1" />
+              <xsd:attribute name="type" type="xsd:string" msdata:Ordinal="3" />
+              <xsd:attribute name="mimetype" type="xsd:string" msdata:Ordinal="4" />
+              <xsd:attribute ref="xml:space" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="resheader">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+            </xsd:complexType>
+          </xsd:element>
+        </xsd:choice>
+      </xsd:complexType>
+    </xsd:element>
+  </xsd:schema>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <data name="App.Title" xml:space="preserve">
+    <value>EmbeddingGemma 2 Multimodal Search &amp; Viewer</value>
+  </data>
+  <data name="Common.Cancel" xml:space="preserve">
+    <value>Cancel</value>
+  </data>
+  <data name="Common.Clear" xml:space="preserve">
+    <value>Clear</value>
+  </data>
+  <data name="Common.Close" xml:space="preserve">
+    <value>Close</value>
+  </data>
+  <data name="Common.FileNotFound" xml:space="preserve">
+    <value>File not found</value>
+  </data>
+  <data name="Common.ListSeparator" xml:space="preserve">
+    <value>, </value>
+  </data>
+  <data name="Engine.InitFailed" xml:space="preserve">
+    <value>Could not initialize the embedding engine: {0}</value>
+  </data>
+  <data name="Engine.ModelMissing" xml:space="preserve">
+    <value>The embedding model was not found. Download it from "Model" in the menu, or put the model in the models folder. ({0})</value>
+  </data>
+  <data name="ImagePreview.Describe" xml:space="preserve">
+    <value>{0} ({1:N0} × {2:N0} px, {3:N0} KB) - Modified: {4:yyyy-MM-dd HH:mm}</value>
+  </data>
+  <data name="ImagePreview.FileNotFoundTitle" xml:space="preserve">
+    <value>Image file not found</value>
+  </data>
+  <data name="ImagePreview.ImageTitleTextBlock.Text" xml:space="preserve">
+    <value>Image preview</value>
+  </data>
+  <data name="ImagePreview.LoadError" xml:space="preserve">
+    <value>Load error: {0}</value>
+  </data>
+  <data name="ImagePreview.MetadataTextBlock.Text" xml:space="preserve">
+    <value>Image information (wheel: zoom / drag: move / double-click: switch)</value>
+  </data>
+  <data name="ImagePreview.OpenImageExternalButton.ToolTip" xml:space="preserve">
+    <value>Open in the default photo app</value>
+  </data>
+  <data name="ImagePreview.OpenInExplorerButton.ToolTip" xml:space="preserve">
+    <value>Show this file in File Explorer</value>
+  </data>
+  <data name="ImagePreview.TextBlock01.Text" xml:space="preserve">
+    <value>Show in Explorer</value>
+  </data>
+  <data name="ImagePreview.TextBlock02.Text" xml:space="preserve">
+    <value>Open in another app</value>
+  </data>
+  <data name="Ingest.AllDone" xml:space="preserve">
+    <value>Indexing is complete</value>
+  </data>
+  <data name="Ingest.Analyzing" xml:space="preserve">
+    <value>Analyzing: {0}</value>
+  </data>
+  <data name="Ingest.Embedding" xml:space="preserve">
+    <value>Computing embeddings: {0}</value>
+  </data>
+  <data name="Ingest.Failed.Files" xml:space="preserve">
+    <value>Files that could not be read and were skipped: {0}</value>
+  </data>
+  <data name="Ingest.Failed.More" xml:space="preserve">
+    <value> and {0} more</value>
+  </data>
+  <data name="Ingest.Failed.RetryNext" xml:space="preserve">
+    <value>. They will be tried again the next time you build the index.</value>
+  </data>
+  <data name="Ingest.Failed.WillExclude" xml:space="preserve">
+    <value>. They are probably damaged, so they will be left out of the index from the next time on (you can restore them under "Files left out of the index" in the Library page).</value>
+  </data>
+  <data name="Ingest.FileOpenFailed" xml:space="preserve">
+    <value>Could not open the file</value>
+  </data>
+  <data name="Ingest.Queued" xml:space="preserve">
+    <value>Files queued ({0})</value>
+  </data>
+  <data name="Ingest.VideoProgress" xml:space="preserve">
+    <value>Video {0}: scene {1:N0} / {2:N0} ({3}%)</value>
+  </data>
+  <data name="Ingest.VideoProgress.More" xml:space="preserve">
+    <value>and {0} more</value>
+  </data>
+  <data name="Ingest.VideoStats" xml:space="preserve">
+    <value>{0} videos, {1} scenes (frame extraction {2:F1} s, embedding {3:F1} s, time per video {4:F1} s, total {5:F1} s)</value>
+  </data>
+  <data name="Library.Blank.Checking" xml:space="preserve">
+    <value>Looking for blank (almost single-colour) images...</value>
+  </data>
+  <data name="Library.Blank.Error" xml:space="preserve">
+    <value>An error occurred while removing blank images: {0}</value>
+  </data>
+  <data name="Library.Blank.None" xml:space="preserve">
+    <value>There were no blank images</value>
+  </data>
+  <data name="Library.Blank.Removed" xml:space="preserve">
+    <value>Removed {0} blank (almost single-colour) images from the index (the files were not deleted)</value>
+  </data>
+  <data name="Library.Button01.ToolTip" xml:space="preserve">
+    <value>Reload the statistics</value>
+  </data>
+  <data name="Library.Button02.ToolTip" xml:space="preserve">
+    <value>Remove files that no longer exist on disk from the index</value>
+  </data>
+  <data name="Library.Button03.ToolTip" xml:space="preserve">
+    <value>Remove blank (almost single-colour) images from the index (the files are not deleted)</value>
+  </data>
+  <data name="Library.Button04.ToolTip" xml:space="preserve">
+    <value>Delete the whole index (the files themselves are not deleted)</value>
+  </data>
+  <data name="Library.Button05.ToolTip" xml:space="preserve">
+    <value>Remove this folder from the list</value>
+  </data>
+  <data name="Library.Button06.Content" xml:space="preserve">
+    <value>Start indexing</value>
+  </data>
+  <data name="Library.Button07.Content" xml:space="preserve">
+    <value>Stop</value>
+  </data>
+  <data name="Library.Button08.Content" xml:space="preserve">
+    <value>Restore</value>
+  </data>
+  <data name="Library.Button08.ToolTip" xml:space="preserve">
+    <value>It will be tried again the next time you build the index</value>
+  </data>
+  <data name="Library.Button09.Content" xml:space="preserve">
+    <value>Restore all</value>
+  </data>
+  <data name="Library.Clear.Error" xml:space="preserve">
+    <value>An error occurred while clearing: {0}</value>
+  </data>
+  <data name="Library.ClearDialog.Body" xml:space="preserve">
+    <value>This deletes the whole index. Your original files are not deleted. You need to build the index again to search.</value>
+  </data>
+  <data name="Library.ClearDialog.Title" xml:space="preserve">
+    <value>Clear the index?</value>
+  </data>
+  <data name="Library.Cleared" xml:space="preserve">
+    <value>Cleared the index ({0} items)</value>
+  </data>
+  <data name="Library.ComboBox01.Header" xml:space="preserve">
+    <value>Video scene length (one frame per scene is searched)</value>
+  </data>
+  <data name="Library.Done" xml:space="preserve">
+    <value>Indexing is complete ({0}/{1} files)</value>
+  </data>
+  <data name="Library.Done.Excluded" xml:space="preserve">
+    <value>. {0} files that could not be read last time are left out</value>
+  </data>
+  <data name="Library.Done.Skipped" xml:space="preserve">
+    <value>. {0} of them were left out because they are blank (almost a single colour)</value>
+  </data>
+  <data name="Library.Done.Summary" xml:space="preserve">
+    <value>. {0}</value>
+  </data>
+  <data name="Library.Drop.AddFolder" xml:space="preserve">
+    <value>Add folder</value>
+  </data>
+  <data name="Library.Engine.Initializing" xml:space="preserve">
+    <value>The engine is initializing</value>
+  </data>
+  <data name="Library.Engine.Name" xml:space="preserve">
+    <value>ONNX DirectML engine</value>
+  </data>
+  <data name="Library.Engine.Ready" xml:space="preserve">
+    <value>ONNX DirectML engine ready</value>
+  </data>
+  <data name="Library.Excluded.NoneToRestore" xml:space="preserve">
+    <value>No files are left out</value>
+  </data>
+  <data name="Library.Excluded.Restored" xml:space="preserve">
+    <value>{0} will be indexed again next time</value>
+  </data>
+  <data name="Library.Excluded.RestoredAll" xml:space="preserve">
+    <value>{0} files that were left out will be indexed again next time</value>
+  </data>
+  <data name="Library.ExcludedHeader" xml:space="preserve">
+    <value>Files left out of the index ({0})</value>
+  </data>
+  <data name="Library.IndexModelMismatch" xml:space="preserve">
+    <value>This index was built with a different embedding model, so the search results would be wrong. Press "Clear" and build the index again.</value>
+  </data>
+  <data name="Library.InfoBar01.Title" xml:space="preserve">
+    <value>The index must be rebuilt</value>
+  </data>
+  <data name="Library.Missing.Error" xml:space="preserve">
+    <value>An error occurred while removing the files: {0}</value>
+  </data>
+  <data name="Library.Missing.None" xml:space="preserve">
+    <value>There were no missing files</value>
+  </data>
+  <data name="Library.Missing.Removed" xml:space="preserve">
+    <value>Removed {0} missing files from the index</value>
+  </data>
+  <data name="Library.Progress.NoTotal" xml:space="preserve">
+    <value>Processing: {0}</value>
+  </data>
+  <data name="Library.Progress.WithTotal" xml:space="preserve">
+    <value>Processing ({0}/{1}): {2}</value>
+  </data>
+  <data name="Library.Scanning" xml:space="preserve">
+    <value>Scanning the files...</value>
+  </data>
+  <data name="Library.SegmentLabel" xml:space="preserve">
+    <value>{0} s</value>
+  </data>
+  <data name="Library.SegmentLabel.Standard" xml:space="preserve">
+    <value>{0} s (standard)</value>
+  </data>
+  <data name="Library.SettingsSaveFailed" xml:space="preserve">
+    <value>Could not save the settings: {0}</value>
+  </data>
+  <data name="Library.Status.Ready" xml:space="preserve">
+    <value>Ready</value>
+  </data>
+  <data name="Library.Stopped" xml:space="preserve">
+    <value>Stopped</value>
+  </data>
+  <data name="Library.TextBlock01.Text" xml:space="preserve">
+    <value>Media library</value>
+  </data>
+  <data name="Library.TextBlock02.Text" xml:space="preserve">
+    <value>Add the folders that contain PDF documents, images and videos, and build and manage the EmbeddingGemma 2 index.</value>
+  </data>
+  <data name="Library.TextBlock03.Text" xml:space="preserve">
+    <value>Inference engine (EmbeddingGemma 2)</value>
+  </data>
+  <data name="Library.TextBlock04.Text" xml:space="preserve">
+    <value>Indexed file statistics</value>
+  </data>
+  <data name="Library.TextBlock05.Text" xml:space="preserve">
+    <value>Refresh</value>
+  </data>
+  <data name="Library.TextBlock06.Text" xml:space="preserve">
+    <value>Remove deleted</value>
+  </data>
+  <data name="Library.TextBlock07.Text" xml:space="preserve">
+    <value>Remove blank</value>
+  </data>
+  <data name="Library.TextBlock08.Text" xml:space="preserve">
+    <value>Clear</value>
+  </data>
+  <data name="Library.TextBlock09.Text" xml:space="preserve">
+    <value>Total files</value>
+  </data>
+  <data name="Library.TextBlock10.Text" xml:space="preserve">
+    <value>Images</value>
+  </data>
+  <data name="Library.TextBlock11.Text" xml:space="preserve">
+    <value>PDF documents</value>
+  </data>
+  <data name="Library.TextBlock12.Text" xml:space="preserve">
+    <value>Videos</value>
+  </data>
+  <data name="Library.TextBlock13.Text" xml:space="preserve">
+    <value>Folders to index</value>
+  </data>
+  <data name="Library.TextBlock14.Text" xml:space="preserve">
+    <value>Add folder</value>
+  </data>
+  <data name="Library.TextBlock15.Text" xml:space="preserve">
+    <value>No folders have been added yet</value>
+  </data>
+  <data name="Library.TextBlock16.Text" xml:space="preserve">
+    <value>Click "Add folder", or drag and drop a folder here.</value>
+  </data>
+  <data name="Library.TextBlock17.Text" xml:space="preserve">
+    <value>A longer length makes indexing long videos faster, but the scenes you can search for are coarser. The change applies to videos indexed from now on (to redo videos that are already indexed, press "Clear" and index again).</value>
+  </data>
+  <data name="Library.TextBlock18.Text" xml:space="preserve">
+    <value>A file that could not be read after several tries is probably damaged, so it is left out of the index from the next time on. If you repair or replace it so that its size or modification time changes, it is included again automatically.</value>
+  </data>
+  <data name="Library.ToggleSwitch01.Header" xml:space="preserve">
+    <value>Watch the folders and update the index automatically</value>
+  </data>
+  <data name="Library.ToggleSwitch01.OffContent" xml:space="preserve">
+    <value>Off</value>
+  </data>
+  <data name="Library.ToggleSwitch01.OnContent" xml:space="preserve">
+    <value>On (additions, changes and deletions are applied automatically)</value>
+  </data>
+  <data name="ModelDownload.ChecksumMismatch" xml:space="preserve">
+    <value>The checksum of {0} does not match (the download is corrupt). Please retry.</value>
+  </data>
+  <data name="ModelDownload.DiskSpace" xml:space="preserve">
+    <value>Not enough free disk space. Needed: {0:N0} MB (+ 200 MB margin) / free: {1:N0} MB ({2})</value>
+  </data>
+  <data name="ModelDownload.Failed" xml:space="preserve">
+    <value>Could not download {0}: {1}</value>
+  </data>
+  <data name="ModelSetup.Button.Resume" xml:space="preserve">
+    <value>Resume download</value>
+  </data>
+  <data name="ModelSetup.Button.Retry" xml:space="preserve">
+    <value>Retry</value>
+  </data>
+  <data name="ModelSetup.Button.Start" xml:space="preserve">
+    <value>Start download</value>
+  </data>
+  <data name="ModelSetup.Button01.Content" xml:space="preserve">
+    <value>Stop</value>
+  </data>
+  <data name="ModelSetup.Button02.Content" xml:space="preserve">
+    <value>Go to search</value>
+  </data>
+  <data name="ModelSetup.Duration.HoursMinutes" xml:space="preserve">
+    <value>{0} h {1} min</value>
+  </data>
+  <data name="ModelSetup.Duration.MinutesSeconds" xml:space="preserve">
+    <value>{0} min {1} s</value>
+  </data>
+  <data name="ModelSetup.Duration.Seconds" xml:space="preserve">
+    <value>{0} s</value>
+  </data>
+  <data name="ModelSetup.Eta" xml:space="preserve">
+    <value>  about {0} left</value>
+  </data>
+  <data name="ModelSetup.InfoBar01.Title" xml:space="preserve">
+    <value>Error</value>
+  </data>
+  <data name="ModelSetup.Speed" xml:space="preserve">
+    <value>  {0}/s</value>
+  </data>
+  <data name="ModelSetup.Status.Available" xml:space="preserve">
+    <value>The model is available.</value>
+  </data>
+  <data name="ModelSetup.Status.CanResume" xml:space="preserve">
+    <value>You can resume the previous download ({0} remaining).</value>
+  </data>
+  <data name="ModelSetup.Status.Done" xml:space="preserve">
+    <value>The download is complete. Search is ready.</value>
+  </data>
+  <data name="ModelSetup.Status.Downloading" xml:space="preserve">
+    <value>Downloading ({0}/{1}): {2}</value>
+  </data>
+  <data name="ModelSetup.Status.Failed" xml:space="preserve">
+    <value>The download failed.</value>
+  </data>
+  <data name="ModelSetup.Status.LoadFailed" xml:space="preserve">
+    <value>The download is complete, but the model could not be loaded.</value>
+  </data>
+  <data name="ModelSetup.Status.Loading" xml:space="preserve">
+    <value>Loading the model...</value>
+  </data>
+  <data name="ModelSetup.Status.Preparing" xml:space="preserve">
+    <value>Preparing the download...</value>
+  </data>
+  <data name="ModelSetup.Status.Stopped" xml:space="preserve">
+    <value>Stopped. The data downloaded so far is kept, and the download can be resumed.</value>
+  </data>
+  <data name="ModelSetup.Status.Verifying" xml:space="preserve">
+    <value>Verifying the files ({0}/{1})...</value>
+  </data>
+  <data name="ModelSetup.Status.WillDownload" xml:space="preserve">
+    <value>The AI model used for search ({0}) will be downloaded.</value>
+  </data>
+  <data name="ModelSetup.TextBlock01.Text" xml:space="preserve">
+    <value>AI model setup</value>
+  </data>
+  <data name="ModelSetup.TextBlock02.Text" xml:space="preserve">
+    <value>Searching images and text needs the EmbeddingGemma 2 model. It is downloaded only once. After that, everything is processed on this PC.</value>
+  </data>
+  <data name="ModelSetup.TextBlock03.Text" xml:space="preserve">
+    <value>Source</value>
+  </data>
+  <data name="ModelSetup.TextBlock04.Text" xml:space="preserve">
+    <value>Download size</value>
+  </data>
+  <data name="ModelSetup.TextBlock05.Text" xml:space="preserve">
+    <value>Saved to</value>
+  </data>
+  <data name="ModelSetup.TextBlock06.Text" xml:space="preserve">
+    <value>If you stop in the middle, the download can be resumed. Downloaded files are verified against the published checksums.</value>
+  </data>
+  <data name="ModelSetup.WriteFailed" xml:space="preserve">
+    <value>Could not write the file: {0}</value>
+  </data>
+  <data name="PdfPreview.Expander01.Header" xml:space="preserve">
+    <value>Text extracted from the page</value>
+  </data>
+  <data name="PdfPreview.NextPageButton.ToolTip" xml:space="preserve">
+    <value>Next page</value>
+  </data>
+  <data name="PdfPreview.NoText" xml:space="preserve">
+    <value>No text extracted</value>
+  </data>
+  <data name="PdfPreview.OpenPdfExternalButton.ToolTip" xml:space="preserve">
+    <value>Open in the default PDF app</value>
+  </data>
+  <data name="PdfPreview.Page" xml:space="preserve">
+    <value>Page {0} / {1}</value>
+  </data>
+  <data name="PdfPreview.PageInfoTextBlock.Text" xml:space="preserve">
+    <value>Page 1 / 1</value>
+  </data>
+  <data name="PdfPreview.PrevPageButton.ToolTip" xml:space="preserve">
+    <value>Previous page</value>
+  </data>
+  <data name="PdfPreview.RenderFailed" xml:space="preserve">
+    <value>Rendering failed: {0}</value>
+  </data>
+  <data name="PdfPreview.TextBlock01.Text" xml:space="preserve">
+    <value>Open in another app</value>
+  </data>
+  <data name="Profile.CannotDeleteCurrent" xml:space="preserve">
+    <value>The profile in use cannot be deleted. Switch to another profile first, and then delete it.</value>
+  </data>
+  <data name="Profile.DefaultName" xml:space="preserve">
+    <value>Default</value>
+  </data>
+  <data name="Profile.IndexingBlocked" xml:space="preserve">
+    <value>Profiles cannot be switched while the index is being built. Switch after it has finished, or after you have stopped it.</value>
+  </data>
+  <data name="Profile.MigrationFailed" xml:space="preserve">
+    <value>Could not move the existing index to the new location. An older version of the app may still be running. Close all of its windows and start the app again.</value>
+  </data>
+  <data name="Profile.NameInUse" xml:space="preserve">
+    <value>A profile named "{0}" already exists.</value>
+  </data>
+  <data name="Profile.NameRequired" xml:space="preserve">
+    <value>Enter a profile name.</value>
+  </data>
+  <data name="Profile.NotFound" xml:space="preserve">
+    <value>The profile was not found.</value>
+  </data>
+  <data name="Result.Duplicates" xml:space="preserve">
+    <value>Same image: {0} more</value>
+  </data>
+  <data name="Result.SceneCount" xml:space="preserve">
+    <value>{0} matching scenes</value>
+  </data>
+  <data name="Search.Button01.ToolTip" xml:space="preserve">
+    <value>Search history</value>
+  </data>
+  <data name="Search.Button02.ToolTip" xml:space="preserve">
+    <value>Remove the query image</value>
+  </data>
+  <data name="Search.Button03.Content" xml:space="preserve">
+    <value>Clear</value>
+  </data>
+  <data name="Search.Button04.Content" xml:space="preserve">
+    <value>Search in video</value>
+  </data>
+  <data name="Search.Button05.Content" xml:space="preserve">
+    <value>Back to matching scenes</value>
+  </data>
+  <data name="Search.Button05.ToolTip" xml:space="preserve">
+    <value>Goes back to the scenes that matched the first search</value>
+  </data>
+  <data name="Search.CalendarDatePicker01.Header" xml:space="preserve">
+    <value>Modified from</value>
+  </data>
+  <data name="Search.CalendarDatePicker01.PlaceholderText" xml:space="preserve">
+    <value>Any</value>
+  </data>
+  <data name="Search.CalendarDatePicker02.Header" xml:space="preserve">
+    <value>Modified to</value>
+  </data>
+  <data name="Search.CalendarDatePicker02.PlaceholderText" xml:space="preserve">
+    <value>Any</value>
+  </data>
+  <data name="Search.CheckBox01.Content" xml:space="preserve">
+    <value>Also use keyword search</value>
+  </data>
+  <data name="Search.CheckBox02.Content" xml:space="preserve">
+    <value>Group scenes by video</value>
+  </data>
+  <data name="Search.CheckBox02.ToolTip" xml:space="preserve">
+    <value>Merges the scenes of the same video into one result. Select it to see the matching scenes below the preview.</value>
+  </data>
+  <data name="Search.ComboBoxItem01.Content" xml:space="preserve">
+    <value>All media</value>
+  </data>
+  <data name="Search.ComboBoxItem02.Content" xml:space="preserve">
+    <value>PDF documents</value>
+  </data>
+  <data name="Search.ComboBoxItem03.Content" xml:space="preserve">
+    <value>Images</value>
+  </data>
+  <data name="Search.ComboBoxItem04.Content" xml:space="preserve">
+    <value>Videos</value>
+  </data>
+  <data name="Search.ComboBoxItem05.Content" xml:space="preserve">
+    <value>Relevance</value>
+  </data>
+  <data name="Search.ComboBoxItem06.Content" xml:space="preserve">
+    <value>Similarity</value>
+  </data>
+  <data name="Search.ComboBoxItem07.Content" xml:space="preserve">
+    <value>File name</value>
+  </data>
+  <data name="Search.ComboBoxItem08.Content" xml:space="preserve">
+    <value>Best match first</value>
+  </data>
+  <data name="Search.ComboBoxItem09.Content" xml:space="preserve">
+    <value>Order in the video</value>
+  </data>
+  <data name="Search.Drop.SearchByImage" xml:space="preserve">
+    <value>Search by image</value>
+  </data>
+  <data name="Search.Empty.Initial" xml:space="preserve">
+    <value>Enter a search term, or choose an image to search with</value>
+  </data>
+  <data name="Search.Empty.NoMatch" xml:space="preserve">
+    <value>No results match. Try different search conditions.</value>
+  </data>
+  <data name="Search.Error" xml:space="preserve">
+    <value>An error occurred while searching: {0}</value>
+  </data>
+  <data name="Search.Expander01.Header" xml:space="preserve">
+    <value>Advanced filters (date, size, folder)</value>
+  </data>
+  <data name="Search.History.Clear" xml:space="preserve">
+    <value>Clear history</value>
+  </data>
+  <data name="Search.History.Empty" xml:space="preserve">
+    <value>No history</value>
+  </data>
+  <data name="Search.MenuFlyoutItem01.Text" xml:space="preserve">
+    <value>Open in another app</value>
+  </data>
+  <data name="Search.MenuFlyoutItem02.Text" xml:space="preserve">
+    <value>Open folder</value>
+  </data>
+  <data name="Search.MenuFlyoutItem03.Text" xml:space="preserve">
+    <value>Copy path</value>
+  </data>
+  <data name="Search.MenuFlyoutItem04.Text" xml:space="preserve">
+    <value>Search for images similar to this one</value>
+  </data>
+  <data name="Search.MinSimilarity.AtLeast" xml:space="preserve">
+    <value>{0:P0} or more</value>
+  </data>
+  <data name="Search.MinSimilarity.None" xml:space="preserve">
+    <value>No limit</value>
+  </data>
+  <data name="Search.NoQueryImage" xml:space="preserve">
+    <value>This item has no image that can be used for a search</value>
+  </data>
+  <data name="Search.NumberBox01.Header" xml:space="preserve">
+    <value>Minimum size (MB)</value>
+  </data>
+  <data name="Search.NumberBox01.PlaceholderText" xml:space="preserve">
+    <value>Any</value>
+  </data>
+  <data name="Search.NumberBox02.Header" xml:space="preserve">
+    <value>Maximum size (MB)</value>
+  </data>
+  <data name="Search.NumberBox02.PlaceholderText" xml:space="preserve">
+    <value>Any</value>
+  </data>
+  <data name="Search.OpenFailed" xml:space="preserve">
+    <value>Could not open it: {0}</value>
+  </data>
+  <data name="Search.OpenFolderFailed" xml:space="preserve">
+    <value>Could not open the folder: {0}</value>
+  </data>
+  <data name="Search.ResultsHeader" xml:space="preserve">
+    <value>Search results ({0})</value>
+  </data>
+  <data name="Search.SceneSearchBox.PlaceholderText" xml:space="preserve">
+    <value>Search inside this video (e.g. fireworks, red dress)</value>
+  </data>
+  <data name="Search.Scenes.Error" xml:space="preserve">
+    <value>An error occurred while searching in the video: {0}</value>
+  </data>
+  <data name="Search.Scenes.Header" xml:space="preserve">
+    <value>Matching scenes ({0})</value>
+  </data>
+  <data name="Search.Scenes.HeaderInVideo" xml:space="preserve">
+    <value>"{0}" in this video ({1})</value>
+  </data>
+  <data name="Search.SearchBox.PlaceholderText" xml:space="preserve">
+    <value>Search in natural language (e.g. a slide with a chart, a product demo video, a red car)</value>
+  </data>
+  <data name="Search.Slider01.ToolTip" xml:space="preserve">
+    <value>Minimum similarity</value>
+  </data>
+  <data name="Search.TextBlock01.Text" xml:space="preserve">
+    <value>Search by image</value>
+  </data>
+  <data name="Search.TextBlock02.Text" xml:space="preserve">
+    <value>Search</value>
+  </data>
+  <data name="Search.TextBlock03.Text" xml:space="preserve">
+    <value>Sort by</value>
+  </data>
+  <data name="Search.TextBlock04.ToolTip" xml:space="preserve">
+    <value>Other files have exactly the same embedding (only one is shown in the results)</value>
+  </data>
+  <data name="Search.TextBlock05.ToolTip" xml:space="preserve">
+    <value>The number of matching scenes in this video. Select it to see the list below the preview.</value>
+  </data>
+  <data name="Search.TextBlock06.Text" xml:space="preserve">
+    <value>Sort by</value>
+  </data>
+  <data name="Search.TextBlock07.Text" xml:space="preserve">
+    <value>Click a search result to preview it here</value>
+  </data>
+  <data name="Search.TextBox01.Header" xml:space="preserve">
+    <value>Folder (part of the path)</value>
+  </data>
+  <data name="Search.TextBox01.PlaceholderText" xml:space="preserve">
+    <value>e.g. Pictures\2024</value>
+  </data>
+  <data name="Search.UnsupportedImage" xml:space="preserve">
+    <value>Unsupported format (jpg / png / webp)</value>
+  </data>
+  <data name="Settings.Button01.Content" xml:space="preserve">
+    <value>Check again</value>
+  </data>
+  <data name="Settings.Health.Checking" xml:space="preserve">
+    <value>Checking...</value>
+  </data>
+  <data name="Settings.Health.Error" xml:space="preserve">
+    <value>Error: {0}</value>
+  </data>
+  <data name="Settings.Health.Ready" xml:space="preserve">
+    <value>Ready (ONNX Runtime / DirectML)</value>
+  </data>
+  <data name="Settings.Health.Unavailable" xml:space="preserve">
+    <value>Initializing, or not available (check the model files)</value>
+  </data>
+  <data name="Settings.Health.Unchecked" xml:space="preserve">
+    <value>Not checked</value>
+  </data>
+  <data name="Settings.LanguageAuto.Content" xml:space="preserve">
+    <value>Automatic (follow Windows)</value>
+  </data>
+  <data name="Settings.LanguageHint.Text" xml:space="preserve">
+    <value>The language of the app. A change takes effect the next time the app starts. "Automatic" follows the display language of Windows.</value>
+  </data>
+  <data name="Settings.LanguageTitle.Text" xml:space="preserve">
+    <value>Language / 言語</value>
+  </data>
+  <data name="Settings.RestartNeeded.Text" xml:space="preserve">
+    <value>Restart the app to apply the language change.</value>
+  </data>
+  <data name="Settings.RestartNow.Content" xml:space="preserve">
+    <value>Restart now</value>
+  </data>
+  <data name="Settings.Slider01.Header" xml:space="preserve">
+    <value>Minimum similarity (0 = no limit)</value>
+  </data>
+  <data name="Settings.TextBlock01.Text" xml:space="preserve">
+    <value>Settings</value>
+  </data>
+  <data name="Settings.TextBlock02.Text" xml:space="preserve">
+    <value>Embedding engine (EmbeddingGemma 2)</value>
+  </data>
+  <data name="Settings.TextBlock03.Text" xml:space="preserve">
+    <value>Status</value>
+  </data>
+  <data name="Settings.TextBlock04.Text" xml:space="preserve">
+    <value>Search options</value>
+  </data>
+  <data name="Settings.TextBlock05.Text" xml:space="preserve">
+    <value>Vector dimensions (MRL). Lowering it reduces memory use and search time. A value different from the one used for indexing is compared on the leading dimensions.</value>
+  </data>
+  <data name="Settings.TextBlock06.Text" xml:space="preserve">
+    <value>About this app</value>
+  </data>
+  <data name="Settings.TextBlock07.Text" xml:space="preserve">
+    <value>A cross-media search viewer built on Google DeepMind EmbeddingGemma 2 (740M Multimodal) and WinUI 3</value>
+  </data>
+  <data name="Settings.ToggleSwitch01.Header" xml:space="preserve">
+    <value>Also use keyword full-text search (FTS)</value>
+  </data>
+  <data name="Settings.ToggleSwitch01.OffContent" xml:space="preserve">
+    <value>Off</value>
+  </data>
+  <data name="Settings.ToggleSwitch01.OnContent" xml:space="preserve">
+    <value>On</value>
+  </data>
+  <data name="Shell.CreateFailed.Title" xml:space="preserve">
+    <value>Cannot create the profile</value>
+  </data>
+  <data name="Shell.Delete.Body" xml:space="preserve">
+    <value>Deletes the index, the cache, the folder settings and the search history of the selected profile. Your original images, PDFs and videos are not deleted.</value>
+  </data>
+  <data name="Shell.Delete.Primary" xml:space="preserve">
+    <value>Delete</value>
+  </data>
+  <data name="Shell.Delete.Title" xml:space="preserve">
+    <value>Delete profile</value>
+  </data>
+  <data name="Shell.DeleteFailed.Title" xml:space="preserve">
+    <value>Cannot delete the profile</value>
+  </data>
+  <data name="Shell.MenuFlyoutItem01.Text" xml:space="preserve">
+    <value>New profile...</value>
+  </data>
+  <data name="Shell.MenuFlyoutItem02.Text" xml:space="preserve">
+    <value>Rename...</value>
+  </data>
+  <data name="Shell.MenuFlyoutItem03.Text" xml:space="preserve">
+    <value>Delete...</value>
+  </data>
+  <data name="Shell.NavigationViewItem01.Content" xml:space="preserve">
+    <value>Search &amp; viewer</value>
+  </data>
+  <data name="Shell.NavigationViewItem02.Content" xml:space="preserve">
+    <value>Library</value>
+  </data>
+  <data name="Shell.NavigationViewItem03.Content" xml:space="preserve">
+    <value>Model</value>
+  </data>
+  <data name="Shell.New.Header" xml:space="preserve">
+    <value>Profile name (e.g. Work, Hobby)</value>
+  </data>
+  <data name="Shell.New.Primary" xml:space="preserve">
+    <value>Create</value>
+  </data>
+  <data name="Shell.New.Title" xml:space="preserve">
+    <value>New profile</value>
+  </data>
+  <data name="Shell.NothingToDelete.Body" xml:space="preserve">
+    <value>The profile in use cannot be deleted. Create another profile, or switch to it, and then delete.</value>
+  </data>
+  <data name="Shell.NothingToDelete.Title" xml:space="preserve">
+    <value>There is no profile to delete</value>
+  </data>
+  <data name="Shell.ProfileMenuButton.ToolTip" xml:space="preserve">
+    <value>Add, rename or delete profiles</value>
+  </data>
+  <data name="Shell.Rename.Header" xml:space="preserve">
+    <value>New name</value>
+  </data>
+  <data name="Shell.Rename.Primary" xml:space="preserve">
+    <value>Rename</value>
+  </data>
+  <data name="Shell.Rename.Title" xml:space="preserve">
+    <value>Rename profile</value>
+  </data>
+  <data name="Shell.RenameFailed.Title" xml:space="preserve">
+    <value>Cannot rename the profile</value>
+  </data>
+  <data name="Shell.SwitchFailed.Title" xml:space="preserve">
+    <value>Cannot switch the profile</value>
+  </data>
+  <data name="Shell.TextBlock01.Text" xml:space="preserve">
+    <value>Profile</value>
+  </data>
+  <data name="VideoPreview.FileInfoTextBlock.Text" xml:space="preserve">
+    <value>Video file information</value>
+  </data>
+  <data name="VideoPreview.FileNotFound" xml:space="preserve">
+    <value>Video file not found: {0}</value>
+  </data>
+  <data name="VideoPreview.HitMomentTextBlock.Text" xml:space="preserve">
+    <value>Jump to the match (00:00)</value>
+  </data>
+  <data name="VideoPreview.JumpTo" xml:space="preserve">
+    <value>Jump to the match ({0:mm\:ss})</value>
+  </data>
+  <data name="VideoPreview.LoadFailed" xml:space="preserve">
+    <value>Failed to load the video: {0}</value>
+  </data>
+  <data name="VideoPreview.OpenVideoExternalButton.ToolTip" xml:space="preserve">
+    <value>Open in the default media player</value>
+  </data>
+  <data name="VideoPreview.TextBlock01.Text" xml:space="preserve">
+    <value>Play in another app</value>
+  </data>
+</root>

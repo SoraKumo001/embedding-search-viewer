@@ -8,6 +8,7 @@ using System.Threading;
 using System.Threading.Channels;
 using System.Threading.Tasks;
 using EmbeddingSearchViewer.Core.Interfaces;
+using EmbeddingSearchViewer.Core.Localization;
 using EmbeddingSearchViewer.Core.Models;
 using EmbeddingSearchViewer.Infrastructure.Library;
 
@@ -158,7 +159,7 @@ public class IngestionPipelineWorker
             _isRunning = false;
         }
         while (_channel.Reader.TryRead(out _)) { } // drop work left over from the interrupted run
-        NotifyProgress("中断されました");
+        NotifyProgress(Loc.T("Library.Stopped"));
     }
 
     /// <summary>Marks a producer as active and makes sure the consumer is running.</summary>
@@ -202,7 +203,7 @@ public class IngestionPipelineWorker
                 await _channel.Writer.WriteAsync(file);
             }
 
-            NotifyProgress($"キュー登録完了 ({_totalFiles} 件)");
+            NotifyProgress(Loc.T("Ingest.Queued", _totalFiles));
         }
         finally
         {
@@ -340,14 +341,14 @@ public class IngestionPipelineWorker
                 _isRunning = false;
             }
         }
-        NotifyProgress("すべてのインデックス作成が完了しました", summary: VideoStats.Summary(_runWatch.Elapsed.TotalSeconds));
+        NotifyProgress(Loc.T("Ingest.AllDone"), summary: VideoStats.Summary(_runWatch.Elapsed.TotalSeconds));
     }
 
     /// <summary>Indexes one PDF or video and reports progress; a failure is reported, not thrown.</summary>
     private async Task ProcessNonImageItemAsync(string filePath, CancellationToken cancellationToken)
     {
         string fileName = Path.GetFileName(filePath);
-        NotifyProgress($"解析中: {fileName}");
+        NotifyProgress(Loc.T("Ingest.Analyzing", fileName));
         try
         {
             await ProcessSingleNonImageFileAsync(filePath, cancellationToken);
@@ -375,7 +376,7 @@ public class IngestionPipelineWorker
         if (!finished && (now - last) < VideoProgressIntervalSeconds * Stopwatch.Frequency) return;
         if (!finished && Interlocked.CompareExchange(ref _lastVideoNotifyTicks, now, last) != last) return;
 
-        NotifyProgress($"解析中: {Path.GetFileName(filePath)}");
+        NotifyProgress(Loc.T("Ingest.Analyzing", Path.GetFileName(filePath)));
     }
 
     /// <summary>One line per video that is being processed: how many of its segments are done.</summary>
@@ -388,10 +389,10 @@ public class IngestionPipelineWorker
         {
             var (done, total) = kv.Value;
             int percent = total > 0 ? done * 100 / total : 0;
-            return $"動画 {Path.GetFileName(kv.Key)}: {done:N0} / {total:N0} 場面 ({percent}%)";
+            return Loc.T("Ingest.VideoProgress", Path.GetFileName(kv.Key), done, total, percent);
         });
         string text = string.Join("\n", lines);
-        return active.Count > 4 ? text + $"\nほか {active.Count - 4} 本" : text;
+        return active.Count > 4 ? text + "\n" + Loc.T("Ingest.VideoProgress.More", active.Count - 4) : text;
     }
 
     private async Task SaveAsync(MediaAsset asset, IEnumerable<MediaChunk> chunks, CancellationToken cancellationToken)
@@ -442,7 +443,7 @@ public class IngestionPipelineWorker
         if (toProcess.Count > 0)
         {
             string currentName = Path.GetFileName(toProcess.First());
-            NotifyProgress($"ベクトル計算中: {currentName}");
+            NotifyProgress(Loc.T("Ingest.Embedding", currentName));
 
             try
             {
@@ -490,11 +491,11 @@ public class IngestionPipelineWorker
     {
         const int Shown = 3;
         var parts = failures.Take(Shown).Select(f => $"{Path.GetFileName(f.Path)} ({f.Error})");
-        string text = $"読み込めずに飛ばしたファイル: {string.Join("、", parts)}";
-        if (failures.Count > Shown) text += $" ほか {failures.Count - Shown} 件";
+        string text = Loc.T("Ingest.Failed.Files", string.Join(Loc.T("Common.ListSeparator"), parts));
+        if (failures.Count > Shown) text += Loc.T("Ingest.Failed.More", failures.Count - Shown);
         return willExclude
-            ? text + "。壊れている可能性が高いので、次回から、インデックスの対象から外します（「ライブラリ管理」の「外したファイル」で、解除できます）。"
-            : text + "。もう一度インデックスを作成すると、再度、試します。";
+            ? text + Loc.T("Ingest.Failed.WillExclude")
+            : text + Loc.T("Ingest.Failed.RetryNext");
     }
 
     private void ExcludeFailedFiles(IReadOnlyList<ImageFailure> failures)

@@ -216,8 +216,23 @@ jobs:
           - 初回起動時に、AI モデル（約 1.76 GB）をアプリ内でダウンロードします。
           - ``SHA256SUMS.txt`` で、zip とインストーラーのチェックサムを確認できます。
           - 署名がないため、Windows の SmartScreen の警告が出ることがあります（対処は、同梱の ``README.md`` を参照してください）。
-          - 動作環境と使い方は、同梱の ``README.md`` を参照してください。
+          - 動作環境と使い方は、同梱の ``README.md``（日本語）と ``README.en.md``（English）を参照してください。
+          - 表示言語は、日本語と English です（「設定」→「言語」。既定は、Windows の表示言語に合わせます）。
           - このアプリは MIT ライセンスです（同梱の ``LICENSE``）。サードパーティのライセンスは、``THIRD-PARTY-NOTICES.md`` と ``licenses/`` にまとめています。
+
+          ---
+
+          A Windows (x64) app. Use either of these:
+
+          - **Installer** (``EmbeddingSearchViewer-<version>-win-x64-setup.exe``): run it and the app is added to the Start menu (no administrator rights needed).
+          - **zip** (``EmbeddingSearchViewer-<version>-win-x64.zip``): extract it and double-click ``EmbeddingSearchViewer.cmd`` at the top (the app itself is in the ``app`` folder).
+
+          - On the first start the app downloads the AI model (about 1.76 GB).
+          - ``SHA256SUMS.txt`` has the checksums of the zip and the installer.
+          - The files are not code-signed, so Windows SmartScreen may show a warning (see the bundled ``README.en.md`` for what to do).
+          - System requirements and usage: see the bundled ``README.en.md`` (English) and ``README.md`` (Japanese).
+          - The app is available in Japanese and English ("Settings" → "Language"; by default it follows the display language of Windows).
+          - The app is under the MIT License (the bundled ``LICENSE``). The licenses of the third-party software are in ``THIRD-PARTY-NOTICES.md`` and ``licenses/``.
           "@ | Set-Content -Encoding utf8 artifacts/release-notes.md
 
           $ghArgs = @(

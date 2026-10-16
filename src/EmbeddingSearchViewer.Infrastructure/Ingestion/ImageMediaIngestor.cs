@@ -5,6 +5,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using EmbeddingSearchViewer.Core.Interfaces;
+using EmbeddingSearchViewer.Core.Localization;
 using EmbeddingSearchViewer.Core.Models;
 using EmbeddingSearchViewer.Infrastructure.Sidecar;
 
@@ -189,6 +190,6 @@ public class ImageMediaIngestor
     private static string Describe(Exception ex)
     {
         while (ex is AggregateException { InnerExceptions.Count: > 0 } agg) ex = agg.InnerExceptions[0];
-        return ex is FileNotFoundException ? "ファイルを開けませんでした" : ex.Message;
+        return ex is FileNotFoundException ? Loc.T("Ingest.FileOpenFailed") : ex.Message;
     }
 }

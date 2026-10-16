@@ -5,6 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Navigation;
+using EmbeddingSearchViewer.Core.Localization;
 using EmbeddingSearchViewer.Infrastructure.Profiles;
 using EmbeddingSearchViewer_App.Services;
 using EmbeddingSearchViewer_App.ViewModels;
@@ -69,29 +70,29 @@ public sealed partial class ShellPage : Page
         if (!await _profiles.SwitchAsync(selected.Id))
         {
             SyncProfileCombo();
-            await ShowMessageAsync("プロファイルを切り替えられません", _profiles.ErrorMessage);
+            await ShowMessageAsync(Loc.T("Shell.SwitchFailed.Title"), _profiles.ErrorMessage);
         }
     }
 
     private async void NewProfile_Click(object sender, RoutedEventArgs e)
     {
-        var name = await AskNameAsync("新しいプロファイル", "プロファイル名（例: 仕事、趣味）", string.Empty, "作成");
+        var name = await AskNameAsync(Loc.T("Shell.New.Title"), Loc.T("Shell.New.Header"), string.Empty, Loc.T("Shell.New.Primary"));
         if (name == null) return;
 
         if (!await _profiles.CreateAsync(name))
         {
-            await ShowMessageAsync("プロファイルを作成できません", _profiles.ErrorMessage);
+            await ShowMessageAsync(Loc.T("Shell.CreateFailed.Title"), _profiles.ErrorMessage);
         }
     }
 
     private async void RenameProfile_Click(object sender, RoutedEventArgs e)
     {
-        var name = await AskNameAsync("プロファイル名を変更", "新しい名前", _profiles.Current.Name, "変更");
+        var name = await AskNameAsync(Loc.T("Shell.Rename.Title"), Loc.T("Shell.Rename.Header"), _profiles.Current.Name, Loc.T("Shell.Rename.Primary"));
         if (name == null) return;
 
         if (!_profiles.RenameCurrent(name))
         {
-            await ShowMessageAsync("名前を変更できません", _profiles.ErrorMessage);
+            await ShowMessageAsync(Loc.T("Shell.RenameFailed.Title"), _profiles.ErrorMessage);
         }
     }
 
@@ -100,7 +101,7 @@ public sealed partial class ShellPage : Page
         var others = _profiles.Profiles.Where(p => p.Id != _profiles.Current.Id).ToList();
         if (others.Count == 0)
         {
-            await ShowMessageAsync("削除できるプロファイルがありません", "使用中のプロファイルは削除できません。別のプロファイルを作成するか、切り替えてから削除してください。");
+            await ShowMessageAsync(Loc.T("Shell.NothingToDelete.Title"), Loc.T("Shell.NothingToDelete.Body"));
             return;
         }
 
@@ -108,7 +109,7 @@ public sealed partial class ShellPage : Page
         var panel = new StackPanel { Spacing = 12 };
         panel.Children.Add(new TextBlock
         {
-            Text = "選んだプロファイルの、インデックスとキャッシュ、フォルダの設定、検索の履歴を削除します。元の画像・PDF・動画は削除しません。",
+            Text = Loc.T("Shell.Delete.Body"),
             TextWrapping = TextWrapping.Wrap
         });
         panel.Children.Add(picker);
@@ -116,17 +117,17 @@ public sealed partial class ShellPage : Page
         var dialog = new ContentDialog
         {
             XamlRoot = XamlRoot,
-            Title = "プロファイルを削除",
+            Title = Loc.T("Shell.Delete.Title"),
             Content = panel,
-            PrimaryButtonText = "削除",
-            CloseButtonText = "キャンセル",
+            PrimaryButtonText = Loc.T("Shell.Delete.Primary"),
+            CloseButtonText = Loc.T("Common.Cancel"),
             DefaultButton = ContentDialogButton.Close
         };
         if (await dialog.ShowAsync() != ContentDialogResult.Primary || picker.SelectedItem is not ProfileInfo target) return;
 
         if (!_profiles.Delete(target.Id))
         {
-            await ShowMessageAsync("プロファイルを削除できません", _profiles.ErrorMessage);
+            await ShowMessageAsync(Loc.T("Shell.DeleteFailed.Title"), _profiles.ErrorMessage);
         }
     }
 
@@ -141,7 +142,7 @@ public sealed partial class ShellPage : Page
             Title = title,
             Content = box,
             PrimaryButtonText = primary,
-            CloseButtonText = "キャンセル",
+            CloseButtonText = Loc.T("Common.Cancel"),
             DefaultButton = ContentDialogButton.Primary,
             IsPrimaryButtonEnabled = initial.Trim().Length > 0
         };
@@ -156,7 +157,7 @@ public sealed partial class ShellPage : Page
             XamlRoot = XamlRoot,
             Title = title,
             Content = new TextBlock { Text = message ?? string.Empty, TextWrapping = TextWrapping.Wrap },
-            CloseButtonText = "閉じる"
+            CloseButtonText = Loc.T("Common.Close")
         }.ShowAsync();
     }
 

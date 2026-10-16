@@ -5,14 +5,15 @@
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     xmlns:lib="using:EmbeddingSearchViewer.Infrastructure.Library"
+    xmlns:loc="using:EmbeddingSearchViewer_App.Localization"
     mc:Ignorable="d">
 
     <ScrollViewer Padding="24">
         <StackPanel MaxWidth="800" HorizontalAlignment="Left" Spacing="20">
             <!-- Header -->
             <StackPanel Spacing="4">
-                <TextBlock Text="メディアライブラリ管理" Style="{ThemeResource TitleTextBlockStyle}" />
-                <TextBlock Text="PDFドキュメント、静止画、動画が存在するフォルダを追加して、EmbeddingGemma 2 によるインデックスを作成・管理します。"
+                <TextBlock loc:L.Uid="Library.TextBlock01" Style="{ThemeResource TitleTextBlockStyle}" />
+                <TextBlock loc:L.Uid="Library.TextBlock02"
                            Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" />
             </StackPanel>
 
@@ -21,7 +22,7 @@
                 <FontIcon Glyph="&#xE968;" FontSize="24" VerticalAlignment="Center" Margin="0,0,16,0"
                           Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" />
                 <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                    <TextBlock Text="推論エンジン (EmbeddingGemma 2)" FontWeight="SemiBold" />
+                    <TextBlock loc:L.Uid="Library.TextBlock03" FontWeight="SemiBold" />
                     <TextBlock Text="{x:Bind ViewModel.SidecarStatus, Mode=OneWay}"
                                Style="{ThemeResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                 </StackPanel>
@@ -33,38 +34,38 @@
                 <Grid Grid.Row="0" ColumnDefinitions="*,Auto">
                     <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
                         <FontIcon Glyph="&#xEC27;" FontSize="16" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" />
-                        <TextBlock Text="インデックス済みファイル統計" FontWeight="SemiBold" VerticalAlignment="Center" />
+                        <TextBlock loc:L.Uid="Library.TextBlock04" FontWeight="SemiBold" VerticalAlignment="Center" />
                     </StackPanel>
                     <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4">
-                        <Button Command="{x:Bind ViewModel.RefreshLibraryStatsCommand}" ToolTipService.ToolTip="統計を再読み込み"
+                        <Button loc:L.Uid="Library.Button01" Command="{x:Bind ViewModel.RefreshLibraryStatsCommand}"
                                 Padding="8,4" Background="Transparent" BorderThickness="0" AutomationProperties.Name="Refresh Stats">
                             <StackPanel Orientation="Horizontal" Spacing="4">
                                 <FontIcon Glyph="&#xE72C;" FontSize="13" />
-                                <TextBlock Text="更新" Style="{ThemeResource CaptionTextBlockStyle}" />
+                                <TextBlock loc:L.Uid="Library.TextBlock05" Style="{ThemeResource CaptionTextBlockStyle}" />
                             </StackPanel>
                         </Button>
-                        <Button Command="{x:Bind ViewModel.RemoveMissingFilesCommand}" ToolTipService.ToolTip="ディスク上に存在しないファイルをインデックスから除去"
+                        <Button loc:L.Uid="Library.Button02" Command="{x:Bind ViewModel.RemoveMissingFilesCommand}"
                                 IsEnabled="{x:Bind ViewModel.IsIndexing, Mode=OneWay, Converter={StaticResource InverseBoolConverter}}"
                                 Padding="8,4" Background="Transparent" BorderThickness="0" AutomationProperties.Name="Remove Missing Files">
                             <StackPanel Orientation="Horizontal" Spacing="4">
                                 <FontIcon Glyph="&#xE74D;" FontSize="13" />
-                                <TextBlock Text="削除済みを除去" Style="{ThemeResource CaptionTextBlockStyle}" />
+                                <TextBlock loc:L.Uid="Library.TextBlock06" Style="{ThemeResource CaptionTextBlockStyle}" />
                             </StackPanel>
                         </Button>
-                        <Button Command="{x:Bind ViewModel.RemoveBlankImagesCommand}" ToolTipService.ToolTip="白紙(ほぼ一色)の画像をインデックスから除去 (ファイルは削除されません)"
+                        <Button loc:L.Uid="Library.Button03" Command="{x:Bind ViewModel.RemoveBlankImagesCommand}"
                                 IsEnabled="{x:Bind ViewModel.IsIndexing, Mode=OneWay, Converter={StaticResource InverseBoolConverter}}"
                                 Padding="8,4" Background="Transparent" BorderThickness="0" AutomationProperties.Name="Remove Blank Images">
                             <StackPanel Orientation="Horizontal" Spacing="4">
                                 <FontIcon Glyph="&#xE7B3;" FontSize="13" />
-                                <TextBlock Text="白紙を除去" Style="{ThemeResource CaptionTextBlockStyle}" />
+                                <TextBlock loc:L.Uid="Library.TextBlock07" Style="{ThemeResource CaptionTextBlockStyle}" />
                             </StackPanel>
                         </Button>
-                        <Button Click="ClearIndexButton_Click" ToolTipService.ToolTip="インデックスをすべて削除 (ファイル自体は削除されません)"
+                        <Button loc:L.Uid="Library.Button04" Click="ClearIndexButton_Click"
                                 IsEnabled="{x:Bind ViewModel.IsIndexing, Mode=OneWay, Converter={StaticResource InverseBoolConverter}}"
                                 Padding="8,4" Background="Transparent" BorderThickness="0" AutomationProperties.Name="Clear Index">
                             <StackPanel Orientation="Horizontal" Spacing="4">
                                 <FontIcon Glyph="&#xE894;" FontSize="13" Foreground="{ThemeResource SystemFillColorCriticalBrush}" />
-                                <TextBlock Text="クリア" Style="{ThemeResource CaptionTextBlockStyle}" />
+                                <TextBlock loc:L.Uid="Library.TextBlock08" Style="{ThemeResource CaptionTextBlockStyle}" />
                             </StackPanel>
                         </Button>
                     </StackPanel>
@@ -76,7 +77,7 @@
                     <Border Grid.Column="0" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
                             BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="6" Padding="12,10">
                         <StackPanel Spacing="4">
-                            <TextBlock Text="総ファイル数" Style="{ThemeResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                            <TextBlock loc:L.Uid="Library.TextBlock09" Style="{ThemeResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                             <TextBlock Text="{x:Bind ViewModel.TotalIndexedAssets, Mode=OneWay}" Style="{ThemeResource SubtitleTextBlockStyle}" FontWeight="Bold" />
                         </StackPanel>
                     </Border>
@@ -87,7 +88,7 @@
                         <StackPanel Spacing="4">
                             <StackPanel Orientation="Horizontal" Spacing="4">
                                 <FontIcon Glyph="&#xEB9F;" FontSize="12" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" />
-                                <TextBlock Text="静止画" Style="{ThemeResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                <TextBlock loc:L.Uid="Library.TextBlock10" Style="{ThemeResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                             </StackPanel>
                             <TextBlock Text="{x:Bind ViewModel.IndexedImageCount, Mode=OneWay}" Style="{ThemeResource SubtitleTextBlockStyle}" FontWeight="Bold" />
                         </StackPanel>
@@ -99,7 +100,7 @@
                         <StackPanel Spacing="4">
                             <StackPanel Orientation="Horizontal" Spacing="4">
                                 <FontIcon Glyph="&#xEA90;" FontSize="12" Foreground="{ThemeResource SystemFillColorCautionBrush}" />
-                                <TextBlock Text="PDF文書" Style="{ThemeResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                <TextBlock loc:L.Uid="Library.TextBlock11" Style="{ThemeResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                             </StackPanel>
                             <TextBlock Text="{x:Bind ViewModel.IndexedPdfCount, Mode=OneWay}" Style="{ThemeResource SubtitleTextBlockStyle}" FontWeight="Bold" />
                         </StackPanel>
@@ -111,7 +112,7 @@
                         <StackPanel Spacing="4">
                             <StackPanel Orientation="Horizontal" Spacing="4">
                                 <FontIcon Glyph="&#xE714;" FontSize="12" Foreground="{ThemeResource SystemFillColorCriticalBrush}" />
-                                <TextBlock Text="動画" Style="{ThemeResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                <TextBlock loc:L.Uid="Library.TextBlock12" Style="{ThemeResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                             </StackPanel>
                             <TextBlock Text="{x:Bind ViewModel.IndexedVideoCount, Mode=OneWay}" Style="{ThemeResource SubtitleTextBlockStyle}" FontWeight="Bold" />
                         </StackPanel>
@@ -125,12 +126,12 @@
                 <Grid Grid.Row="0" ColumnDefinitions="*,Auto">
                     <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
                         <FontIcon Glyph="&#xED25;" FontSize="16" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" />
-                        <TextBlock Text="インデックス対象フォルダ" FontWeight="SemiBold" VerticalAlignment="Center" />
+                        <TextBlock loc:L.Uid="Library.TextBlock13" FontWeight="SemiBold" VerticalAlignment="Center" />
                     </StackPanel>
                     <Button Grid.Column="1" Click="AddFolderButton_Click" Style="{ThemeResource AccentButtonStyle}" AutomationProperties.Name="Add Folder">
                         <StackPanel Orientation="Horizontal" Spacing="6">
                             <FontIcon Glyph="&#xE8F4;" FontSize="14" />
-                            <TextBlock Text="フォルダを追加" />
+                            <TextBlock loc:L.Uid="Library.TextBlock14" />
                         </StackPanel>
                     </Button>
                 </Grid>
@@ -143,8 +144,8 @@
                             BorderThickness="1" CornerRadius="6" Padding="20">
                         <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="8">
                             <FontIcon Glyph="&#xE8B7;" FontSize="32" Foreground="{ThemeResource TextFillColorTertiaryBrush}" HorizontalAlignment="Center" />
-                            <TextBlock Text="対象フォルダがまだ登録されていません" FontWeight="SemiBold" HorizontalAlignment="Center" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                            <TextBlock Text="「フォルダを追加」ボタンをクリックするか、フォルダをここにドラッグ&amp;ドロップしてください。"
+                            <TextBlock loc:L.Uid="Library.TextBlock15" FontWeight="SemiBold" HorizontalAlignment="Center" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                            <TextBlock loc:L.Uid="Library.TextBlock16"
                                        Style="{ThemeResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorTertiaryBrush}" HorizontalAlignment="Center" />
                         </StackPanel>
                     </Border>
@@ -158,7 +159,7 @@
                                 <Grid ColumnDefinitions="Auto,*,Auto" Padding="8,4" ColumnSpacing="10">
                                     <FontIcon Glyph="&#xED25;" FontSize="16" VerticalAlignment="Center" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" />
                                     <TextBlock Grid.Column="1" Text="{x:Bind}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
-                                    <Button Grid.Column="2" Click="RemoveFolderButton_Click" ToolTipService.ToolTip="このフォルダをリストから解除" AutomationProperties.Name="Remove Folder"
+                                    <Button loc:L.Uid="Library.Button05" Grid.Column="2" Click="RemoveFolderButton_Click" AutomationProperties.Name="Remove Folder"
                                             Background="Transparent" BorderThickness="0" Padding="6">
                                         <FontIcon Glyph="&#xE74D;" FontSize="14" Foreground="{ThemeResource SystemFillColorCriticalBrush}" />
                                     </Button>
@@ -170,24 +171,23 @@
 
                 <!-- Action & Progress -->
                 <StackPanel Grid.Row="2" Spacing="8">
-                    <ToggleSwitch Header="フォルダを監視して自動でインデックスを更新"
-                                  OnContent="オン (追加・変更・削除を自動反映)" OffContent="オフ"
+                    <ToggleSwitch loc:L.Uid="Library.ToggleSwitch01"
                                   IsOn="{x:Bind ViewModel.AutoIndex, Mode=TwoWay}" AutomationProperties.Name="Auto Index" />
-                    <ComboBox Header="動画の場面の間隔（1 場面につき 1 枚のフレームを検索の対象にします）"
+                    <ComboBox loc:L.Uid="Library.ComboBox01"
                               ItemsSource="{x:Bind ViewModel.VideoSegmentOptions}"
                               SelectedIndex="{x:Bind ViewModel.VideoSegmentIndex, Mode=TwoWay}"
                               AutomationProperties.Name="Video Segment Length" />
-                    <TextBlock Text="間隔を長くすると、長い動画の取り込みが速くなりますが、検索できる場面は粗くなります。変更は、これから取り込む動画に適用されます（取り込み済みの動画は、「クリア」してから作り直してください）。"
+                    <TextBlock loc:L.Uid="Library.TextBlock17"
                                Style="{ThemeResource CaptionTextBlockStyle}" TextWrapping="Wrap"
                                Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                     <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
                         <TextBlock Text="{x:Bind ViewModel.CurrentStatusMessage, Mode=OneWay}" VerticalAlignment="Center"
                                    Style="{ThemeResource CaptionTextBlockStyle}" TextTrimming="CharacterEllipsis" />
-                        <Button Grid.Column="1" Content="インデックス作成を開始"
+                        <Button loc:L.Uid="Library.Button06" Grid.Column="1"
                                 Command="{x:Bind ViewModel.StartIndexingCommand}"
                                 IsEnabled="{x:Bind ViewModel.IsIndexing, Mode=OneWay, Converter={StaticResource InverseBoolConverter}}"
                                 AutomationProperties.Name="Start Indexing" />
-                        <Button Grid.Column="2" Content="中断"
+                        <Button loc:L.Uid="Library.Button07" Grid.Column="2"
                                 Command="{x:Bind ViewModel.StopIndexingCommand}"
                                 IsEnabled="{x:Bind ViewModel.IsIndexing, Mode=OneWay}"
                                 AutomationProperties.Name="Stop Indexing" />
@@ -207,7 +207,7 @@
                       HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"
                       Visibility="{x:Bind ViewModel.HasExcluded, Mode=OneWay}">
                 <StackPanel Spacing="8">
-                    <TextBlock Text="読み込みを、何度か試しても失敗したファイルは、壊れている可能性が高いので、次回から、インデックスの対象から外しています。ファイルを直したり、置き換えたりして、サイズや更新日時が変わると、自動で、対象に戻ります。"
+                    <TextBlock loc:L.Uid="Library.TextBlock18"
                                Style="{ThemeResource CaptionTextBlockStyle}" TextWrapping="Wrap"
                                Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                     <ListView ItemsSource="{x:Bind ViewModel.ExcludedFiles, Mode=OneWay}" MaxHeight="220" SelectionMode="None"
@@ -223,21 +223,20 @@
                                         <TextBlock Text="{x:Bind FailedAtText}" Style="{ThemeResource CaptionTextBlockStyle}"
                                                    Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                                     </StackPanel>
-                                    <Button Grid.Column="1" Content="対象に戻す" Tag="{x:Bind}" Click="RestoreExcluded_Click"
-                                            ToolTipService.ToolTip="次回のインデックス作成で、もう一度、試します"
+                                    <Button loc:L.Uid="Library.Button08" Grid.Column="1" Tag="{x:Bind}" Click="RestoreExcluded_Click"
                                             VerticalAlignment="Center" />
                                 </Grid>
                             </DataTemplate>
                         </ListView.ItemTemplate>
                     </ListView>
-                    <Button Content="すべて対象に戻す" Command="{x:Bind ViewModel.ClearExclusionsCommand}"
+                    <Button loc:L.Uid="Library.Button09" Command="{x:Bind ViewModel.ClearExclusionsCommand}"
                             AutomationProperties.Name="Restore All Excluded Files" />
                 </StackPanel>
             </Expander>
 
             <!-- Index / model mismatch -->
-            <InfoBar IsOpen="{x:Bind ViewModel.IndexModelWarning, Mode=OneWay, Converter={StaticResource StringNotEmptyConverter}}"
-                     IsClosable="False" Severity="Warning" Title="インデックスの再作成が必要です"
+            <InfoBar loc:L.Uid="Library.InfoBar01" IsOpen="{x:Bind ViewModel.IndexModelWarning, Mode=OneWay, Converter={StaticResource StringNotEmptyConverter}}"
+                     IsClosable="False" Severity="Warning"
                      Message="{x:Bind ViewModel.IndexModelWarning, Mode=OneWay}" />
 
             <!-- Error InfoBar -->

@@ -1,8 +1,11 @@
+using System;
 using System.Linq;
 using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using EmbeddingSearchViewer.Core.Interfaces;
+using EmbeddingSearchViewer.Core.Localization;
+using EmbeddingSearchViewer.Infrastructure.Library;
 using EmbeddingSearchViewer.Infrastructure.Onnx;
 
 namespace EmbeddingSearchViewer_App.ViewModels;
@@ -10,6 +13,8 @@ namespace EmbeddingSearchViewer_App.ViewModels;
 public partial class SettingsViewModel : ObservableObject
 {
     private readonly IEmbeddingService _embeddingService;
+    private readonly AppSettingsStore _appSettings;
+    private readonly string _startupLanguage;
 
     /// <summary>Search options shared with the search page (dimension, similarity threshold, FTS).</summary>
     public SearchViewModel Search { get; }
@@ -30,30 +35,56 @@ public partial class SettingsViewModel : ObservableObject
     [ObservableProperty]
     private bool _isEngineReady;
 
-    [ObservableProperty]
-    private string _healthDetails = "未確認";
+    // ---- language ----
 
-    public SettingsViewModel(IEmbeddingService embeddingService, SearchViewModel search)
+    private static readonly string[] LanguageSettings = { Loc.Auto, Loc.Japanese, Loc.English };
+
+    /// <summary>0: follow Windows, 1: Japanese, 2: English.</summary>
+    [ObservableProperty]
+    private int _languageIndex;
+
+    /// <summary>True when the chosen language differs from the one the app was started with.</summary>
+    [ObservableProperty]
+    private bool _restartRequired;
+
+    partial void OnLanguageIndexChanged(int value)
+    {
+        if (value < 0 || value >= LanguageSettings.Length) return;
+
+        var settings = _appSettings.Load();
+        settings.Language = LanguageSettings[value];
+        _appSettings.Save(settings);
+        RestartRequired = settings.Language != _startupLanguage;
+    }
+
+    [ObservableProperty]
+    private string _healthDetails = Loc.T("Settings.Health.Unchecked");
+
+    public SettingsViewModel(IEmbeddingService embeddingService, SearchViewModel search, AppSettingsStore appSettings)
     {
         _embeddingService = embeddingService;
         Search = search;
+        _appSettings = appSettings;
+        _startupLanguage = App.StartupLanguageSetting;
+        _languageIndex = Math.Max(0, Array.IndexOf(LanguageSettings, _appSettings.Load().Language));
+        _restartRequired = LanguageSettings[_languageIndex] != _startupLanguage;
     }
 
     [RelayCommand]
     public async Task CheckHealthAsync()
     {
-        HealthDetails = "確認中...";
+        HealthDetails = Loc.T("Settings.Health.Checking");
         try
         {
             IsEngineReady = await _embeddingService.IsReadyAsync();
             HealthDetails = IsEngineReady
-                ? "準備完了 (ONNX Runtime / DirectML)"
-                : UnavailableEmbeddingService.ReasonOf(_embeddingService) ?? "初期化中、または利用できません (モデルファイルを確認してください)";
+                ? Loc.T("Settings.Health.Ready")
+                : UnavailableEmbeddingService.ReasonOf(_embeddingService) ?? Loc.T("Settings.Health.Unavailable");
         }
         catch (System.Exception ex)
         {
             IsEngineReady = false;
-            HealthDetails = $"エラー: {ex.Message}";
+            HealthDetails = Loc.T("Settings.Health.Error", ex.Message);
         }
     }
 }

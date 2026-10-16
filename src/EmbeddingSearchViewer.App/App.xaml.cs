@@ -4,6 +4,7 @@ using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.UI.Xaml;
 using EmbeddingSearchViewer.Core.Interfaces;
+using EmbeddingSearchViewer.Core.Localization;
 using EmbeddingSearchViewer.Core.Services;
 using EmbeddingSearchViewer.Infrastructure.Data;
 using EmbeddingSearchViewer.Infrastructure.Ingestion;
@@ -21,14 +22,22 @@ public partial class App : Application
     public static Window CurrentWindow { get; private set; } = null!;
     public static Microsoft.UI.Dispatching.DispatcherQueue MainWindowDispatcherQueue { get; private set; } = null!;
 
+    /// <summary>The language setting ("auto", "ja", "en") that the app was started with; a change applies at the next start.</summary>
+    public static string StartupLanguageSetting { get; private set; } = Loc.Auto;
+
     public App()
     {
+        // The language comes first: every text the app shows is chosen by it.
+        StartupLanguageSetting = new AppSettingsStore().Load().Language;
+        Loc.SetLanguage(StartupLanguageSetting);
+
         InitializeComponent();
 
         var services = new ServiceCollection();
 
         // 1. Core Services & Infrastructure
         services.AddSingleton<INavigationService, NavigationService>();
+        services.AddSingleton<AppSettingsStore>();
         services.AddSingleton<ProfileManager>(_ => new ProfileManager());
         
         services.AddSingleton<IMediaRepository>(sp =>

@@ -6,7 +6,6 @@
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     xmlns:views="using:EmbeddingSearchViewer_App.Views"
-    Title="EmbeddingGemma 2 マルチモーダル検索＆ビューア"
     mc:Ignorable="d">
     <Window.SystemBackdrop>
         <MicaBackdrop />

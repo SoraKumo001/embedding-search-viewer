@@ -5,6 +5,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using EmbeddingSearchViewer.Core.Localization;
 using EmbeddingSearchViewer.Infrastructure.Onnx;
 
 namespace EmbeddingSearchViewer_App.ViewModels;
@@ -59,7 +60,7 @@ public partial class ModelSetupViewModel : ObservableObject
     private string? _errorMessage;
 
     [ObservableProperty]
-    private string _downloadButtonText = "ダウンロードを開始";
+    private string _downloadButtonText = Loc.T("ModelSetup.Button.Start");
 
     public bool CanDownload => !IsDownloading && !IsInstalled;
     public bool ShowDownloadButton => !IsInstalled;
@@ -75,21 +76,21 @@ public partial class ModelSetupViewModel : ObservableObject
 
         if (IsInstalled)
         {
-            StatusText = "モデルは利用可能です。";
+            StatusText = Loc.T("ModelSetup.Status.Available");
             DetailText = string.Empty;
             ProgressPercent = 100;
         }
         else if (remaining < total)
         {
-            StatusText = $"前回のダウンロードの続きから再開できます (残り {FormatBytes(remaining)})。";
+            StatusText = Loc.T("ModelSetup.Status.CanResume", FormatBytes(remaining));
             ProgressPercent = 100.0 * (total - remaining) / total;
-            DownloadButtonText = "ダウンロードを再開";
+            DownloadButtonText = Loc.T("ModelSetup.Button.Resume");
         }
         else
         {
-            StatusText = $"検索に使うAIモデル ({TotalSizeText}) をダウンロードします。";
+            StatusText = Loc.T("ModelSetup.Status.WillDownload", TotalSizeText);
             ProgressPercent = 0;
-            DownloadButtonText = "ダウンロードを開始";
+            DownloadButtonText = Loc.T("ModelSetup.Button.Start");
         }
     }
 
@@ -101,14 +102,14 @@ public partial class ModelSetupViewModel : ObservableObject
         _cts = new CancellationTokenSource();
         IsDownloading = true;
         ErrorMessage = null;
-        StatusText = "ダウンロードを準備しています...";
+        StatusText = Loc.T("ModelSetup.Status.Preparing");
 
         var progress = new Progress<ModelDownloadProgress>(OnProgress);
         try
         {
             await _downloader.DownloadAsync(_files, _directory, progress, _cts.Token);
 
-            StatusText = "モデルを読み込んでいます...";
+            StatusText = Loc.T("ModelSetup.Status.Loading");
             IsVerifying = false;
             await _host.ReloadAsync();
 
@@ -117,36 +118,36 @@ public partial class ModelSetupViewModel : ObservableObject
                 IsDownloading = false;
                 IsInstalled = true;
                 ProgressPercent = 100;
-                StatusText = "ダウンロードが完了しました。検索を利用できます。";
+                StatusText = Loc.T("ModelSetup.Status.Done");
                 DetailText = string.Empty;
             }
             else
             {
                 IsDownloading = false;
                 ErrorMessage = _host.UnavailableReason;
-                StatusText = "ダウンロードは完了しましたが、モデルを読み込めませんでした。";
+                StatusText = Loc.T("ModelSetup.Status.LoadFailed");
             }
         }
         catch (OperationCanceledException)
         {
             IsDownloading = false;
-            StatusText = "中断しました。途中までのデータは保存されており、再開できます。";
-            DownloadButtonText = "ダウンロードを再開";
+            StatusText = Loc.T("ModelSetup.Status.Stopped");
+            DownloadButtonText = Loc.T("ModelSetup.Button.Resume");
             Refresh();
         }
         catch (ModelDownloadException ex)
         {
             IsDownloading = false;
             ErrorMessage = ex.Message;
-            StatusText = "ダウンロードに失敗しました。";
-            DownloadButtonText = "再試行";
+            StatusText = Loc.T("ModelSetup.Status.Failed");
+            DownloadButtonText = Loc.T("ModelSetup.Button.Retry");
         }
         catch (Exception ex) when (ex is System.IO.IOException or UnauthorizedAccessException)
         {
             IsDownloading = false;
-            ErrorMessage = $"ファイルを書き込めませんでした: {ex.Message}";
-            StatusText = "ダウンロードに失敗しました。";
-            DownloadButtonText = "再試行";
+            ErrorMessage = Loc.T("ModelSetup.WriteFailed", ex.Message);
+            StatusText = Loc.T("ModelSetup.Status.Failed");
+            DownloadButtonText = Loc.T("ModelSetup.Button.Retry");
         }
         finally
         {
@@ -169,13 +170,13 @@ public partial class ModelSetupViewModel : ObservableObject
 
         StatusText = p.Phase switch
         {
-            ModelDownloadPhase.Verifying => $"ファイルを検証しています ({p.FileIndex}/{p.FileCount})...",
-            _ => $"ダウンロード中 ({p.FileIndex}/{p.FileCount}): {p.CurrentFile}"
+            ModelDownloadPhase.Verifying => Loc.T("ModelSetup.Status.Verifying", p.FileIndex, p.FileCount),
+            _ => Loc.T("ModelSetup.Status.Downloading", p.FileIndex, p.FileCount, p.CurrentFile)
         };
 
-        string speed = p.BytesPerSecond > 0 ? $"  {FormatBytes((long)p.BytesPerSecond)}/秒" : string.Empty;
+        string speed = p.BytesPerSecond > 0 ? Loc.T("ModelSetup.Speed", FormatBytes((long)p.BytesPerSecond)) : string.Empty;
         string eta = p.BytesPerSecond > 0 && p.Phase == ModelDownloadPhase.Downloading
-            ? $"  残り約 {FormatDuration(TimeSpan.FromSeconds((p.BytesTotal - p.BytesDone) / p.BytesPerSecond))}"
+            ? Loc.T("ModelSetup.Eta", FormatDuration(TimeSpan.FromSeconds((p.BytesTotal - p.BytesDone) / p.BytesPerSecond)))
             : string.Empty;
         DetailText = $"{FormatBytes(p.BytesDone)} / {FormatBytes(p.BytesTotal)}{speed}{eta}";
     }
@@ -189,6 +190,6 @@ public partial class ModelSetupViewModel : ObservableObject
     };
 
     public static string FormatDuration(TimeSpan t) => t.TotalHours >= 1
-        ? $"{(int)t.TotalHours}時間{t.Minutes}分"
-        : t.TotalMinutes >= 1 ? $"{(int)t.TotalMinutes}分{t.Seconds}秒" : $"{Math.Max(1, (int)t.TotalSeconds)}秒";
+        ? Loc.T("ModelSetup.Duration.HoursMinutes", (int)t.TotalHours, t.Minutes)
+        : t.TotalMinutes >= 1 ? Loc.T("ModelSetup.Duration.MinutesSeconds", (int)t.TotalMinutes, t.Seconds) : Loc.T("ModelSetup.Duration.Seconds", Math.Max(1, (int)t.TotalSeconds));
 }

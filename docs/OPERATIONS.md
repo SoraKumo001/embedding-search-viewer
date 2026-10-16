@@ -101,7 +101,7 @@ gh release delete v0.1.0 --cleanup-tag --yes
 | Test | `--filter "Requires!=WindowsMedia"`（下記） |
 | Publish | `-c Release -p:Platform=x64 -r win-x64 --self-contained true` |
 | Code Sign | 署名用の証明書（Secrets）があるときだけ、`artifacts/publish` の exe とアプリの DLL に署名する |
-| Arrange the package folder | `tools/New-PackageLayout.ps1`。一番上は、`EmbeddingSearchViewer.cmd`（起動用）、`README.md`、`LICENSE`、`THIRD-PARTY-NOTICES.md`、`licenses\`。アプリ本体の約 400 ファイルは、`app\` に入る（7 章） |
+| Arrange the package folder | `tools/New-PackageLayout.ps1`。一番上は、`EmbeddingSearchViewer.cmd`（起動用）、`README.md`、`README.en.md`、`LICENSE`、`THIRD-PARTY-NOTICES.md`、`licenses\`。アプリ本体の約 400 ファイルは、`app\` に入る（7 章） |
 | Install Inno Setup | `choco install innosetup`（入っていなければ） |
 | Build the installer | `tools/Build-Installer.ps1`（`installer/EmbeddingSearchViewer.iss`）。`EmbeddingSearchViewer-<version>-win-x64-setup.exe` を作る |
 | Code Sign the installer | 証明書があるときだけ、インストーラーに署名する |
@@ -298,6 +298,26 @@ CPU での比較（同じ 8 枚の画像と 10 個のテキスト）では、fp1
 - 一時的な失敗（長いロックなど）で、正常な画像を外してしまうことがあるので、「ライブラリ管理」の「インデックスから外したファイル」から、1 件ずつ、またはまとめて、対象に戻せます。
 - 対象は、画像だけです。PDF と動画は、読めなくても、ファイル名で検索できる形で、取り込まれます（外しません）。
 - 「クリア」（インデックスを消す）は、この一覧を消しません。
+
+### 9.4 表示言語（日本語 / English）
+
+**仕組み**
+- 文言は、`src/EmbeddingSearchViewer.Core/Resources/Strings.resx`（日本語。既定の言語）と `Strings.en.resx`（English）にあります。ある言語に文言がないときは、日本語に戻ります。コードからは、`Loc.T("キー", 引数...)`（`Core/Localization/Loc.cs`）で取り出します（書式は、言語の文化圏で整形します。`{0:N0}` なら、英語は `1,234`）。キーがないときは、`[キー]` と表示されて、気づけます。
+- XAML は、`x:Uid` ではなく、添付プロパティ `loc:L.Uid="Search.TextBlock01"`（`App/Localization/L.cs`）を使います。`<Uid>.<プロパティ名>` という形のキー（`Search.TextBlock01.Text`、`....Content`、`....Header`、`....PlaceholderText`、`....ToolTip`、`....OnContent`、`....OffContent`、`....Title`、`....Message`）の値を、その要素のプロパティに設定します（`x:Uid` と `.resw` は、配布が展開型（unpackaged）のため、言語の切り替えに制約があるので、避けました）。
+- 言語の選択は、`%LOCALAPPDATA%\EmbeddingSearchViewer\settings.json` の `Language`（`auto` / `ja` / `en`。`AppSettingsStore`）です。`App` のコンストラクターの先頭で、`Loc.SetLanguage` を呼びます。`auto` は、Windows の表示言語が日本語なら日本語、それ以外は English です。**変更は、再起動で反映**します（実行中に切り替えると、すでに作った文字列が、変わらないため）。設定画面の「今すぐ再起動」は、新しいプロセスを起動して、自分を終了します。
+- 起動前（またはテスト）の言語は、**日本語**です。OS の言語には、依存しません。だから、日本語の文言を確かめている既存のテストは、どの環境でも通ります。テストで、別の言語を使うときは、`using (Loc.UseLanguage("en")) { ... }`（その呼び出しの流れの中だけに効く `AsyncLocal`）を使います。並列に動いているほかのテストには、影響しません。
+
+**文言を足す・直す**
+1. `Strings.resx`（日本語）と `Strings.en.resx`（English）の、**両方**に、同じキーで書きます。プレースホルダー（`{0}`、`{1:N0}`）は、両方で同じ番号にします。
+2. XAML なら、要素に `loc:L.Uid="ページ.名前"` を付け、`ページ.名前.プロパティ` のキーを足します。ファイルの先頭の `xmlns:loc="using:EmbeddingSearchViewer_App.Localization"` も、必要です。
+3. システムのコントロールの既定の文言（`ToggleSwitch` の「オン / オフ」など）は、Windows の言語で出ます。気になる場合は、`OnContent` と `OffContent` を、キーで指定してください。
+4. `LocalizationTests` が、次を確かめます: 日本語と English のキーが、過不足なく揃っている / プレースホルダーが同じ / English に、日本語が残っていない（`Settings.LanguageTitle.Text` は、意図して両方）/ 翻訳が、日本語のままではない / コードの `Loc.T("...")` と、XAML の `loc:L.Uid` のキーが、実在する / どの XAML のキーも、使われている。
+
+**言語を足す**: `Strings.<言語コード>.resx` を足し、`Loc.Supported` と `Resolve`、設定画面の一覧（`SettingsPage.xaml` の `ComboBox`、`SettingsViewModel.LanguageSettings`）に加えます。
+
+**そのままにしているもの**: ログ、例外の内部メッセージ（開発者向け）、運用ノート（日本語）、`AutomationProperties.Name`（すでに English）。プロファイルの名前は、データなので、翻訳されません（最初に作る「標準」だけが、最初の起動時の言語で、`Default` になります）。
+
+**検証の範囲**: 日本語と English で、アプリを起動し、すべてのページを開いて、English の見た目と、文字の欠けがないことを、画面で確かめました。表示が長くなる箇所（ボタン、ダイアログ）の崩れは、ウィンドウの幅によって、変わるので、リリース前に、狭い幅でも見てください。
 
 ## 10. 性能と GPU（DirectML）
 

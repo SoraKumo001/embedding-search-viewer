@@ -4,31 +4,32 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:loc="using:EmbeddingSearchViewer_App.Localization"
     mc:Ignorable="d">
 
     <ScrollViewer Padding="24">
         <StackPanel MaxWidth="800" HorizontalAlignment="Left" Spacing="20">
             <!-- Header -->
-            <TextBlock Text="設定" Style="{ThemeResource TitleTextBlockStyle}" />
+            <TextBlock loc:L.Uid="Settings.TextBlock01" Style="{ThemeResource TitleTextBlockStyle}" />
 
             <!-- Embedding Engine Status -->
             <Grid Background="{ThemeResource LayerFillColorDefaultBrush}" CornerRadius="8" Padding="16" RowDefinitions="Auto,Auto" RowSpacing="12">
-                <TextBlock Grid.Row="0" Text="埋め込みエンジン (EmbeddingGemma 2)" FontWeight="SemiBold" />
+                <TextBlock loc:L.Uid="Settings.TextBlock02" Grid.Row="0" FontWeight="SemiBold" />
                 <Grid Grid.Row="1" ColumnDefinitions="*,Auto">
                     <StackPanel VerticalAlignment="Center">
-                        <TextBlock Text="ステータス" Style="{ThemeResource CaptionTextBlockStyle}" />
+                        <TextBlock loc:L.Uid="Settings.TextBlock03" Style="{ThemeResource CaptionTextBlockStyle}" />
                         <TextBlock Text="{x:Bind ViewModel.HealthDetails, Mode=OneWay}" FontWeight="SemiBold" TextWrapping="Wrap" />
                     </StackPanel>
-                    <Button Grid.Column="1" Content="再確認" Command="{x:Bind ViewModel.CheckHealthCommand}" AutomationProperties.Name="Check Engine Status" />
+                    <Button loc:L.Uid="Settings.Button01" Grid.Column="1" Command="{x:Bind ViewModel.CheckHealthCommand}" AutomationProperties.Name="Check Engine Status" />
                 </Grid>
             </Grid>
 
             <!-- Search Options -->
             <Grid Background="{ThemeResource LayerFillColorDefaultBrush}" CornerRadius="8" Padding="16" RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="12">
-                <TextBlock Grid.Row="0" Text="検索オプション" FontWeight="SemiBold" />
+                <TextBlock loc:L.Uid="Settings.TextBlock04" Grid.Row="0" FontWeight="SemiBold" />
 
                 <StackPanel Grid.Row="1" Spacing="6">
-                    <TextBlock Text="ベクトル次元数 (MRL)。下げるとメモリ使用量と検索時間が減ります。インデックス時と異なる値でも先頭次元で比較します。"
+                    <TextBlock loc:L.Uid="Settings.TextBlock05"
                                Style="{ThemeResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" />
                     <ComboBox SelectedValue="{x:Bind ViewModel.Search.TruncateDim, Mode=TwoWay}" AutomationProperties.Name="Vector Dimension">
                         <x:Int32>768</x:Int32>
@@ -39,19 +40,36 @@
                 </StackPanel>
 
                 <StackPanel Grid.Row="2" Spacing="6">
-                    <Slider Header="最小類似度 (0 = 制限なし)" Minimum="0" Maximum="1" StepFrequency="0.05" TickFrequency="0.25" TickPlacement="Outside"
+                    <Slider loc:L.Uid="Settings.Slider01" Minimum="0" Maximum="1" StepFrequency="0.05" TickFrequency="0.25" TickPlacement="Outside"
                             Value="{x:Bind ViewModel.Search.MinSimilarity, Mode=TwoWay}" AutomationProperties.Name="Minimum Similarity" />
                 </StackPanel>
 
-                <ToggleSwitch Grid.Row="3" Header="キーワード全文検索 (FTS) を併用"
+                <ToggleSwitch loc:L.Uid="Settings.ToggleSwitch01" Grid.Row="3"
                               IsOn="{x:Bind ViewModel.Search.EnableFts, Mode=TwoWay}" AutomationProperties.Name="Enable FTS" />
             </Grid>
 
+            <!-- Language: a change takes effect the next time the app starts -->
+            <StackPanel Background="{ThemeResource LayerFillColorDefaultBrush}" CornerRadius="8" Padding="16" Spacing="8">
+                <TextBlock loc:L.Uid="Settings.LanguageTitle" FontWeight="SemiBold" />
+                <TextBlock loc:L.Uid="Settings.LanguageHint" Style="{ThemeResource CaptionTextBlockStyle}" TextWrapping="Wrap"
+                           Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                <ComboBox SelectedIndex="{x:Bind ViewModel.LanguageIndex, Mode=TwoWay}" MinWidth="260" AutomationProperties.Name="Language">
+                    <ComboBoxItem loc:L.Uid="Settings.LanguageAuto" />
+                    <!-- Each language is named in its own language, so that it can be found whatever the app is showing -->
+                    <ComboBoxItem Content="日本語" />
+                    <ComboBoxItem Content="English" />
+                </ComboBox>
+                <StackPanel Orientation="Horizontal" Spacing="12" Visibility="{x:Bind ViewModel.RestartRequired, Mode=OneWay}">
+                    <TextBlock loc:L.Uid="Settings.RestartNeeded" VerticalAlignment="Center" />
+                    <Button loc:L.Uid="Settings.RestartNow" Click="RestartNow_Click" AutomationProperties.Name="Restart Now" />
+                </StackPanel>
+            </StackPanel>
+
             <!-- App About -->
             <StackPanel Background="{ThemeResource LayerFillColorDefaultBrush}" CornerRadius="8" Padding="16" Spacing="6">
-                <TextBlock Text="このアプリケーションについて" FontWeight="SemiBold" />
+                <TextBlock loc:L.Uid="Settings.TextBlock06" FontWeight="SemiBold" />
                 <TextBlock Text="{x:Bind ViewModel.AppVersionText}" Style="{ThemeResource CaptionTextBlockStyle}" Margin="0,8,0,0" />
-                <TextBlock Text="Google DeepMind EmbeddingGemma 2 (740M Multimodal) と WinUI 3 によるマルチメディア横断検索ビューア"
+                <TextBlock loc:L.Uid="Settings.TextBlock07"
                            Style="{ThemeResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
             </StackPanel>
         </StackPanel>

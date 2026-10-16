@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using EmbeddingSearchViewer.Core.Interfaces;
+using EmbeddingSearchViewer.Core.Localization;
 
 namespace EmbeddingSearchViewer.Infrastructure.Onnx;
 
@@ -38,7 +39,7 @@ public sealed class UnavailableEmbeddingService : IEmbeddingService
     public static string DescribeFailure(Exception ex) => ex switch
     {
         System.IO.FileNotFoundException =>
-            $"埋め込みモデルが見つかりません。メニューの「モデル」からダウンロードするか、models フォルダにモデルを配置してください。({ex.Message})",
-        _ => $"埋め込みエンジンを初期化できませんでした: {ex.Message}"
+            Loc.T("Engine.ModelMissing", ex.Message),
+        _ => Loc.T("Engine.InitFailed", ex.Message)
     };
 }

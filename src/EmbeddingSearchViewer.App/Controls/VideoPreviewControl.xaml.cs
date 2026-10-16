@@ -5,6 +5,7 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Windows.Media.Core;
 using Windows.Media.Playback;
+using EmbeddingSearchViewer.Core.Localization;
 using EmbeddingSearchViewer.Core.Models;
 
 namespace EmbeddingSearchViewer_App.Controls;
@@ -26,7 +27,7 @@ public sealed partial class VideoPreviewControl : UserControl
         _loadedPath = item.Asset.FilePath;
         if (!File.Exists(item.Asset.FilePath))
         {
-            FileInfoTextBlock.Text = "動画ファイルが見つかりません: " + item.Asset.FilePath;
+            FileInfoTextBlock.Text = Loc.T("VideoPreview.FileNotFound", item.Asset.FilePath);
             return;
         }
 
@@ -34,7 +35,7 @@ public sealed partial class VideoPreviewControl : UserControl
 
         int startMs = item.Chunk.StartTimeMs ?? 0;
         var startTs = TimeSpan.FromMilliseconds(startMs);
-        HitMomentTextBlock.Text = $"一致箇所へジャンプ ({startTs:mm\\:ss})";
+        HitMomentTextBlock.Text = Loc.T("VideoPreview.JumpTo", startTs);
 
         // Initialize Player
         if (_mediaPlayer == null)
@@ -53,7 +54,7 @@ public sealed partial class VideoPreviewControl : UserControl
         }
         catch (Exception ex)
         {
-            FileInfoTextBlock.Text = $"動画読み込み失敗: {ex.Message}";
+            FileInfoTextBlock.Text = Loc.T("VideoPreview.LoadFailed", ex.Message);
         }
     }
 
@@ -68,7 +69,7 @@ public sealed partial class VideoPreviewControl : UserControl
 
         _currentItem = scene;
         var start = TimeSpan.FromMilliseconds(scene.Chunk.StartTimeMs ?? 0);
-        HitMomentTextBlock.Text = $"一致箇所へジャンプ ({start:mm\\:ss})";
+        HitMomentTextBlock.Text = Loc.T("VideoPreview.JumpTo", start);
         _mediaPlayer.PlaybackSession.Position = start;
         _mediaPlayer.Play();
     }

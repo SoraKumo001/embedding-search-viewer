@@ -3,6 +3,7 @@ using System.Collections.ObjectModel;
 using System.Linq;
 using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.ComponentModel;
+using EmbeddingSearchViewer.Core.Localization;
 using EmbeddingSearchViewer.Infrastructure.Ingestion;
 using EmbeddingSearchViewer.Infrastructure.Library;
 using EmbeddingSearchViewer.Infrastructure.Profiles;
@@ -50,7 +51,7 @@ public partial class ProfileViewModel : ObservableObject
         Current = _profiles.Current;
     }
 
-    private const string IndexingMessage = "インデックス作成中はプロファイルを切り替えられません。完了するか、中断してから切り替えてください。";
+    private static string IndexingMessage => Loc.T("Profile.IndexingBlocked");
 
     /// <summary>Switches to the profile and reloads the library and search screens. Returns false when refused.</summary>
     public async Task<bool> SwitchAsync(string id)

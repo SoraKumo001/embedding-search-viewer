@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using EmbeddingSearchViewer.Core.Localization;
 using EmbeddingSearchViewer.Infrastructure.Library;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
@@ -18,6 +19,7 @@ public sealed partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        Title = Loc.T("App.Title");
         AppWindow.SetIcon("Assets/AppIcon.ico");
 
         // The default: the standard size, at the place Windows chooses.

@@ -1,0 +1,826 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
+    <xsd:import namespace="http://www.w3.org/XML/1998/namespace" />
+    <xsd:element name="root" msdata:IsDataSet="true">
+      <xsd:complexType>
+        <xsd:choice maxOccurs="unbounded">
+          <xsd:element name="metadata">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" />
+              </xsd:sequence>
+              <xsd:attribute name="name" use="required" type="xsd:string" />
+              <xsd:attribute name="type" type="xsd:string" />
+              <xsd:attribute name="mimetype" type="xsd:string" />
+              <xsd:attribute ref="xml:space" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="assembly">
+            <xsd:complexType>
+              <xsd:attribute name="alias" type="xsd:string" />
+              <xsd:attribute name="name" type="xsd:string" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="data">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+                <xsd:element name="comment" type="xsd:string" minOccurs="0" msdata:Ordinal="2" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" msdata:Ordinal="1" />
+              <xsd:attribute name="type" type="xsd:string" msdata:Ordinal="3" />
+              <xsd:attribute name="mimetype" type="xsd:string" msdata:Ordinal="4" />
+              <xsd:attribute ref="xml:space" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="resheader">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+            </xsd:complexType>
+          </xsd:element>
+        </xsd:choice>
+      </xsd:complexType>
+    </xsd:element>
+  </xsd:schema>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <data name="App.Title" xml:space="preserve">
+    <value>EmbeddingGemma 2 マルチモーダル検索＆ビューア</value>
+  </data>
+  <data name="Common.Cancel" xml:space="preserve">
+    <value>キャンセル</value>
+  </data>
+  <data name="Common.Clear" xml:space="preserve">
+    <value>クリア</value>
+  </data>
+  <data name="Common.Close" xml:space="preserve">
+    <value>閉じる</value>
+  </data>
+  <data name="Common.FileNotFound" xml:space="preserve">
+    <value>ファイルが見つかりません</value>
+  </data>
+  <data name="Common.ListSeparator" xml:space="preserve">
+    <value>、</value>
+  </data>
+  <data name="Engine.InitFailed" xml:space="preserve">
+    <value>埋め込みエンジンを初期化できませんでした: {0}</value>
+  </data>
+  <data name="Engine.ModelMissing" xml:space="preserve">
+    <value>埋め込みモデルが見つかりません。メニューの「モデル」からダウンロードするか、models フォルダにモデルを配置してください。({0})</value>
+  </data>
+  <data name="ImagePreview.Describe" xml:space="preserve">
+    <value>{0} ({1:N0} × {2:N0} px, {3:N0} KB) - 最終更新: {4:yyyy/MM/dd HH:mm}</value>
+  </data>
+  <data name="ImagePreview.FileNotFoundTitle" xml:space="preserve">
+    <value>画像ファイルが見つかりません</value>
+  </data>
+  <data name="ImagePreview.ImageTitleTextBlock.Text" xml:space="preserve">
+    <value>画像プレビュー</value>
+  </data>
+  <data name="ImagePreview.LoadError" xml:space="preserve">
+    <value>読み込みエラー: {0}</value>
+  </data>
+  <data name="ImagePreview.MetadataTextBlock.Text" xml:space="preserve">
+    <value>画像情報 (ホイールで拡大縮小 / ドラッグで移動 / ダブルクリックで切替)</value>
+  </data>
+  <data name="ImagePreview.OpenImageExternalButton.ToolTip" xml:space="preserve">
+    <value>既定のフォトアプリで開く</value>
+  </data>
+  <data name="ImagePreview.OpenInExplorerButton.ToolTip" xml:space="preserve">
+    <value>エクスプローラーで、このファイルの場所を開く</value>
+  </data>
+  <data name="ImagePreview.TextBlock01.Text" xml:space="preserve">
+    <value>エクスプローラーで開く</value>
+  </data>
+  <data name="ImagePreview.TextBlock02.Text" xml:space="preserve">
+    <value>外部アプリで開く</value>
+  </data>
+  <data name="Ingest.AllDone" xml:space="preserve">
+    <value>すべてのインデックス作成が完了しました</value>
+  </data>
+  <data name="Ingest.Analyzing" xml:space="preserve">
+    <value>解析中: {0}</value>
+  </data>
+  <data name="Ingest.Embedding" xml:space="preserve">
+    <value>ベクトル計算中: {0}</value>
+  </data>
+  <data name="Ingest.Failed.Files" xml:space="preserve">
+    <value>読み込めずに飛ばしたファイル: {0}</value>
+  </data>
+  <data name="Ingest.Failed.More" xml:space="preserve">
+    <value> ほか {0} 件</value>
+  </data>
+  <data name="Ingest.Failed.RetryNext" xml:space="preserve">
+    <value>。もう一度インデックスを作成すると、再度、試します。</value>
+  </data>
+  <data name="Ingest.Failed.WillExclude" xml:space="preserve">
+    <value>。壊れている可能性が高いので、次回から、インデックスの対象から外します（「ライブラリ管理」の「外したファイル」で、解除できます）。</value>
+  </data>
+  <data name="Ingest.FileOpenFailed" xml:space="preserve">
+    <value>ファイルを開けませんでした</value>
+  </data>
+  <data name="Ingest.Queued" xml:space="preserve">
+    <value>キュー登録完了 ({0} 件)</value>
+  </data>
+  <data name="Ingest.VideoProgress" xml:space="preserve">
+    <value>動画 {0}: {1:N0} / {2:N0} 場面 ({3}%)</value>
+  </data>
+  <data name="Ingest.VideoProgress.More" xml:space="preserve">
+    <value>ほか {0} 本</value>
+  </data>
+  <data name="Ingest.VideoStats" xml:space="preserve">
+    <value>動画 {0} 本・{1} 場面（フレーム取り出し {2:F1} 秒、埋め込み {3:F1} 秒、動画ごとの所要 {4:F1} 秒、全体 {5:F1} 秒）</value>
+  </data>
+  <data name="Library.Blank.Checking" xml:space="preserve">
+    <value>白紙(ほぼ一色)の画像を調べています...</value>
+  </data>
+  <data name="Library.Blank.Error" xml:space="preserve">
+    <value>白紙画像の除去中にエラーが発生しました: {0}</value>
+  </data>
+  <data name="Library.Blank.None" xml:space="preserve">
+    <value>白紙の画像はありませんでした</value>
+  </data>
+  <data name="Library.Blank.Removed" xml:space="preserve">
+    <value>白紙(ほぼ一色)の画像 {0} 件をインデックスから除去しました (ファイルは削除していません)</value>
+  </data>
+  <data name="Library.Button01.ToolTip" xml:space="preserve">
+    <value>統計を再読み込み</value>
+  </data>
+  <data name="Library.Button02.ToolTip" xml:space="preserve">
+    <value>ディスク上に存在しないファイルをインデックスから除去</value>
+  </data>
+  <data name="Library.Button03.ToolTip" xml:space="preserve">
+    <value>白紙(ほぼ一色)の画像をインデックスから除去 (ファイルは削除されません)</value>
+  </data>
+  <data name="Library.Button04.ToolTip" xml:space="preserve">
+    <value>インデックスをすべて削除 (ファイル自体は削除されません)</value>
+  </data>
+  <data name="Library.Button05.ToolTip" xml:space="preserve">
+    <value>このフォルダをリストから解除</value>
+  </data>
+  <data name="Library.Button06.Content" xml:space="preserve">
+    <value>インデックス作成を開始</value>
+  </data>
+  <data name="Library.Button07.Content" xml:space="preserve">
+    <value>中断</value>
+  </data>
+  <data name="Library.Button08.Content" xml:space="preserve">
+    <value>対象に戻す</value>
+  </data>
+  <data name="Library.Button08.ToolTip" xml:space="preserve">
+    <value>次回のインデックス作成で、もう一度、試します</value>
+  </data>
+  <data name="Library.Button09.Content" xml:space="preserve">
+    <value>すべて対象に戻す</value>
+  </data>
+  <data name="Library.Clear.Error" xml:space="preserve">
+    <value>クリア中にエラーが発生しました: {0}</value>
+  </data>
+  <data name="Library.ClearDialog.Body" xml:space="preserve">
+    <value>登録済みのインデックスをすべて削除します。元のファイルは削除されません。検索するには再度インデックス作成が必要です。</value>
+  </data>
+  <data name="Library.ClearDialog.Title" xml:space="preserve">
+    <value>インデックスをクリアしますか?</value>
+  </data>
+  <data name="Library.Cleared" xml:space="preserve">
+    <value>インデックスをクリアしました ({0} 件)</value>
+  </data>
+  <data name="Library.ComboBox01.Header" xml:space="preserve">
+    <value>動画の場面の間隔（1 場面につき 1 枚のフレームを検索の対象にします）</value>
+  </data>
+  <data name="Library.Done" xml:space="preserve">
+    <value>すべてのインデックス作成が完了しました ({0}/{1} 件)</value>
+  </data>
+  <data name="Library.Done.Excluded" xml:space="preserve">
+    <value>。前回、読み込めなかった {0} 件は、対象から外しています</value>
+  </data>
+  <data name="Library.Done.Skipped" xml:space="preserve">
+    <value>。うち {0} 件は白紙(ほぼ一色)のため対象外にしました</value>
+  </data>
+  <data name="Library.Done.Summary" xml:space="preserve">
+    <value>。{0}</value>
+  </data>
+  <data name="Library.Drop.AddFolder" xml:space="preserve">
+    <value>フォルダを追加</value>
+  </data>
+  <data name="Library.Engine.Initializing" xml:space="preserve">
+    <value>エンジン初期化中</value>
+  </data>
+  <data name="Library.Engine.Name" xml:space="preserve">
+    <value>ONNX DirectML エンジン</value>
+  </data>
+  <data name="Library.Engine.Ready" xml:space="preserve">
+    <value>ONNX DirectML エンジン準備完了</value>
+  </data>
+  <data name="Library.Excluded.NoneToRestore" xml:space="preserve">
+    <value>外したファイルはありません</value>
+  </data>
+  <data name="Library.Excluded.Restored" xml:space="preserve">
+    <value>{0} を、次回のインデックスの対象に戻しました</value>
+  </data>
+  <data name="Library.Excluded.RestoredAll" xml:space="preserve">
+    <value>外していた {0} 件を、次回のインデックスの対象に戻しました</value>
+  </data>
+  <data name="Library.ExcludedHeader" xml:space="preserve">
+    <value>インデックスから外したファイル ({0} 件)</value>
+  </data>
+  <data name="Library.IndexModelMismatch" xml:space="preserve">
+    <value>このインデックスは別の埋め込みモデルで作成されています。検索結果が正しくならないため、「クリア」してからインデックスを作り直してください。</value>
+  </data>
+  <data name="Library.InfoBar01.Title" xml:space="preserve">
+    <value>インデックスの再作成が必要です</value>
+  </data>
+  <data name="Library.Missing.Error" xml:space="preserve">
+    <value>除去中にエラーが発生しました: {0}</value>
+  </data>
+  <data name="Library.Missing.None" xml:space="preserve">
+    <value>存在しないファイルはありませんでした</value>
+  </data>
+  <data name="Library.Missing.Removed" xml:space="preserve">
+    <value>存在しないファイル {0} 件をインデックスから除去しました</value>
+  </data>
+  <data name="Library.Progress.NoTotal" xml:space="preserve">
+    <value>処理中: {0}</value>
+  </data>
+  <data name="Library.Progress.WithTotal" xml:space="preserve">
+    <value>処理中 ({0}/{1}): {2}</value>
+  </data>
+  <data name="Library.Scanning" xml:space="preserve">
+    <value>対象ファイルをスキャン中...</value>
+  </data>
+  <data name="Library.SegmentLabel" xml:space="preserve">
+    <value>{0} 秒</value>
+  </data>
+  <data name="Library.SegmentLabel.Standard" xml:space="preserve">
+    <value>{0} 秒（標準）</value>
+  </data>
+  <data name="Library.SettingsSaveFailed" xml:space="preserve">
+    <value>設定を保存できませんでした: {0}</value>
+  </data>
+  <data name="Library.Status.Ready" xml:space="preserve">
+    <value>準備完了</value>
+  </data>
+  <data name="Library.Stopped" xml:space="preserve">
+    <value>中断されました</value>
+  </data>
+  <data name="Library.TextBlock01.Text" xml:space="preserve">
+    <value>メディアライブラリ管理</value>
+  </data>
+  <data name="Library.TextBlock02.Text" xml:space="preserve">
+    <value>PDFドキュメント、静止画、動画が存在するフォルダを追加して、EmbeddingGemma 2 によるインデックスを作成・管理します。</value>
+  </data>
+  <data name="Library.TextBlock03.Text" xml:space="preserve">
+    <value>推論エンジン (EmbeddingGemma 2)</value>
+  </data>
+  <data name="Library.TextBlock04.Text" xml:space="preserve">
+    <value>インデックス済みファイル統計</value>
+  </data>
+  <data name="Library.TextBlock05.Text" xml:space="preserve">
+    <value>更新</value>
+  </data>
+  <data name="Library.TextBlock06.Text" xml:space="preserve">
+    <value>削除済みを除去</value>
+  </data>
+  <data name="Library.TextBlock07.Text" xml:space="preserve">
+    <value>白紙を除去</value>
+  </data>
+  <data name="Library.TextBlock08.Text" xml:space="preserve">
+    <value>クリア</value>
+  </data>
+  <data name="Library.TextBlock09.Text" xml:space="preserve">
+    <value>総ファイル数</value>
+  </data>
+  <data name="Library.TextBlock10.Text" xml:space="preserve">
+    <value>静止画</value>
+  </data>
+  <data name="Library.TextBlock11.Text" xml:space="preserve">
+    <value>PDF文書</value>
+  </data>
+  <data name="Library.TextBlock12.Text" xml:space="preserve">
+    <value>動画</value>
+  </data>
+  <data name="Library.TextBlock13.Text" xml:space="preserve">
+    <value>インデックス対象フォルダ</value>
+  </data>
+  <data name="Library.TextBlock14.Text" xml:space="preserve">
+    <value>フォルダを追加</value>
+  </data>
+  <data name="Library.TextBlock15.Text" xml:space="preserve">
+    <value>対象フォルダがまだ登録されていません</value>
+  </data>
+  <data name="Library.TextBlock16.Text" xml:space="preserve">
+    <value>「フォルダを追加」ボタンをクリックするか、フォルダをここにドラッグ&amp;ドロップしてください。</value>
+  </data>
+  <data name="Library.TextBlock17.Text" xml:space="preserve">
+    <value>間隔を長くすると、長い動画の取り込みが速くなりますが、検索できる場面は粗くなります。変更は、これから取り込む動画に適用されます（取り込み済みの動画は、「クリア」してから作り直してください）。</value>
+  </data>
+  <data name="Library.TextBlock18.Text" xml:space="preserve">
+    <value>読み込みを、何度か試しても失敗したファイルは、壊れている可能性が高いので、次回から、インデックスの対象から外しています。ファイルを直したり、置き換えたりして、サイズや更新日時が変わると、自動で、対象に戻ります。</value>
+  </data>
+  <data name="Library.ToggleSwitch01.Header" xml:space="preserve">
+    <value>フォルダを監視して自動でインデックスを更新</value>
+  </data>
+  <data name="Library.ToggleSwitch01.OffContent" xml:space="preserve">
+    <value>オフ</value>
+  </data>
+  <data name="Library.ToggleSwitch01.OnContent" xml:space="preserve">
+    <value>オン (追加・変更・削除を自動反映)</value>
+  </data>
+  <data name="ModelDownload.ChecksumMismatch" xml:space="preserve">
+    <value>{0} のチェックサムが一致しません (ダウンロードが破損しています)。再試行してください。</value>
+  </data>
+  <data name="ModelDownload.DiskSpace" xml:space="preserve">
+    <value>ディスクの空き容量が不足しています。必要: {0:N0} MB (+余裕 200 MB) / 空き: {1:N0} MB ({2})</value>
+  </data>
+  <data name="ModelDownload.Failed" xml:space="preserve">
+    <value>{0} をダウンロードできませんでした: {1}</value>
+  </data>
+  <data name="ModelSetup.Button.Resume" xml:space="preserve">
+    <value>ダウンロードを再開</value>
+  </data>
+  <data name="ModelSetup.Button.Retry" xml:space="preserve">
+    <value>再試行</value>
+  </data>
+  <data name="ModelSetup.Button.Start" xml:space="preserve">
+    <value>ダウンロードを開始</value>
+  </data>
+  <data name="ModelSetup.Button01.Content" xml:space="preserve">
+    <value>中断</value>
+  </data>
+  <data name="ModelSetup.Button02.Content" xml:space="preserve">
+    <value>検索画面へ</value>
+  </data>
+  <data name="ModelSetup.Duration.HoursMinutes" xml:space="preserve">
+    <value>{0}時間{1}分</value>
+  </data>
+  <data name="ModelSetup.Duration.MinutesSeconds" xml:space="preserve">
+    <value>{0}分{1}秒</value>
+  </data>
+  <data name="ModelSetup.Duration.Seconds" xml:space="preserve">
+    <value>{0}秒</value>
+  </data>
+  <data name="ModelSetup.Eta" xml:space="preserve">
+    <value>  残り約 {0}</value>
+  </data>
+  <data name="ModelSetup.InfoBar01.Title" xml:space="preserve">
+    <value>エラー</value>
+  </data>
+  <data name="ModelSetup.Speed" xml:space="preserve">
+    <value>  {0}/秒</value>
+  </data>
+  <data name="ModelSetup.Status.Available" xml:space="preserve">
+    <value>モデルは利用可能です。</value>
+  </data>
+  <data name="ModelSetup.Status.CanResume" xml:space="preserve">
+    <value>前回のダウンロードの続きから再開できます (残り {0})。</value>
+  </data>
+  <data name="ModelSetup.Status.Done" xml:space="preserve">
+    <value>ダウンロードが完了しました。検索を利用できます。</value>
+  </data>
+  <data name="ModelSetup.Status.Downloading" xml:space="preserve">
+    <value>ダウンロード中 ({0}/{1}): {2}</value>
+  </data>
+  <data name="ModelSetup.Status.Failed" xml:space="preserve">
+    <value>ダウンロードに失敗しました。</value>
+  </data>
+  <data name="ModelSetup.Status.LoadFailed" xml:space="preserve">
+    <value>ダウンロードは完了しましたが、モデルを読み込めませんでした。</value>
+  </data>
+  <data name="ModelSetup.Status.Loading" xml:space="preserve">
+    <value>モデルを読み込んでいます...</value>
+  </data>
+  <data name="ModelSetup.Status.Preparing" xml:space="preserve">
+    <value>ダウンロードを準備しています...</value>
+  </data>
+  <data name="ModelSetup.Status.Stopped" xml:space="preserve">
+    <value>中断しました。途中までのデータは保存されており、再開できます。</value>
+  </data>
+  <data name="ModelSetup.Status.Verifying" xml:space="preserve">
+    <value>ファイルを検証しています ({0}/{1})...</value>
+  </data>
+  <data name="ModelSetup.Status.WillDownload" xml:space="preserve">
+    <value>検索に使うAIモデル ({0}) をダウンロードします。</value>
+  </data>
+  <data name="ModelSetup.TextBlock01.Text" xml:space="preserve">
+    <value>AIモデルのセットアップ</value>
+  </data>
+  <data name="ModelSetup.TextBlock02.Text" xml:space="preserve">
+    <value>画像・テキストの検索には、EmbeddingGemma 2 モデルが必要です。初回のみダウンロードします。ダウンロード後は、すべてこのPC内で処理されます。</value>
+  </data>
+  <data name="ModelSetup.TextBlock03.Text" xml:space="preserve">
+    <value>提供元</value>
+  </data>
+  <data name="ModelSetup.TextBlock04.Text" xml:space="preserve">
+    <value>ダウンロードサイズ</value>
+  </data>
+  <data name="ModelSetup.TextBlock05.Text" xml:space="preserve">
+    <value>保存先</value>
+  </data>
+  <data name="ModelSetup.TextBlock06.Text" xml:space="preserve">
+    <value>途中で中断しても、続きから再開できます。ダウンロードしたファイルは、公開されているチェックサムと照合して検証します。</value>
+  </data>
+  <data name="ModelSetup.WriteFailed" xml:space="preserve">
+    <value>ファイルを書き込めませんでした: {0}</value>
+  </data>
+  <data name="PdfPreview.Expander01.Header" xml:space="preserve">
+    <value>ページ抽出テキスト</value>
+  </data>
+  <data name="PdfPreview.NextPageButton.ToolTip" xml:space="preserve">
+    <value>次のページ</value>
+  </data>
+  <data name="PdfPreview.NoText" xml:space="preserve">
+    <value>抽出テキストなし</value>
+  </data>
+  <data name="PdfPreview.OpenPdfExternalButton.ToolTip" xml:space="preserve">
+    <value>既定のPDFアプリで開く</value>
+  </data>
+  <data name="PdfPreview.Page" xml:space="preserve">
+    <value>ページ {0} / {1}</value>
+  </data>
+  <data name="PdfPreview.PageInfoTextBlock.Text" xml:space="preserve">
+    <value>ページ 1 / 1</value>
+  </data>
+  <data name="PdfPreview.PrevPageButton.ToolTip" xml:space="preserve">
+    <value>前のページ</value>
+  </data>
+  <data name="PdfPreview.RenderFailed" xml:space="preserve">
+    <value>レンダリング失敗: {0}</value>
+  </data>
+  <data name="PdfPreview.TextBlock01.Text" xml:space="preserve">
+    <value>外部アプリで開く</value>
+  </data>
+  <data name="Profile.CannotDeleteCurrent" xml:space="preserve">
+    <value>使用中のプロファイルは削除できません。別のプロファイルに切り替えてから削除してください。</value>
+  </data>
+  <data name="Profile.DefaultName" xml:space="preserve">
+    <value>標準</value>
+  </data>
+  <data name="Profile.IndexingBlocked" xml:space="preserve">
+    <value>インデックス作成中はプロファイルを切り替えられません。完了するか、中断してから切り替えてください。</value>
+  </data>
+  <data name="Profile.MigrationFailed" xml:space="preserve">
+    <value>既存のインデックスを新しい保存場所へ移動できませんでした。古いバージョンのアプリが起動したままの可能性があります。すべてのウィンドウを閉じてから、もう一度起動してください。</value>
+  </data>
+  <data name="Profile.NameInUse" xml:space="preserve">
+    <value>「{0}」という名前のプロファイルがすでにあります。</value>
+  </data>
+  <data name="Profile.NameRequired" xml:space="preserve">
+    <value>プロファイル名を入力してください。</value>
+  </data>
+  <data name="Profile.NotFound" xml:space="preserve">
+    <value>プロファイルが見つかりません。</value>
+  </data>
+  <data name="Result.Duplicates" xml:space="preserve">
+    <value>同一画像 他{0}件</value>
+  </data>
+  <data name="Result.SceneCount" xml:space="preserve">
+    <value>一致した場面 {0} 件</value>
+  </data>
+  <data name="Search.Button01.ToolTip" xml:space="preserve">
+    <value>検索履歴</value>
+  </data>
+  <data name="Search.Button02.ToolTip" xml:space="preserve">
+    <value>画像指定を解除</value>
+  </data>
+  <data name="Search.Button03.Content" xml:space="preserve">
+    <value>クリア</value>
+  </data>
+  <data name="Search.Button04.Content" xml:space="preserve">
+    <value>動画内を検索</value>
+  </data>
+  <data name="Search.Button05.Content" xml:space="preserve">
+    <value>一致した場面に戻す</value>
+  </data>
+  <data name="Search.Button05.ToolTip" xml:space="preserve">
+    <value>最初の検索で一致した場面の一覧に戻します</value>
+  </data>
+  <data name="Search.CalendarDatePicker01.Header" xml:space="preserve">
+    <value>更新日 (開始)</value>
+  </data>
+  <data name="Search.CalendarDatePicker01.PlaceholderText" xml:space="preserve">
+    <value>指定なし</value>
+  </data>
+  <data name="Search.CalendarDatePicker02.Header" xml:space="preserve">
+    <value>更新日 (終了)</value>
+  </data>
+  <data name="Search.CalendarDatePicker02.PlaceholderText" xml:space="preserve">
+    <value>指定なし</value>
+  </data>
+  <data name="Search.CheckBox01.Content" xml:space="preserve">
+    <value>キーワード検索を併用</value>
+  </data>
+  <data name="Search.CheckBox02.Content" xml:space="preserve">
+    <value>動画を 1 件にまとめる</value>
+  </data>
+  <data name="Search.CheckBox02.ToolTip" xml:space="preserve">
+    <value>同じ動画の場面を 1 件にまとめます。選ぶと、プレビューの下に、一致した場面が並びます</value>
+  </data>
+  <data name="Search.ComboBoxItem01.Content" xml:space="preserve">
+    <value>すべてのメディア</value>
+  </data>
+  <data name="Search.ComboBoxItem02.Content" xml:space="preserve">
+    <value>PDF ドキュメント</value>
+  </data>
+  <data name="Search.ComboBoxItem03.Content" xml:space="preserve">
+    <value>静止画</value>
+  </data>
+  <data name="Search.ComboBoxItem04.Content" xml:space="preserve">
+    <value>動画</value>
+  </data>
+  <data name="Search.ComboBoxItem05.Content" xml:space="preserve">
+    <value>関連度</value>
+  </data>
+  <data name="Search.ComboBoxItem06.Content" xml:space="preserve">
+    <value>類似度</value>
+  </data>
+  <data name="Search.ComboBoxItem07.Content" xml:space="preserve">
+    <value>ファイル名</value>
+  </data>
+  <data name="Search.ComboBoxItem08.Content" xml:space="preserve">
+    <value>一致順</value>
+  </data>
+  <data name="Search.ComboBoxItem09.Content" xml:space="preserve">
+    <value>動画の時間順</value>
+  </data>
+  <data name="Search.Drop.SearchByImage" xml:space="preserve">
+    <value>画像で検索</value>
+  </data>
+  <data name="Search.Empty.Initial" xml:space="preserve">
+    <value>検索語を入力するか、画像を指定して検索してください</value>
+  </data>
+  <data name="Search.Empty.NoMatch" xml:space="preserve">
+    <value>一致する結果がありません。条件を変えて検索してください</value>
+  </data>
+  <data name="Search.Error" xml:space="preserve">
+    <value>検索中にエラーが発生しました: {0}</value>
+  </data>
+  <data name="Search.Expander01.Header" xml:space="preserve">
+    <value>詳細フィルタ (期間・サイズ・フォルダ)</value>
+  </data>
+  <data name="Search.History.Clear" xml:space="preserve">
+    <value>履歴を消去</value>
+  </data>
+  <data name="Search.History.Empty" xml:space="preserve">
+    <value>履歴はありません</value>
+  </data>
+  <data name="Search.MenuFlyoutItem01.Text" xml:space="preserve">
+    <value>外部アプリで開く</value>
+  </data>
+  <data name="Search.MenuFlyoutItem02.Text" xml:space="preserve">
+    <value>フォルダを開く</value>
+  </data>
+  <data name="Search.MenuFlyoutItem03.Text" xml:space="preserve">
+    <value>パスをコピー</value>
+  </data>
+  <data name="Search.MenuFlyoutItem04.Text" xml:space="preserve">
+    <value>この画像に似たものを検索</value>
+  </data>
+  <data name="Search.MinSimilarity.AtLeast" xml:space="preserve">
+    <value>{0:P0} 以上</value>
+  </data>
+  <data name="Search.MinSimilarity.None" xml:space="preserve">
+    <value>制限なし</value>
+  </data>
+  <data name="Search.NoQueryImage" xml:space="preserve">
+    <value>この項目には検索に使える画像がありません</value>
+  </data>
+  <data name="Search.NumberBox01.Header" xml:space="preserve">
+    <value>最小サイズ (MB)</value>
+  </data>
+  <data name="Search.NumberBox01.PlaceholderText" xml:space="preserve">
+    <value>指定なし</value>
+  </data>
+  <data name="Search.NumberBox02.Header" xml:space="preserve">
+    <value>最大サイズ (MB)</value>
+  </data>
+  <data name="Search.NumberBox02.PlaceholderText" xml:space="preserve">
+    <value>指定なし</value>
+  </data>
+  <data name="Search.OpenFailed" xml:space="preserve">
+    <value>開けませんでした: {0}</value>
+  </data>
+  <data name="Search.OpenFolderFailed" xml:space="preserve">
+    <value>フォルダを開けませんでした: {0}</value>
+  </data>
+  <data name="Search.ResultsHeader" xml:space="preserve">
+    <value>検索結果 ({0} 件)</value>
+  </data>
+  <data name="Search.SceneSearchBox.PlaceholderText" xml:space="preserve">
+    <value>この動画の中を検索 (例: 花火、赤い服)</value>
+  </data>
+  <data name="Search.Scenes.Error" xml:space="preserve">
+    <value>動画内の検索中にエラーが発生しました: {0}</value>
+  </data>
+  <data name="Search.Scenes.Header" xml:space="preserve">
+    <value>一致した場面 ({0} 件)</value>
+  </data>
+  <data name="Search.Scenes.HeaderInVideo" xml:space="preserve">
+    <value>この動画の中の「{0}」 ({1} 件)</value>
+  </data>
+  <data name="Search.SearchBox.PlaceholderText" xml:space="preserve">
+    <value>自然言語で検索 (例: グラフのあるスライド、製品のデモ動画、赤い車)</value>
+  </data>
+  <data name="Search.Slider01.ToolTip" xml:space="preserve">
+    <value>最小類似度</value>
+  </data>
+  <data name="Search.TextBlock01.Text" xml:space="preserve">
+    <value>画像で検索</value>
+  </data>
+  <data name="Search.TextBlock02.Text" xml:space="preserve">
+    <value>検索</value>
+  </data>
+  <data name="Search.TextBlock03.Text" xml:space="preserve">
+    <value>並べ替え</value>
+  </data>
+  <data name="Search.TextBlock04.ToolTip" xml:space="preserve">
+    <value>埋め込みが完全に一致する別ファイルがあります (結果には1件だけ表示)</value>
+  </data>
+  <data name="Search.TextBlock05.ToolTip" xml:space="preserve">
+    <value>この動画の、一致した場面の数です。選ぶと、プレビューの下に一覧が出ます</value>
+  </data>
+  <data name="Search.TextBlock06.Text" xml:space="preserve">
+    <value>並べ替え</value>
+  </data>
+  <data name="Search.TextBlock07.Text" xml:space="preserve">
+    <value>検索結果をクリックすると、ここにプレビューが表示されます</value>
+  </data>
+  <data name="Search.TextBox01.Header" xml:space="preserve">
+    <value>フォルダ (パスの一部)</value>
+  </data>
+  <data name="Search.TextBox01.PlaceholderText" xml:space="preserve">
+    <value>例: Pictures\2024</value>
+  </data>
+  <data name="Search.UnsupportedImage" xml:space="preserve">
+    <value>対応していない形式です (jpg / png / webp)</value>
+  </data>
+  <data name="Settings.Button01.Content" xml:space="preserve">
+    <value>再確認</value>
+  </data>
+  <data name="Settings.Health.Checking" xml:space="preserve">
+    <value>確認中...</value>
+  </data>
+  <data name="Settings.Health.Error" xml:space="preserve">
+    <value>エラー: {0}</value>
+  </data>
+  <data name="Settings.Health.Ready" xml:space="preserve">
+    <value>準備完了 (ONNX Runtime / DirectML)</value>
+  </data>
+  <data name="Settings.Health.Unavailable" xml:space="preserve">
+    <value>初期化中、または利用できません (モデルファイルを確認してください)</value>
+  </data>
+  <data name="Settings.Health.Unchecked" xml:space="preserve">
+    <value>未確認</value>
+  </data>
+  <data name="Settings.LanguageAuto.Content" xml:space="preserve">
+    <value>自動（Windows の設定に合わせる）</value>
+  </data>
+  <data name="Settings.LanguageHint.Text" xml:space="preserve">
+    <value>表示する言語です。変更は、アプリを再起動したときに反映されます。「自動」は、Windows の表示言語に合わせます。</value>
+  </data>
+  <data name="Settings.LanguageTitle.Text" xml:space="preserve">
+    <value>言語 / Language</value>
+  </data>
+  <data name="Settings.RestartNeeded.Text" xml:space="preserve">
+    <value>言語の変更は、再起動すると反映されます。</value>
+  </data>
+  <data name="Settings.RestartNow.Content" xml:space="preserve">
+    <value>今すぐ再起動</value>
+  </data>
+  <data name="Settings.Slider01.Header" xml:space="preserve">
+    <value>最小類似度 (0 = 制限なし)</value>
+  </data>
+  <data name="Settings.TextBlock01.Text" xml:space="preserve">
+    <value>設定</value>
+  </data>
+  <data name="Settings.TextBlock02.Text" xml:space="preserve">
+    <value>埋め込みエンジン (EmbeddingGemma 2)</value>
+  </data>
+  <data name="Settings.TextBlock03.Text" xml:space="preserve">
+    <value>ステータス</value>
+  </data>
+  <data name="Settings.TextBlock04.Text" xml:space="preserve">
+    <value>検索オプション</value>
+  </data>
+  <data name="Settings.TextBlock05.Text" xml:space="preserve">
+    <value>ベクトル次元数 (MRL)。下げるとメモリ使用量と検索時間が減ります。インデックス時と異なる値でも先頭次元で比較します。</value>
+  </data>
+  <data name="Settings.TextBlock06.Text" xml:space="preserve">
+    <value>このアプリケーションについて</value>
+  </data>
+  <data name="Settings.TextBlock07.Text" xml:space="preserve">
+    <value>Google DeepMind EmbeddingGemma 2 (740M Multimodal) と WinUI 3 によるマルチメディア横断検索ビューア</value>
+  </data>
+  <data name="Settings.ToggleSwitch01.Header" xml:space="preserve">
+    <value>キーワード全文検索 (FTS) を併用</value>
+  </data>
+  <data name="Settings.ToggleSwitch01.OffContent" xml:space="preserve">
+    <value>オフ</value>
+  </data>
+  <data name="Settings.ToggleSwitch01.OnContent" xml:space="preserve">
+    <value>オン</value>
+  </data>
+  <data name="Shell.CreateFailed.Title" xml:space="preserve">
+    <value>プロファイルを作成できません</value>
+  </data>
+  <data name="Shell.Delete.Body" xml:space="preserve">
+    <value>選んだプロファイルの、インデックスとキャッシュ、フォルダの設定、検索の履歴を削除します。元の画像・PDF・動画は削除しません。</value>
+  </data>
+  <data name="Shell.Delete.Primary" xml:space="preserve">
+    <value>削除</value>
+  </data>
+  <data name="Shell.Delete.Title" xml:space="preserve">
+    <value>プロファイルを削除</value>
+  </data>
+  <data name="Shell.DeleteFailed.Title" xml:space="preserve">
+    <value>プロファイルを削除できません</value>
+  </data>
+  <data name="Shell.MenuFlyoutItem01.Text" xml:space="preserve">
+    <value>新しいプロファイル...</value>
+  </data>
+  <data name="Shell.MenuFlyoutItem02.Text" xml:space="preserve">
+    <value>名前を変更...</value>
+  </data>
+  <data name="Shell.MenuFlyoutItem03.Text" xml:space="preserve">
+    <value>削除...</value>
+  </data>
+  <data name="Shell.NavigationViewItem01.Content" xml:space="preserve">
+    <value>検索 &amp; ビューア</value>
+  </data>
+  <data name="Shell.NavigationViewItem02.Content" xml:space="preserve">
+    <value>ライブラリ管理</value>
+  </data>
+  <data name="Shell.NavigationViewItem03.Content" xml:space="preserve">
+    <value>モデル</value>
+  </data>
+  <data name="Shell.New.Header" xml:space="preserve">
+    <value>プロファイル名（例: 仕事、趣味）</value>
+  </data>
+  <data name="Shell.New.Primary" xml:space="preserve">
+    <value>作成</value>
+  </data>
+  <data name="Shell.New.Title" xml:space="preserve">
+    <value>新しいプロファイル</value>
+  </data>
+  <data name="Shell.NothingToDelete.Body" xml:space="preserve">
+    <value>使用中のプロファイルは削除できません。別のプロファイルを作成するか、切り替えてから削除してください。</value>
+  </data>
+  <data name="Shell.NothingToDelete.Title" xml:space="preserve">
+    <value>削除できるプロファイルがありません</value>
+  </data>
+  <data name="Shell.ProfileMenuButton.ToolTip" xml:space="preserve">
+    <value>プロファイルの追加・名前の変更・削除</value>
+  </data>
+  <data name="Shell.Rename.Header" xml:space="preserve">
+    <value>新しい名前</value>
+  </data>
+  <data name="Shell.Rename.Primary" xml:space="preserve">
+    <value>変更</value>
+  </data>
+  <data name="Shell.Rename.Title" xml:space="preserve">
+    <value>プロファイル名を変更</value>
+  </data>
+  <data name="Shell.RenameFailed.Title" xml:space="preserve">
+    <value>名前を変更できません</value>
+  </data>
+  <data name="Shell.SwitchFailed.Title" xml:space="preserve">
+    <value>プロファイルを切り替えられません</value>
+  </data>
+  <data name="Shell.TextBlock01.Text" xml:space="preserve">
+    <value>プロファイル</value>
+  </data>
+  <data name="VideoPreview.FileInfoTextBlock.Text" xml:space="preserve">
+    <value>動画ファイル情報</value>
+  </data>
+  <data name="VideoPreview.FileNotFound" xml:space="preserve">
+    <value>動画ファイルが見つかりません: {0}</value>
+  </data>
+  <data name="VideoPreview.HitMomentTextBlock.Text" xml:space="preserve">
+    <value>一致箇所へジャンプ (00:00)</value>
+  </data>
+  <data name="VideoPreview.JumpTo" xml:space="preserve">
+    <value>一致箇所へジャンプ ({0:mm\:ss})</value>
+  </data>
+  <data name="VideoPreview.LoadFailed" xml:space="preserve">
+    <value>動画読み込み失敗: {0}</value>
+  </data>
+  <data name="VideoPreview.OpenVideoExternalButton.ToolTip" xml:space="preserve">
+    <value>既定のメディアプレイヤーで開く</value>
+  </data>
+  <data name="VideoPreview.TextBlock01.Text" xml:space="preserve">
+    <value>外部アプリで再生</value>
+  </data>
+</root>

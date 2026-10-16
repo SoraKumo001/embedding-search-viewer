@@ -7,6 +7,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Windows.Storage.Pickers;
+using EmbeddingSearchViewer.Core.Localization;
 using EmbeddingSearchViewer_App.ViewModels;
 
 namespace EmbeddingSearchViewer_App.Views;
@@ -60,7 +61,7 @@ public sealed partial class LibraryPage : Page
         if (e.DataView.Contains(StandardDataFormats.StorageItems))
         {
             e.AcceptedOperation = DataPackageOperation.Copy;
-            e.DragUIOverride.Caption = "フォルダを追加";
+            e.DragUIOverride.Caption = Loc.T("Library.Drop.AddFolder");
         }
     }
 
@@ -80,10 +81,10 @@ public sealed partial class LibraryPage : Page
         var dialog = new ContentDialog
         {
             XamlRoot = XamlRoot,
-            Title = "インデックスをクリアしますか?",
-            Content = "登録済みのインデックスをすべて削除します。元のファイルは削除されません。検索するには再度インデックス作成が必要です。",
-            PrimaryButtonText = "クリア",
-            CloseButtonText = "キャンセル",
+            Title = Loc.T("Library.ClearDialog.Title"),
+            Content = Loc.T("Library.ClearDialog.Body"),
+            PrimaryButtonText = Loc.T("Common.Clear"),
+            CloseButtonText = Loc.T("Common.Cancel"),
             DefaultButton = ContentDialogButton.Close
         };
 

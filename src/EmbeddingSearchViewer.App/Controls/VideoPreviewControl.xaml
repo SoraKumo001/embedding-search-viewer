@@ -4,6 +4,7 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:loc="using:EmbeddingSearchViewer_App.Localization"
     mc:Ignorable="d">
 
     <Grid RowDefinitions="Auto,*,Auto" Background="{ThemeResource LayerFillColorDefaultBrush}" CornerRadius="8" Padding="12">
@@ -13,15 +14,15 @@
                 <Button x:Name="JumpToHitButton" Click="JumpToHitButton_Click" Style="{ThemeResource AccentButtonStyle}" AutomationProperties.Name="Jump to Match Moment">
                     <StackPanel Orientation="Horizontal" Spacing="4">
                         <FontIcon Glyph="&#xE768;" FontSize="14" />
-                        <TextBlock x:Name="HitMomentTextBlock" Text="一致箇所へジャンプ (00:00)" />
+                        <TextBlock loc:L.Uid="VideoPreview.HitMomentTextBlock" x:Name="HitMomentTextBlock" />
                     </StackPanel>
                 </Button>
             </StackPanel>
 
-            <Button Grid.Column="2" x:Name="OpenVideoExternalButton" Click="OpenVideoExternalButton_Click" ToolTipService.ToolTip="既定のメディアプレイヤーで開く" AutomationProperties.Name="Open in External App">
+            <Button loc:L.Uid="VideoPreview.OpenVideoExternalButton" Grid.Column="2" x:Name="OpenVideoExternalButton" Click="OpenVideoExternalButton_Click" AutomationProperties.Name="Open in External App">
                 <StackPanel Orientation="Horizontal" Spacing="4">
                     <FontIcon Glyph="&#xE8A7;" FontSize="14" />
-                    <TextBlock Text="外部アプリで再生" />
+                    <TextBlock loc:L.Uid="VideoPreview.TextBlock01" />
                 </StackPanel>
             </Button>
         </Grid>
@@ -32,7 +33,7 @@
 
         <!-- Bottom Segment Info -->
         <Grid Grid.Row="2" Margin="0,8,0,0" ColumnDefinitions="Auto,*">
-            <TextBlock x:Name="FileInfoTextBlock" Text="動画ファイル情報" VerticalAlignment="Center" Style="{ThemeResource CaptionTextBlockStyle}" />
+            <TextBlock loc:L.Uid="VideoPreview.FileInfoTextBlock" x:Name="FileInfoTextBlock" VerticalAlignment="Center" Style="{ThemeResource CaptionTextBlockStyle}" />
         </Grid>
     </Grid>
 </UserControl>

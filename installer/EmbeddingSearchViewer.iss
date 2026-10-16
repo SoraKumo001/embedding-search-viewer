@@ -58,6 +58,7 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 [Files]
 Source: "{#AppDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "{#DocsDir}\README.md"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#DocsDir}\README.en.md"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#DocsDir}\LICENSE"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#DocsDir}\THIRD-PARTY-NOTICES.md"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#DocsDir}\licenses\*"; DestDir: "{app}\licenses"; Flags: ignoreversion recursesubdirs createallsubdirs

@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using EmbeddingSearchViewer.Core.Localization;
 using System.Threading;
 
 namespace EmbeddingSearchViewer.Infrastructure.Ingestion;
@@ -48,7 +49,6 @@ public sealed class VideoIngestStats
     public string Summary(double elapsedSeconds)
     {
         if (Videos == 0) return string.Empty;
-        return $"動画 {Videos} 本・{Segments} 場面（フレーム取り出し {ExtractSeconds:F1} 秒、埋め込み {EmbedSeconds:F1} 秒、" +
-               $"動画ごとの所要 {VideoSeconds:F1} 秒、全体 {elapsedSeconds:F1} 秒）";
+        return Loc.T("Ingest.VideoStats", Videos, Segments, ExtractSeconds, EmbedSeconds, VideoSeconds, elapsedSeconds);
     }
 }

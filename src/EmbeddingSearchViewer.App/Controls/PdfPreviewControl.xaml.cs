@@ -8,6 +8,7 @@ using Microsoft.UI.Xaml.Media.Imaging;
 using Windows.Data.Pdf;
 using Windows.Storage;
 using Windows.Storage.Streams;
+using EmbeddingSearchViewer.Core.Localization;
 using EmbeddingSearchViewer.Core.Models;
 
 namespace EmbeddingSearchViewer_App.Controls;
@@ -27,11 +28,11 @@ public sealed partial class PdfPreviewControl : UserControl
     public async Task LoadItemAsync(SearchResultItem item)
     {
         _currentItem = item;
-        SnippetTextBox.Text = item.Chunk.SnippetText ?? "抽出テキストなし";
+        SnippetTextBox.Text = item.Chunk.SnippetText ?? Loc.T("PdfPreview.NoText");
 
         if (!File.Exists(item.Asset.FilePath))
         {
-            PageInfoTextBlock.Text = "ファイルが見つかりません";
+            PageInfoTextBlock.Text = Loc.T("Common.FileNotFound");
             PageImageControl.Source = null;
             return;
         }
@@ -81,7 +82,7 @@ public sealed partial class PdfPreviewControl : UserControl
         }
         catch (Exception ex)
         {
-            PageInfoTextBlock.Text = $"レンダリング失敗: {ex.Message}";
+            PageInfoTextBlock.Text = Loc.T("PdfPreview.RenderFailed", ex.Message);
         }
         finally
         {
@@ -91,7 +92,7 @@ public sealed partial class PdfPreviewControl : UserControl
 
     private void UpdatePageInfo()
     {
-        PageInfoTextBlock.Text = $"ページ {_currentPage} / {_totalPages}";
+        PageInfoTextBlock.Text = Loc.T("PdfPreview.Page", _currentPage, _totalPages);
         PrevPageButton.IsEnabled = _currentPage > 1;
         NextPageButton.IsEnabled = _currentPage < _totalPages;
     }

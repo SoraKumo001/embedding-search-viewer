@@ -8,6 +8,7 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using Windows.Storage.Pickers;
+using EmbeddingSearchViewer.Core.Localization;
 using EmbeddingSearchViewer.Core.Models;
 using EmbeddingSearchViewer_App.ViewModels;
 
@@ -178,7 +179,7 @@ public sealed partial class SearchPage : Page
         if (ItemOf(sender) is { } item && File.Exists(item.Asset.FilePath))
         {
             try { Process.Start(new ProcessStartInfo { FileName = item.Asset.FilePath, UseShellExecute = true }); }
-            catch (Exception ex) { ViewModel.ErrorMessage = $"開けませんでした: {ex.Message}"; }
+            catch (Exception ex) { ViewModel.ErrorMessage = Loc.T("Search.OpenFailed", ex.Message); }
         }
     }
 
@@ -187,7 +188,7 @@ public sealed partial class SearchPage : Page
         if (ItemOf(sender) is { } item && File.Exists(item.Asset.FilePath))
         {
             try { Process.Start(new ProcessStartInfo("explorer.exe", $"/select,\"{item.Asset.FilePath}\"") { UseShellExecute = true }); }
-            catch (Exception ex) { ViewModel.ErrorMessage = $"フォルダを開けませんでした: {ex.Message}"; }
+            catch (Exception ex) { ViewModel.ErrorMessage = Loc.T("Search.OpenFolderFailed", ex.Message); }
         }
     }
 
@@ -210,7 +211,7 @@ public sealed partial class SearchPage : Page
         }
         else
         {
-            ViewModel.ErrorMessage = "この項目には検索に使える画像がありません";
+            ViewModel.ErrorMessage = Loc.T("Search.NoQueryImage");
         }
     }
 
@@ -221,7 +222,7 @@ public sealed partial class SearchPage : Page
         if (e.DataView.Contains(Windows.ApplicationModel.DataTransfer.StandardDataFormats.StorageItems))
         {
             e.AcceptedOperation = Windows.ApplicationModel.DataTransfer.DataPackageOperation.Copy;
-            e.DragUIOverride.Caption = "画像で検索";
+            e.DragUIOverride.Caption = Loc.T("Search.Drop.SearchByImage");
         }
     }
 
@@ -234,7 +235,7 @@ public sealed partial class SearchPage : Page
             .FirstOrDefault(f => QueryImageExtensions.Contains(Path.GetExtension(f.Path).ToLowerInvariant()));
         if (file == null)
         {
-            ViewModel.ErrorMessage = "対応していない形式です (jpg / png / webp)";
+            ViewModel.ErrorMessage = Loc.T("Search.UnsupportedImage");
             return;
         }
 
@@ -248,7 +249,7 @@ public sealed partial class SearchPage : Page
         var history = ViewModel.History;
         if (history.Count == 0)
         {
-            HistoryFlyout.Items.Add(new MenuFlyoutItem { Text = "履歴はありません", IsEnabled = false });
+            HistoryFlyout.Items.Add(new MenuFlyoutItem { Text = Loc.T("Search.History.Empty"), IsEnabled = false });
             return;
         }
 
@@ -265,7 +266,7 @@ public sealed partial class SearchPage : Page
         }
 
         HistoryFlyout.Items.Add(new MenuFlyoutSeparator());
-        var clear = new MenuFlyoutItem { Text = "履歴を消去" };
+        var clear = new MenuFlyoutItem { Text = Loc.T("Search.History.Clear") };
         clear.Click += (_, _) => ViewModel.ClearHistory();
         HistoryFlyout.Items.Add(clear);
     }

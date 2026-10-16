@@ -4,6 +4,7 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:loc="using:EmbeddingSearchViewer_App.Localization"
     mc:Ignorable="d">
 
     <Grid>
@@ -16,19 +17,19 @@
             AutomationProperties.Name="Application Navigation">
 
             <NavigationView.MenuItems>
-                <NavigationViewItem Content="検索 &amp; ビューア" Tag="SearchPage" AutomationProperties.Name="Search and Viewer">
+                <NavigationViewItem loc:L.Uid="Shell.NavigationViewItem01" Tag="SearchPage" AutomationProperties.Name="Search and Viewer">
                     <NavigationViewItem.Icon>
                         <SymbolIcon Symbol="Find" />
                     </NavigationViewItem.Icon>
                 </NavigationViewItem>
 
-                <NavigationViewItem Content="ライブラリ管理" Tag="LibraryPage" AutomationProperties.Name="Library Management">
+                <NavigationViewItem loc:L.Uid="Shell.NavigationViewItem02" Tag="LibraryPage" AutomationProperties.Name="Library Management">
                     <NavigationViewItem.Icon>
                         <SymbolIcon Symbol="Folder" />
                     </NavigationViewItem.Icon>
                 </NavigationViewItem>
 
-                <NavigationViewItem Content="モデル" Tag="ModelSetupPage" AutomationProperties.Name="Model Setup">
+                <NavigationViewItem loc:L.Uid="Shell.NavigationViewItem03" Tag="ModelSetupPage" AutomationProperties.Name="Model Setup">
                     <NavigationViewItem.Icon>
                         <SymbolIcon Symbol="Download" />
                     </NavigationViewItem.Icon>
@@ -46,20 +47,19 @@
                 <!-- Profile switcher: each profile has its own folders, index, history and cache -->
                 <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="8" Margin="16,8,16,0">
                     <FontIcon Glyph="&#xE77B;" FontSize="16" VerticalAlignment="Center" />
-                    <TextBlock Text="プロファイル" VerticalAlignment="Center" />
+                    <TextBlock loc:L.Uid="Shell.TextBlock01" VerticalAlignment="Center" />
                     <ComboBox x:Name="ProfileCombo"
                               MinWidth="180"
                               DisplayMemberPath="Name"
                               SelectionChanged="ProfileCombo_SelectionChanged"
                               AutomationProperties.Name="Profile" />
-                    <Button x:Name="ProfileMenuButton" Content="&#xE712;" FontFamily="Segoe MDL2 Assets"
-                            ToolTipService.ToolTip="プロファイルの追加・名前の変更・削除"
+                    <Button loc:L.Uid="Shell.ProfileMenuButton" x:Name="ProfileMenuButton" Content="&#xE712;" FontFamily="Segoe MDL2 Assets"
                             AutomationProperties.Name="Profile actions">
                         <Button.Flyout>
                             <MenuFlyout>
-                                <MenuFlyoutItem Text="新しいプロファイル..." Click="NewProfile_Click" />
-                                <MenuFlyoutItem Text="名前を変更..." Click="RenameProfile_Click" />
-                                <MenuFlyoutItem Text="削除..." Click="DeleteProfile_Click" />
+                                <MenuFlyoutItem loc:L.Uid="Shell.MenuFlyoutItem01" Click="NewProfile_Click" />
+                                <MenuFlyoutItem loc:L.Uid="Shell.MenuFlyoutItem02" Click="RenameProfile_Click" />
+                                <MenuFlyoutItem loc:L.Uid="Shell.MenuFlyoutItem03" Click="DeleteProfile_Click" />
                             </MenuFlyout>
                         </Button.Flyout>
                     </Button>

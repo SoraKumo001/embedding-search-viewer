@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using EmbeddingSearchViewer.Core.Localization;
 
 namespace EmbeddingSearchViewer.Core.Models;
 
@@ -46,7 +47,7 @@ public class SearchResultItem
     /// <summary>Paths of other files whose embedding is identical to this one (they are hidden from the result list).</summary>
     public List<string> DuplicatePaths { get; } = new();
     public int DuplicateCount => DuplicatePaths.Count;
-    public string DuplicateText => DuplicateCount > 0 ? $"同一画像 他{DuplicateCount}件" : string.Empty;
+    public string DuplicateText => DuplicateCount > 0 ? Loc.T("Result.Duplicates", DuplicateCount) : string.Empty;
     public string SimilarityPercentageText => SimilarityScore.ToString("P0");
 
     /// <summary>
@@ -56,7 +57,7 @@ public class SearchResultItem
     public List<SearchResultItem> Scenes { get; } = new();
     public bool IsVideoGroup => Scenes.Count > 0;
     public int SceneCount => Scenes.Count;
-    public string GroupText => Scenes.Count > 1 ? $"一致した場面 {Scenes.Count} 件" : string.Empty;
+    public string GroupText => Scenes.Count > 1 ? Loc.T("Result.SceneCount", Scenes.Count) : string.Empty;
 
     /// <summary>Where this scene starts in its video ("12:30"), empty when it has no time.</summary>
     public string SceneTimeText => Chunk.StartTimeMs.HasValue ? FormatTime(Chunk.StartTimeMs.Value) : string.Empty;
@@ -65,7 +66,7 @@ public class SearchResultItem
     public string Subtitle => Chunk.Modality switch
     {
         ModalityType.PageImage or ModalityType.Text when Chunk.PageNumber.HasValue 
-            => $"ページ {Chunk.PageNumber.Value} / {Asset.DurationOrPages ?? 0}",
+            => Loc.T("PdfPreview.Page", Chunk.PageNumber.Value, Asset.DurationOrPages ?? 0),
         ModalityType.VideoSegment when Chunk.StartTimeMs.HasValue && Chunk.EndTimeMs.HasValue
             => $"{FormatTime(Chunk.StartTimeMs.Value)} - {FormatTime(Chunk.EndTimeMs.Value)}",
         ModalityType.AudioSegment when Chunk.StartTimeMs.HasValue

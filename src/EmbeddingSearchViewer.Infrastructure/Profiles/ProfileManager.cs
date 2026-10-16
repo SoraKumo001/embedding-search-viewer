@@ -1,4 +1,5 @@
 using System;
+using EmbeddingSearchViewer.Core.Localization;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -82,7 +83,7 @@ public sealed class ProfileManager
 
             if (_file.Profiles.Count == 0)
             {
-                _file.Profiles.Add(new ProfileInfo(DefaultId, DefaultName));
+                _file.Profiles.Add(new ProfileInfo(DefaultId, Loc.T("Profile.DefaultName")));
                 MigrateLegacyData();
             }
             if (_file.Profiles.All(p => p.Id != _file.CurrentId)) _file.CurrentId = _file.Profiles[0].Id;
@@ -139,8 +140,7 @@ public sealed class ProfileManager
                 if (attempt >= 5)
                 {
                     throw new IOException(
-                        "既存のインデックスを新しい保存場所へ移動できませんでした。古いバージョンのアプリが起動したままの可能性があります。" +
-                        "すべてのウィンドウを閉じてから、もう一度起動してください。", ex);
+                        Loc.T("Profile.MigrationFailed"), ex);
                 }
                 Thread.Sleep(300);
             }
@@ -166,14 +166,14 @@ public sealed class ProfileManager
     private static string NormalizeName(string name)
     {
         name = (name ?? string.Empty).Trim();
-        if (name.Length == 0) throw new ArgumentException("プロファイル名を入力してください。", nameof(name));
+        if (name.Length == 0) throw new ArgumentException(Loc.T("Profile.NameRequired"), nameof(name));
         return name;
     }
 
     private void EnsureNameUnused(string name, string? exceptId = null)
     {
         if (_file.Profiles.Any(p => p.Id != exceptId && string.Equals(p.Name, name, StringComparison.CurrentCultureIgnoreCase)))
-            throw new InvalidOperationException($"「{name}」という名前のプロファイルがすでにあります。");
+            throw new InvalidOperationException(Loc.T("Profile.NameInUse", name));
     }
 
     /// <summary>Creates an empty profile; it does not become the current one.</summary>
@@ -197,7 +197,7 @@ public sealed class ProfileManager
         lock (_lock)
         {
             int index = _file.Profiles.FindIndex(p => p.Id == id);
-            if (index < 0) throw new InvalidOperationException("プロファイルが見つかりません。");
+            if (index < 0) throw new InvalidOperationException(Loc.T("Profile.NotFound"));
             EnsureNameUnused(name, id);
             _file.Profiles[index] = new ProfileInfo(id, name);
             Save();
@@ -210,7 +210,7 @@ public sealed class ProfileManager
         lock (_lock)
         {
             if (_file.CurrentId == id) return false;
-            if (_file.Profiles.All(p => p.Id != id)) throw new InvalidOperationException("プロファイルが見つかりません。");
+            if (_file.Profiles.All(p => p.Id != id)) throw new InvalidOperationException(Loc.T("Profile.NotFound"));
             _file.CurrentId = id;
             Directory.CreateDirectory(CurrentDirectory);
             Save();
@@ -227,7 +227,7 @@ public sealed class ProfileManager
     {
         lock (_lock)
         {
-            if (_file.CurrentId == id) throw new InvalidOperationException("使用中のプロファイルは削除できません。別のプロファイルに切り替えてから削除してください。");
+            if (_file.CurrentId == id) throw new InvalidOperationException(Loc.T("Profile.CannotDeleteCurrent"));
             if (_file.Profiles.RemoveAll(p => p.Id == id) == 0) return;
             Save();
         }

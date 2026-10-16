@@ -1,4 +1,5 @@
 using System;
+using EmbeddingSearchViewer.Core.Localization;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -134,7 +135,7 @@ public sealed class ModelDownloader
             if (free < needed + FreeSpaceMargin)
             {
                 throw new ModelDownloadException(
-                    $"ディスクの空き容量が不足しています。必要: {needed / (1024 * 1024):N0} MB (+余裕 200 MB) / 空き: {free / (1024 * 1024):N0} MB ({root})");
+                    Loc.T("ModelDownload.DiskSpace", needed / (1024 * 1024), free / (1024 * 1024), root));
             }
         }
         catch (Exception ex) when (ex is IOException or ArgumentException or UnauthorizedAccessException)
@@ -159,7 +160,7 @@ public sealed class ModelDownloader
                 if (!actual.Equals(file.Sha256, StringComparison.OrdinalIgnoreCase))
                 {
                     TryDelete(partPath);
-                    throw new ModelDownloadException($"{file.Path} のチェックサムが一致しません (ダウンロードが破損しています)。再試行してください。");
+                    throw new ModelDownloadException(Loc.T("ModelDownload.ChecksumMismatch", file.Path));
                 }
 
                 File.Move(partPath, finalPath, overwrite: true);
@@ -176,7 +177,7 @@ public sealed class ModelDownloader
             }
             catch (Exception ex) when (IsTransient(ex) && !ct.IsCancellationRequested)
             {
-                throw new ModelDownloadException($"{file.Path} をダウンロードできませんでした: {ex.Message}", ex);
+                throw new ModelDownloadException(Loc.T("ModelDownload.Failed", file.Path, ex.Message), ex);
             }
         }
     }

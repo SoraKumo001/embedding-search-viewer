@@ -7,7 +7,7 @@
 
     <Destination>\
       EmbeddingSearchViewer.cmd      starts app\EmbeddingSearchViewer.App.exe (double-click this one)
-      README.md  LICENSE  THIRD-PARTY-NOTICES.md  licenses\
+      README.md  README.en.md  LICENSE  THIRD-PARTY-NOTICES.md  licenses\
       app\                           everything that was published
 
   The published folder is moved into <Destination>\app. The notices are generated there (the script lists the FFmpeg
@@ -42,7 +42,7 @@ Move-Item -LiteralPath $PublishDir -Destination $appDir
 foreach ($name in 'THIRD-PARTY-NOTICES.md', 'licenses') {
     Move-Item -LiteralPath (Join-Path $appDir $name) -Destination (Join-Path $Destination $name)
 }
-Copy-Item -LiteralPath (Join-Path $root 'README.md'), (Join-Path $root 'LICENSE') -Destination $Destination
+Copy-Item -LiteralPath (Join-Path $root 'README.md'), (Join-Path $root 'README.en.md'), (Join-Path $root 'LICENSE') -Destination $Destination
 
 # The launcher. ASCII only, so that it survives any zip tool; "start" returns at once, so the window closes by itself.
 $launcher = @(

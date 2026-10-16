@@ -6,6 +6,7 @@
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     xmlns:models="using:EmbeddingSearchViewer.Core.Models"
     xmlns:controls="using:EmbeddingSearchViewer_App.Controls"
+    xmlns:loc="using:EmbeddingSearchViewer_App.Localization"
     mc:Ignorable="d">
 
     <Grid RowDefinitions="Auto,*" Padding="24,12,24,24" RowSpacing="16"
@@ -15,14 +16,13 @@
               Background="{ThemeResource LayerFillColorDefaultBrush}" Padding="16" CornerRadius="8">
             <Grid Grid.Row="0" ColumnDefinitions="*,Auto,Auto,Auto,Auto" ColumnSpacing="8">
                 <!-- Text Query -->
-                <TextBox x:Name="SearchBox" Grid.Column="0"
-                         PlaceholderText="自然言語で検索 (例: グラフのあるスライド、製品のデモ動画、赤い車)"
+                <TextBox loc:L.Uid="Search.SearchBox" x:Name="SearchBox" Grid.Column="0"
                          Text="{x:Bind ViewModel.QueryText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                          KeyDown="SearchBox_KeyDown"
                          AutomationProperties.Name="Search Query" />
 
                 <!-- Search History -->
-                <Button Grid.Column="1" ToolTipService.ToolTip="検索履歴" AutomationProperties.Name="Search History">
+                <Button loc:L.Uid="Search.Button01" Grid.Column="1" AutomationProperties.Name="Search History">
                     <FontIcon Glyph="&#xE81C;" FontSize="14" />
                     <Button.Flyout>
                         <MenuFlyout x:Name="HistoryFlyout" Opening="HistoryFlyout_Opening" />
@@ -32,17 +32,17 @@
                 <!-- Media Filter -->
                 <ComboBox Grid.Column="2" SelectedIndex="{x:Bind ViewModel.SelectedMediaTypeIndex, Mode=TwoWay}"
                           AutomationProperties.Name="Media Filter">
-                    <ComboBoxItem Content="すべてのメディア" />
-                    <ComboBoxItem Content="PDF ドキュメント" />
-                    <ComboBoxItem Content="静止画" />
-                    <ComboBoxItem Content="動画" />
+                    <ComboBoxItem loc:L.Uid="Search.ComboBoxItem01" />
+                    <ComboBoxItem loc:L.Uid="Search.ComboBoxItem02" />
+                    <ComboBoxItem loc:L.Uid="Search.ComboBoxItem03" />
+                    <ComboBoxItem loc:L.Uid="Search.ComboBoxItem04" />
                 </ComboBox>
 
                 <!-- Query Image Picker Button -->
                 <Button Grid.Column="3" Click="PickQueryImage_Click" AutomationProperties.Name="Search by Image">
                     <StackPanel Orientation="Horizontal" Spacing="6">
                         <FontIcon Glyph="&#xEB9F;" FontSize="14" />
-                        <TextBlock Text="画像で検索" />
+                        <TextBlock loc:L.Uid="Search.TextBlock01" />
                     </StackPanel>
                 </Button>
 
@@ -53,7 +53,7 @@
                         AutomationProperties.Name="Search">
                     <StackPanel Orientation="Horizontal" Spacing="6">
                         <FontIcon Glyph="&#xE721;" FontSize="14" />
-                        <TextBlock Text="検索" />
+                        <TextBlock loc:L.Uid="Search.TextBlock02" />
                     </StackPanel>
                 </Button>
             </Grid>
@@ -65,48 +65,45 @@
                 <FontIcon Glyph="&#xEB9F;" FontSize="14" VerticalAlignment="Center" Margin="0,0,8,0" />
                 <TextBlock Grid.Column="1" Text="{x:Bind ViewModel.QueryImagePath, Mode=OneWay}"
                            VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
-                <Button Grid.Column="2" Command="{x:Bind ViewModel.ClearQueryImageCommand}"
-                        ToolTipService.ToolTip="画像指定を解除" AutomationProperties.Name="Clear Query Image">
+                <Button loc:L.Uid="Search.Button02" Grid.Column="2" Command="{x:Bind ViewModel.ClearQueryImageCommand}" AutomationProperties.Name="Clear Query Image">
                     <FontIcon Glyph="&#xE711;" FontSize="12" />
                 </Button>
             </Grid>
 
             <!-- Search Options -->
             <Grid Grid.Row="2" ColumnDefinitions="Auto,220,Auto,Auto,Auto,Auto" ColumnSpacing="16" VerticalAlignment="Center">
-                <CheckBox Grid.Column="0" Content="キーワード検索を併用" MinWidth="0"
+                <CheckBox loc:L.Uid="Search.CheckBox01" Grid.Column="0" MinWidth="0"
                           IsChecked="{x:Bind ViewModel.EnableFts, Mode=TwoWay}" AutomationProperties.Name="Enable FTS" />
-                <Slider Grid.Column="1" Minimum="0" Maximum="1" StepFrequency="0.05"
-                        Value="{x:Bind ViewModel.MinSimilarity, Mode=TwoWay}" AutomationProperties.Name="Minimum Similarity"
-                        ToolTipService.ToolTip="最小類似度" />
+                <Slider loc:L.Uid="Search.Slider01" Grid.Column="1" Minimum="0" Maximum="1" StepFrequency="0.05"
+                        Value="{x:Bind ViewModel.MinSimilarity, Mode=TwoWay}" AutomationProperties.Name="Minimum Similarity" />
                 <TextBlock Grid.Column="2" VerticalAlignment="Center" MinWidth="72"
                            Text="{x:Bind ViewModel.MinSimilarityText, Mode=OneWay}"
                            Style="{ThemeResource CaptionTextBlockStyle}" />
-                <TextBlock Grid.Column="3" Text="並べ替え" VerticalAlignment="Center" Style="{ThemeResource CaptionTextBlockStyle}" />
+                <TextBlock loc:L.Uid="Search.TextBlock03" Grid.Column="3" VerticalAlignment="Center" Style="{ThemeResource CaptionTextBlockStyle}" />
                 <ComboBox Grid.Column="4" SelectedIndex="{x:Bind ViewModel.SortIndex, Mode=TwoWay}" AutomationProperties.Name="Sort Order">
-                    <ComboBoxItem Content="関連度" />
-                    <ComboBoxItem Content="類似度" />
-                    <ComboBoxItem Content="ファイル名" />
+                    <ComboBoxItem loc:L.Uid="Search.ComboBoxItem05" />
+                    <ComboBoxItem loc:L.Uid="Search.ComboBoxItem06" />
+                    <ComboBoxItem loc:L.Uid="Search.ComboBoxItem07" />
                 </ComboBox>
-                <CheckBox Grid.Column="5" Content="動画を 1 件にまとめる" MinWidth="0"
+                <CheckBox loc:L.Uid="Search.CheckBox02" Grid.Column="5" MinWidth="0"
                           IsChecked="{x:Bind ViewModel.GroupVideos, Mode=TwoWay}"
-                          ToolTipService.ToolTip="同じ動画の場面を 1 件にまとめます。選ぶと、プレビューの下に、一致した場面が並びます"
                           AutomationProperties.Name="Group Video Scenes" />
             </Grid>
 
             <!-- Metadata Filters -->
-            <Expander Grid.Row="3" Header="詳細フィルタ (期間・サイズ・フォルダ)" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Padding="12,8">
+            <Expander loc:L.Uid="Search.Expander01" Grid.Row="3" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Padding="12,8">
                 <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,*,Auto" RowDefinitions="Auto,Auto" ColumnSpacing="12" RowSpacing="8">
-                    <CalendarDatePicker Grid.Row="0" Grid.Column="0" Header="更新日 (開始)" PlaceholderText="指定なし"
+                    <CalendarDatePicker loc:L.Uid="Search.CalendarDatePicker01" Grid.Row="0" Grid.Column="0"
                                         Date="{x:Bind ViewModel.FilterDateFrom, Mode=TwoWay}" AutomationProperties.Name="Modified From" />
-                    <CalendarDatePicker Grid.Row="0" Grid.Column="1" Header="更新日 (終了)" PlaceholderText="指定なし"
+                    <CalendarDatePicker loc:L.Uid="Search.CalendarDatePicker02" Grid.Row="0" Grid.Column="1"
                                         Date="{x:Bind ViewModel.FilterDateTo, Mode=TwoWay}" AutomationProperties.Name="Modified To" />
-                    <NumberBox Grid.Row="0" Grid.Column="2" Header="最小サイズ (MB)" Minimum="0" Width="130" PlaceholderText="指定なし"
+                    <NumberBox loc:L.Uid="Search.NumberBox01" Grid.Row="0" Grid.Column="2" Minimum="0" Width="130"
                                Value="{x:Bind ViewModel.FilterMinSizeMb, Mode=TwoWay}" AutomationProperties.Name="Minimum Size MB" />
-                    <NumberBox Grid.Row="0" Grid.Column="3" Header="最大サイズ (MB)" Minimum="0" Width="130" PlaceholderText="指定なし"
+                    <NumberBox loc:L.Uid="Search.NumberBox02" Grid.Row="0" Grid.Column="3" Minimum="0" Width="130"
                                Value="{x:Bind ViewModel.FilterMaxSizeMb, Mode=TwoWay}" AutomationProperties.Name="Maximum Size MB" />
-                    <TextBox Grid.Row="0" Grid.Column="4" Header="フォルダ (パスの一部)" PlaceholderText="例: Pictures\2024"
+                    <TextBox loc:L.Uid="Search.TextBox01" Grid.Row="0" Grid.Column="4"
                              Text="{x:Bind ViewModel.FilterFolder, Mode=TwoWay}" AutomationProperties.Name="Folder Filter" />
-                    <Button Grid.Row="0" Grid.Column="5" Content="クリア" VerticalAlignment="Bottom"
+                    <Button loc:L.Uid="Search.Button03" Grid.Row="0" Grid.Column="5" VerticalAlignment="Bottom"
                             Command="{x:Bind ViewModel.ClearFiltersCommand}" AutomationProperties.Name="Clear Filters" />
                 </Grid>
             </Expander>
@@ -143,17 +140,17 @@
                             <Grid ColumnDefinitions="56,*" ColumnSpacing="10" Padding="4,6" Background="Transparent">
                                 <Grid.ContextFlyout>
                                     <MenuFlyout>
-                                        <MenuFlyoutItem Text="外部アプリで開く" Tag="{x:Bind}" Click="ResultMenu_OpenExternal_Click">
+                                        <MenuFlyoutItem loc:L.Uid="Search.MenuFlyoutItem01" Tag="{x:Bind}" Click="ResultMenu_OpenExternal_Click">
                                             <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE8A7;" /></MenuFlyoutItem.Icon>
                                         </MenuFlyoutItem>
-                                        <MenuFlyoutItem Text="フォルダを開く" Tag="{x:Bind}" Click="ResultMenu_OpenFolder_Click">
+                                        <MenuFlyoutItem loc:L.Uid="Search.MenuFlyoutItem02" Tag="{x:Bind}" Click="ResultMenu_OpenFolder_Click">
                                             <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE838;" /></MenuFlyoutItem.Icon>
                                         </MenuFlyoutItem>
-                                        <MenuFlyoutItem Text="パスをコピー" Tag="{x:Bind}" Click="ResultMenu_CopyPath_Click">
+                                        <MenuFlyoutItem loc:L.Uid="Search.MenuFlyoutItem03" Tag="{x:Bind}" Click="ResultMenu_CopyPath_Click">
                                             <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE8C8;" /></MenuFlyoutItem.Icon>
                                         </MenuFlyoutItem>
                                         <MenuFlyoutSeparator />
-                                        <MenuFlyoutItem Text="この画像に似たものを検索" Tag="{x:Bind}" Click="ResultMenu_SimilarSearch_Click">
+                                        <MenuFlyoutItem loc:L.Uid="Search.MenuFlyoutItem04" Tag="{x:Bind}" Click="ResultMenu_SimilarSearch_Click">
                                             <MenuFlyoutItem.Icon><FontIcon Glyph="&#xEB9F;" /></MenuFlyoutItem.Icon>
                                         </MenuFlyoutItem>
                                     </MenuFlyout>
@@ -173,13 +170,11 @@
                                                        Foreground="{ThemeResource TextOnAccentFillColorPrimaryBrush}" />
                                         </Border>
                                     </Grid>
-                                    <TextBlock Text="{x:Bind DuplicateText}" Style="{ThemeResource CaptionTextBlockStyle}"
+                                    <TextBlock loc:L.Uid="Search.TextBlock04" Text="{x:Bind DuplicateText}" Style="{ThemeResource CaptionTextBlockStyle}"
                                                Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"
-                                               ToolTipService.ToolTip="埋め込みが完全に一致する別ファイルがあります (結果には1件だけ表示)"
                                                Visibility="{x:Bind DuplicateText, Converter={StaticResource StringNotEmptyToVisibilityConverter}}" />
-                                    <TextBlock Text="{x:Bind GroupText}" Style="{ThemeResource CaptionTextBlockStyle}"
+                                    <TextBlock loc:L.Uid="Search.TextBlock05" Text="{x:Bind GroupText}" Style="{ThemeResource CaptionTextBlockStyle}"
                                                Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"
-                                               ToolTipService.ToolTip="この動画の、一致した場面の数です。選ぶと、プレビューの下に一覧が出ます"
                                                Visibility="{x:Bind GroupText, Converter={StaticResource StringNotEmptyToVisibilityConverter}}" />
                                     <TextBlock Text="{x:Bind Chunk.SnippetText}" Style="{ThemeResource CaptionTextBlockStyle}"
                                                MaxLines="2" TextTrimming="CharacterEllipsis" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
@@ -215,26 +210,24 @@
                       Visibility="{x:Bind ViewModel.IsVideoSelected, Mode=OneWay}">
                     <Grid Grid.Row="0" ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
                         <TextBlock Text="{x:Bind ViewModel.ScenesHeaderText, Mode=OneWay}" FontWeight="SemiBold" VerticalAlignment="Center" />
-                        <TextBlock Grid.Column="1" Text="並べ替え" VerticalAlignment="Center" Style="{ThemeResource CaptionTextBlockStyle}" />
+                        <TextBlock loc:L.Uid="Search.TextBlock06" Grid.Column="1" VerticalAlignment="Center" Style="{ThemeResource CaptionTextBlockStyle}" />
                         <ComboBox Grid.Column="2" SelectedIndex="{x:Bind ViewModel.SceneSortIndex, Mode=TwoWay}" AutomationProperties.Name="Scene Sort Order">
-                            <ComboBoxItem Content="一致順" />
-                            <ComboBoxItem Content="動画の時間順" />
+                            <ComboBoxItem loc:L.Uid="Search.ComboBoxItem08" />
+                            <ComboBoxItem loc:L.Uid="Search.ComboBoxItem09" />
                         </ComboBox>
                     </Grid>
 
                     <Grid Grid.Row="1" ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="8">
-                        <TextBox x:Name="SceneSearchBox"
-                                 PlaceholderText="この動画の中を検索 (例: 花火、赤い服)"
+                        <TextBox loc:L.Uid="Search.SceneSearchBox" x:Name="SceneSearchBox"
                                  Text="{x:Bind ViewModel.SceneQueryText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                                  KeyDown="SceneSearchBox_KeyDown"
                                  AutomationProperties.Name="Search Inside Video" />
-                        <Button Grid.Column="1" Content="動画内を検索"
+                        <Button loc:L.Uid="Search.Button04" Grid.Column="1"
                                 Command="{x:Bind ViewModel.SearchInVideoCommand}"
                                 IsEnabled="{x:Bind ViewModel.IsSceneSearching, Mode=OneWay, Converter={StaticResource InverseBoolConverter}}"
                                 AutomationProperties.Name="Search In Video" />
-                        <Button Grid.Column="2" Content="一致した場面に戻す"
+                        <Button loc:L.Uid="Search.Button05" Grid.Column="2"
                                 Command="{x:Bind ViewModel.ResetScenesCommand}"
-                                ToolTipService.ToolTip="最初の検索で一致した場面の一覧に戻します"
                                 AutomationProperties.Name="Reset Scenes" />
                         <ProgressRing Grid.Column="3" IsActive="{x:Bind ViewModel.IsSceneSearching, Mode=OneWay}" Width="20" Height="20" />
                     </Grid>
@@ -277,7 +270,7 @@
                       Background="{ThemeResource LayerFillColorDefaultBrush}" CornerRadius="8">
                     <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="12">
                         <FontIcon Glyph="&#xE721;" FontSize="48" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                        <TextBlock Text="検索結果をクリックすると、ここにプレビューが表示されます"
+                        <TextBlock loc:L.Uid="Search.TextBlock07"
                                    Style="{ThemeResource SubtitleTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                     </StackPanel>
                 </Grid>

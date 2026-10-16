@@ -6,6 +6,7 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media.Imaging;
 using Windows.Storage;
+using EmbeddingSearchViewer.Core.Localization;
 using EmbeddingSearchViewer.Core.Models;
 
 namespace EmbeddingSearchViewer_App.Controls;
@@ -34,9 +35,9 @@ public sealed partial class ImagePreviewControl : UserControl
 
         if (string.IsNullOrEmpty(targetPath) || !File.Exists(targetPath))
         {
-            ImageTitleTextBlock.Text = item.Asset.FileName ?? "画像ファイルが見つかりません";
+            ImageTitleTextBlock.Text = item.Asset.FileName ?? Loc.T("ImagePreview.FileNotFoundTitle");
             ImageViewerControl.Source = null;
-            MetadataTextBlock.Text = "ファイルが見つかりません";
+            MetadataTextBlock.Text = Loc.T("Common.FileNotFound");
             return;
         }
 
@@ -80,7 +81,7 @@ public sealed partial class ImagePreviewControl : UserControl
             {
                 System.Diagnostics.Debug.WriteLine($"Fallback load failed: {exFallback.Message}");
                 ImageViewerControl.Source = null;
-                MetadataTextBlock.Text = $"読み込みエラー: {targetPath}";
+                MetadataTextBlock.Text = Loc.T("ImagePreview.LoadError", targetPath);
             }
         }
         finally
@@ -91,7 +92,7 @@ public sealed partial class ImagePreviewControl : UserControl
 
     /// <summary>"path (1,024 × 768 px, 23 KB) - last modified ..." for the footer that shows on hover.</summary>
     private static string Describe(string path, BitmapImage bitmap, FileInfo info)
-        => $"{path} ({bitmap.PixelWidth:N0} × {bitmap.PixelHeight:N0} px, {info.Length / 1024:N0} KB) - 最終更新: {info.LastWriteTime:yyyy/MM/dd HH:mm}";
+        => Loc.T("ImagePreview.Describe", path, bitmap.PixelWidth, bitmap.PixelHeight, info.Length / 1024, info.LastWriteTime);
 
     // The header and footer are only shown while the pointer is over the preview or one of the buttons has the focus.
     private bool _pointerOver;

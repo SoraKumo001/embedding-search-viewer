@@ -6,6 +6,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using EmbeddingSearchViewer.Core.Localization;
 using EmbeddingSearchViewer.Core.Models;
 using EmbeddingSearchViewer.Core.Services;
 using EmbeddingSearchViewer.Infrastructure.Library;
@@ -34,7 +35,7 @@ public partial class SearchViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(MinSimilarityText))]
     private float _minSimilarity = 0.0f;
 
-    public string MinSimilarityText => MinSimilarity <= 0f ? "制限なし" : $"{MinSimilarity:P0} 以上";
+    public string MinSimilarityText => MinSimilarity <= 0f ? Loc.T("Search.MinSimilarity.None") : Loc.T("Search.MinSimilarity.AtLeast", MinSimilarity);
 
     // Metadata filters. Dates are local calendar days; sizes are in MB (NaN = not set, as NumberBox reports for an empty box).
     [ObservableProperty]
@@ -175,8 +176,8 @@ public partial class SearchViewModel : ObservableObject
         ScenesHeaderText = !IsVideoSelected
             ? string.Empty
             : _sceneSearchText.Length == 0
-                ? $"一致した場面 ({Scenes.Count} 件)"
-                : $"この動画の中の「{_sceneSearchText}」 ({Scenes.Count} 件)";
+                ? Loc.T("Search.Scenes.Header", Scenes.Count)
+                : Loc.T("Search.Scenes.HeaderInVideo", _sceneSearchText, Scenes.Count);
     }
 
     /// <summary>Looks for scenes inside the selected video only; an empty text goes back to the scenes of the main search.</summary>
@@ -221,7 +222,7 @@ public partial class SearchViewModel : ObservableObject
         }
         catch (Exception ex)
         {
-            SceneErrorMessage = $"動画内の検索中にエラーが発生しました: {ex.Message}";
+            SceneErrorMessage = Loc.T("Search.Scenes.Error", ex.Message);
         }
         finally
         {
@@ -248,7 +249,7 @@ public partial class SearchViewModel : ObservableObject
     [ObservableProperty]
     private SearchResultItem? _selectedResult;
 
-    private const string InitialEmptyText = "検索語を入力するか、画像を指定して検索してください";
+    private static string InitialEmptyText => Loc.T("Search.Empty.Initial");
 
     [ObservableProperty]
     private string _emptyStateText = InitialEmptyText;
@@ -256,7 +257,7 @@ public partial class SearchViewModel : ObservableObject
     public ObservableCollection<SearchResultItem> SearchResults { get; } = new();
 
     [ObservableProperty]
-    private string _resultsHeaderText = "検索結果 (0 件)";
+    private string _resultsHeaderText = Loc.T("Search.ResultsHeader", 0);
 
     public SearchViewModel(HybridSearchEngine searchEngine, SearchHistoryStore historyStore)
     {
@@ -273,7 +274,7 @@ public partial class SearchViewModel : ObservableObject
         SearchResults.Clear();
         SelectedResult = null;
         ErrorMessage = null;
-        ResultsHeaderText = "検索結果 (0 件)";
+        ResultsHeaderText = Loc.T("Search.ResultsHeader", 0);
         EmptyStateText = InitialEmptyText;
         OnPropertyChanged(nameof(History));
     }
@@ -327,8 +328,8 @@ public partial class SearchViewModel : ObservableObject
             SearchResults.Clear();
             ApplySort();
 
-            ResultsHeaderText = $"検索結果 ({SearchResults.Count} 件)";
-            EmptyStateText = SearchResults.Count == 0 ? "一致する結果がありません。条件を変えて検索してください" : string.Empty;
+            ResultsHeaderText = Loc.T("Search.ResultsHeader", SearchResults.Count);
+            EmptyStateText = SearchResults.Count == 0 ? Loc.T("Search.Empty.NoMatch") : string.Empty;
 
             if (SearchResults.Count > 0)
             {
@@ -345,7 +346,7 @@ public partial class SearchViewModel : ObservableObject
         }
         catch (Exception ex)
         {
-            ErrorMessage = $"検索中にエラーが発生しました: {ex.Message}";
+            ErrorMessage = Loc.T("Search.Error", ex.Message);
             if (SearchResults.Count == 0) EmptyStateText = string.Empty;
         }
         finally
@@ -375,7 +376,7 @@ public partial class SearchViewModel : ObservableObject
         SearchResults.Clear();
         SelectedResult = null;
         ErrorMessage = null;
-        ResultsHeaderText = "検索結果 (0 件)";
+        ResultsHeaderText = Loc.T("Search.ResultsHeader", 0);
         EmptyStateText = InitialEmptyText;
     }
 }
