@@ -1,5 +1,8 @@
 name: Release
 
+# Shows in the run list whether a run is a dry run, which only builds and packages
+run-name: Release${{ inputs.dry_run == true && ' (dry run)' || '' }}
+
 # Edit version.txt and push to the default branch: if that version has not been released yet, the workflow tags the
 # commit (v<version>), builds the app and registers a GitHub release with the packaged app.
 # A version that already has a tag or a release is skipped, so unrelated edits to version.txt are harmless.
