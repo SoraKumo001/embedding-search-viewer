@@ -18,7 +18,21 @@ PC の中にある **画像・PDF・動画** を、**言葉や画像で探せる
 2. 展開したフォルダの `EmbeddingSearchViewer.App.exe` をダブルクリックして起動します。
 
 **初回に表示されることがあるもの**
-- 「Windows によって PC が保護されました」（SmartScreen）: このアプリには、まだコードの署名がないため、表示されることがあります。「詳細情報」→「実行」で起動できます。心配な場合は、次のとおり、ダウンロードしたファイルが、公開されたものと同じことを確認できます。
+- 「Windows によって PC が保護されました」（SmartScreen）: このアプリには、まだコードの署名がないため、表示されることがあります。次のどちらかで、起動できます。
+  - **起動するとき**: 画面の「**詳細情報**」をクリックすると、「**実行**」ボタンが出るので、それを押します。
+  - **警告を出さない（おすすめ）**: zip を**展開する前に**、ブロックを解除します。zip を右クリックして「プロパティ」を開き、「**許可する**」にチェックを入れて「OK」を押します。PowerShell なら、次のとおりです。
+
+    ```powershell
+    Unblock-File .\EmbeddingSearchViewer-0.1.0-win-x64.zip
+    ```
+
+    すでに展開した場合は、フォルダごと解除します。
+
+    ```powershell
+    Get-ChildItem -Recurse C:\Apps\EmbeddingSearchViewer | Unblock-File
+    ```
+
+  心配な場合は、次のとおり、ダウンロードしたファイルが、公開されたものと同じことを確認できます。
 
 ```powershell
 (Get-FileHash .\EmbeddingSearchViewer-0.1.0-win-x64.zip -Algorithm SHA256).Hash.ToLower()
