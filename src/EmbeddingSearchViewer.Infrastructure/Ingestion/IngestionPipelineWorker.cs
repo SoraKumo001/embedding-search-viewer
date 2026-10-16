@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Threading;
@@ -17,7 +18,8 @@ public record IngestionProgress(
     string CurrentFileName,
     bool IsRunning,
     string? ErrorMessage = null,
-    int SkippedFiles = 0
+    int SkippedFiles = 0,
+    string? Summary = null
 );
 
 public class IngestionPipelineWorker
@@ -26,6 +28,18 @@ public class IngestionPipelineWorker
     private readonly PdfMediaIngestor _pdfIngestor;
     private readonly ImageMediaIngestor _imageIngestor;
     private readonly VideoMediaIngestor _videoIngestor;
+
+    /// <summary>Videos are decoded on the CPU and embedded on the GPU; several at once keep both busy.</summary>
+    public const int DefaultVideoParallelism = 3;
+
+    private readonly SemaphoreSlim _videoSlots;
+
+    // Saves come from the queue loop and from videos running in parallel; they are written one at a time.
+    private readonly SemaphoreSlim _saveLock = new(1, 1);
+    private readonly Stopwatch _runWatch = new();
+
+    /// <summary>Where video indexing time goes (frame extraction vs. embedding); reset at the start of each run.</summary>
+    public VideoIngestStats VideoStats { get; } = new();
     private readonly Func<string> _cacheDirectoryProvider;
 
     /// <summary>The cache folder of the current profile; created on demand.</summary>
@@ -70,12 +84,14 @@ public class IngestionPipelineWorker
         string? cacheDirectory = null,
         IPdfPageExtractor? pdfExtractor = null,
         IVideoSegmentExtractor? videoExtractor = null,
-        Func<string>? cacheDirectoryProvider = null)
+        Func<string>? cacheDirectoryProvider = null,
+        int videoParallelism = DefaultVideoParallelism)
     {
         _repository = repository;
         _pdfIngestor = new PdfMediaIngestor(embeddingService, pdfExtractor);
         _imageIngestor = new ImageMediaIngestor(embeddingService);
-        _videoIngestor = new VideoMediaIngestor(embeddingService, videoExtractor);
+        _videoIngestor = new VideoMediaIngestor(embeddingService, videoExtractor, VideoStats);
+        _videoSlots = new SemaphoreSlim(Math.Max(1, videoParallelism));
         string fixedCacheDirectory = cacheDirectory ?? Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "EmbeddingSearchViewer",
@@ -100,6 +116,8 @@ public class IngestionPipelineWorker
         _totalFiles = 0;
         _processedFiles = 0;
         _skippedFiles = 0;
+        VideoStats.Reset();
+        _runWatch.Restart();
         _isRunning = true;
         _workerCts = new CancellationTokenSource();
         var token = _workerCts.Token;
@@ -190,14 +208,18 @@ public class IngestionPipelineWorker
 
     private async Task ProcessQueueAsync(CancellationToken cancellationToken)
     {
+        var inFlightVideos = new List<Task>();
+
         while (!cancellationToken.IsCancellationRequested)
         {
+            inFlightVideos.RemoveAll(t => t.IsCompleted);
+
             if (!_channel.Reader.TryPeek(out _))
             {
                 bool finished = false;
                 lock (_stateLock)
                 {
-                    if (_activeProducers == 0 && !_channel.Reader.TryPeek(out _))
+                    if (_activeProducers == 0 && inFlightVideos.Count == 0 && !_channel.Reader.TryPeek(out _))
                     {
                         _isRunning = false;
                         finished = true;
@@ -207,7 +229,15 @@ public class IngestionPipelineWorker
 
                 try
                 {
-                    if (!await _channel.Reader.WaitToReadAsync(cancellationToken)) break;
+                    if (inFlightVideos.Count > 0)
+                    {
+                        // Videos are still being processed: wake up when one finishes, and look at the queue now and then.
+                        await Task.WhenAny(Task.WhenAny(inFlightVideos), Task.Delay(500, cancellationToken));
+                    }
+                    else if (!await _channel.Reader.WaitToReadAsync(cancellationToken))
+                    {
+                        break;
+                    }
                 }
                 catch (OperationCanceledException)
                 {
@@ -244,21 +274,28 @@ public class IngestionPipelineWorker
                         imageBatch.Clear();
                     }
 
-                    // Process PDF or Video single item
-                    string fileName = Path.GetFileName(filePath);
-                    NotifyProgress($"解析中: {fileName}");
-                    try
+                    if (VideoExts.Contains(ext))
                     {
-                        await ProcessSingleNonImageFileAsync(filePath, cancellationToken);
+                        // Wait for a free slot, then let the video run while the queue moves on.
+                        try
+                        {
+                            await _videoSlots.WaitAsync(cancellationToken);
+                        }
+                        catch (OperationCanceledException)
+                        {
+                            break;
+                        }
+
+                        string videoPath = filePath;
+                        inFlightVideos.Add(Task.Run(async () =>
+                        {
+                            try { await ProcessNonImageItemAsync(videoPath, cancellationToken); }
+                            finally { _videoSlots.Release(); }
+                        }, CancellationToken.None));
                     }
-                    catch (Exception ex)
+                    else
                     {
-                        NotifyProgress(fileName, $"Error processing {fileName}: {ex.Message}");
-                    }
-                    finally
-                    {
-                        Interlocked.Increment(ref _processedFiles);
-                        NotifyProgress(fileName);
+                        await ProcessNonImageItemAsync(filePath, cancellationToken);
                     }
                 }
             }
@@ -271,6 +308,9 @@ public class IngestionPipelineWorker
             }
         }
 
+        // Videos still running (only after a cancellation) must be done before the run counts as stopped.
+        try { await Task.WhenAll(inFlightVideos); } catch { }
+
         // On normal completion _isRunning was already cleared under the lock (a new run may have started since).
         if (cancellationToken.IsCancellationRequested)
         {
@@ -279,7 +319,40 @@ public class IngestionPipelineWorker
                 _isRunning = false;
             }
         }
-        NotifyProgress("すべてのインデックス作成が完了しました");
+        NotifyProgress("すべてのインデックス作成が完了しました", summary: VideoStats.Summary(_runWatch.Elapsed.TotalSeconds));
+    }
+
+    /// <summary>Indexes one PDF or video and reports progress; a failure is reported, not thrown.</summary>
+    private async Task ProcessNonImageItemAsync(string filePath, CancellationToken cancellationToken)
+    {
+        string fileName = Path.GetFileName(filePath);
+        NotifyProgress($"解析中: {fileName}");
+        try
+        {
+            await ProcessSingleNonImageFileAsync(filePath, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            NotifyProgress(fileName, $"Error processing {fileName}: {ex.Message}");
+        }
+        finally
+        {
+            Interlocked.Increment(ref _processedFiles);
+            NotifyProgress(fileName);
+        }
+    }
+
+    private async Task SaveAsync(MediaAsset asset, IEnumerable<MediaChunk> chunks, CancellationToken cancellationToken)
+    {
+        await _saveLock.WaitAsync(cancellationToken);
+        try
+        {
+            await _repository.SaveAssetWithChunksAsync(asset, chunks, cancellationToken);
+        }
+        finally
+        {
+            _saveLock.Release();
+        }
     }
 
     private async Task ProcessImageBatchAsync(List<string> filePaths, CancellationToken cancellationToken)
@@ -315,7 +388,7 @@ public class IngestionPipelineWorker
                 var batch = await _imageIngestor.IngestBatchWithSkipsAsync(toProcess, _cacheDirectory, cancellationToken: cancellationToken);
                 foreach (var (asset, chunks) in batch.Items)
                 {
-                    await _repository.SaveAssetWithChunksAsync(asset, chunks, cancellationToken);
+                    await SaveAsync(asset, chunks, cancellationToken);
                     Interlocked.Increment(ref _processedFiles);
                     NotifyProgress(asset.FileName);
                 }
@@ -372,10 +445,10 @@ public class IngestionPipelineWorker
             return;
         }
 
-        await _repository.SaveAssetWithChunksAsync(asset, chunks, cancellationToken);
+        await SaveAsync(asset, chunks, cancellationToken);
     }
 
-    private void NotifyProgress(string currentFile, string? error = null)
+    private void NotifyProgress(string currentFile, string? error = null, string? summary = null)
     {
         ProgressChanged?.Invoke(new IngestionProgress(
             TotalFiles: _totalFiles,
@@ -383,7 +456,8 @@ public class IngestionPipelineWorker
             CurrentFileName: currentFile,
             IsRunning: _isRunning,
             ErrorMessage: error,
-            SkippedFiles: _skippedFiles
+            SkippedFiles: _skippedFiles,
+            Summary: summary
         ));
     }
 }

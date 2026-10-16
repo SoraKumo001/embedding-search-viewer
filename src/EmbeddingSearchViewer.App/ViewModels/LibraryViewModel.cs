@@ -230,6 +230,7 @@ public partial class LibraryViewModel : ObservableObject
                 CurrentStatusMessage = progress.ProcessedFiles >= progress.TotalFiles && progress.TotalFiles > 0
                     ? $"すべてのインデックス作成が完了しました ({progress.ProcessedFiles}/{progress.TotalFiles} 件)"
                       + (progress.SkippedFiles > 0 ? $"。うち {progress.SkippedFiles} 件は白紙(ほぼ一色)のため対象外にしました" : string.Empty)
+                      + (string.IsNullOrEmpty(progress.Summary) ? string.Empty : $"。{progress.Summary}")
                     : progress.CurrentFileName;
 
                 if (progress.ProcessedFiles >= progress.TotalFiles && progress.TotalFiles > 0)

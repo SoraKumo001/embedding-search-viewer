@@ -1,8 +1,10 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Diagnostics;
 using System.Linq;
 using System.Threading;
+using System.Threading.Channels;
 using System.Threading.Tasks;
 using EmbeddingSearchViewer.Core.Interfaces;
 using EmbeddingSearchViewer.Core.Models;
@@ -14,11 +16,17 @@ public class VideoMediaIngestor
     private readonly IEmbeddingService _embeddingService;
     private readonly IVideoSegmentExtractor _extractor;
 
+    /// <summary>Frames are embedded in groups of this size while the decoder keeps working on the next ones.</summary>
+    internal const int EmbedGroupSize = 8;
+
+    public VideoIngestStats Stats { get; }
+
     /// <param name="extractor">Defaults to the Windows media stack only; the app adds FFmpeg as a second decoder.</param>
-    public VideoMediaIngestor(IEmbeddingService embeddingService, IVideoSegmentExtractor? extractor = null)
+    public VideoMediaIngestor(IEmbeddingService embeddingService, IVideoSegmentExtractor? extractor = null, VideoIngestStats? stats = null)
     {
         _embeddingService = embeddingService;
         _extractor = extractor ?? new VideoSegmentExtractor(new IVideoFrameSource[] { new MediaFoundationFrameSource() });
+        Stats = stats ?? new VideoIngestStats();
     }
 
     public async Task<(MediaAsset Asset, List<MediaChunk> Chunks)> IngestAsync(
@@ -42,20 +50,97 @@ public class VideoMediaIngestor
         };
 
         string videoCacheDir = Path.Combine(cacheDirectory, "video", asset.Id.ToString());
-        var segments = await _extractor.ExtractAsync(filePath, videoCacheDir, segmentDurationSec, overlapSec, cancellationToken);
-        var withFrames = segments.Where(s => s.ThumbnailPath != null).ToList();
+        long videoStart = Stopwatch.GetTimestamp();
 
+        IReadOnlyList<VideoSegmentContent> segments;
+        List<MediaChunk> chunks;
+        if (_extractor is IStreamingVideoSegmentExtractor streaming)
+        {
+            (segments, chunks) = await ExtractAndEmbedStreamingAsync(
+                streaming, asset, fi.Name, videoCacheDir, segmentDurationSec, overlapSec, truncateDim, cancellationToken);
+        }
+        else
+        {
+            long t0 = Stopwatch.GetTimestamp();
+            segments = await _extractor.ExtractAsync(filePath, videoCacheDir, segmentDurationSec, overlapSec, cancellationToken);
+            Stats.AddExtract(Stopwatch.GetTimestamp() - t0);
+
+            var frames = segments.Where(s => s.ThumbnailPath != null).ToList();
+            chunks = frames.Count > 0 ? await EmbedSegmentsAsync(asset, fi.Name, frames, truncateDim, cancellationToken) : new List<MediaChunk>();
+        }
+
+        var withFrames = segments.Where(s => s.ThumbnailPath != null).ToList();
         if (withFrames.Count > 0)
         {
             asset.ThumbnailPath = withFrames[0].ThumbnailPath;
             asset.DurationOrPages = segments.Max(s => s.EndMs);
 
-            var chunks = await EmbedSegmentsAsync(asset, fi.Name, withFrames, truncateDim, cancellationToken);
-            if (chunks.Count > 0) return (asset, chunks);
+            if (chunks.Count > 0)
+            {
+                Stats.AddVideo(Stopwatch.GetTimestamp() - videoStart, withFrames.Count);
+                return (asset, chunks);
+            }
         }
 
         // No decoder could read the file (or every frame was blank): keep it findable by its name.
         return (asset, new List<MediaChunk> { await NameOnlyChunkAsync(asset, fi.Name, truncateDim, cancellationToken) });
+    }
+
+    /// <summary>
+    /// Decodes frames and embeds them at the same time: the decoder reports each frame as it is written, and a second loop
+    /// embeds them in groups while the next frames are still being decoded. The chunks come out in segment order, exactly
+    /// as when all frames are extracted first.
+    /// </summary>
+    private async Task<(IReadOnlyList<VideoSegmentContent> Segments, List<MediaChunk> Chunks)> ExtractAndEmbedStreamingAsync(
+        IStreamingVideoSegmentExtractor extractor, MediaAsset asset, string fileName, string videoCacheDir,
+        int segmentDurationSec, int overlapSec, int truncateDim, CancellationToken cancellationToken)
+    {
+        var ready = Channel.CreateUnbounded<VideoSegmentContent>(new UnboundedChannelOptions { SingleReader = true, SingleWriter = true });
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+
+        var extraction = Task.Run(async () =>
+        {
+            long t0 = Stopwatch.GetTimestamp();
+            try
+            {
+                return await extractor.ExtractAsync(
+                    asset.FilePath, videoCacheDir, segmentDurationSec, overlapSec, s => ready.Writer.TryWrite(s), cts.Token);
+            }
+            catch (Exception ex)
+            {
+                ready.Writer.TryComplete(ex);
+                throw;
+            }
+            finally
+            {
+                Stats.AddExtract(Stopwatch.GetTimestamp() - t0);
+                ready.Writer.TryComplete();
+            }
+        }, CancellationToken.None);
+
+        var chunks = new List<MediaChunk>();
+        try
+        {
+            var group = new List<VideoSegmentContent>(EmbedGroupSize);
+            while (await ready.Reader.WaitToReadAsync(cts.Token))
+            {
+                while (group.Count < EmbedGroupSize && ready.Reader.TryRead(out var segment)) group.Add(segment);
+                if (group.Count == 0) continue;
+
+                // Embed what is ready now; frames decoded meanwhile queue up for the next group.
+                chunks.AddRange(await EmbedSegmentsAsync(asset, fileName, group, truncateDim, cts.Token));
+                group.Clear();
+            }
+        }
+        catch
+        {
+            cts.Cancel(); // stop decoding for a video whose embedding failed (or that was cancelled)
+            try { await extraction; } catch { }
+            throw;
+        }
+
+        var segments = await extraction;
+        return (segments, chunks);
     }
 
     private async Task<List<MediaChunk>> EmbedSegmentsAsync(
@@ -66,7 +151,9 @@ public class VideoMediaIngestor
                 Type: "video_segment", VideoPath: asset.FilePath, ThumbnailPath: s.ThumbnailPath, StartMs: s.StartMs, EndMs: s.EndMs))
             .ToList();
 
+        long embedStart = Stopwatch.GetTimestamp();
         var embeddings = await _embeddingService.GenerateBatchEmbeddingsAsync(inputs, truncateDim, cancellationToken);
+        Stats.AddEmbed(Stopwatch.GetTimestamp() - embedStart);
 
         var chunks = new List<MediaChunk>();
         for (int i = 0; i < segments.Count && i < embeddings.Count; i++)

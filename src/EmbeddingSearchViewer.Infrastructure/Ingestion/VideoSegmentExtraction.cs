@@ -18,6 +18,21 @@ public interface IVideoSegmentExtractor
         string videoPath, string outputDirectory, int segmentSeconds, int overlapSeconds, CancellationToken cancellationToken = default);
 }
 
+/// <summary>
+/// An extractor that reports each segment as soon as its frame is on disk, so the caller can embed frames
+/// while the decoder is still working on the rest of the video.
+/// </summary>
+public interface IStreamingVideoSegmentExtractor : IVideoSegmentExtractor
+{
+    /// <summary>
+    /// Same result as <see cref="IVideoSegmentExtractor.ExtractAsync"/>. <paramref name="onSegmentReady"/> is called, in
+    /// segment order, for every segment whose frame was read (never for a decoder that is abandoned for yielding no frame).
+    /// </summary>
+    Task<IReadOnlyList<VideoSegmentContent>> ExtractAsync(
+        string videoPath, string outputDirectory, int segmentSeconds, int overlapSeconds,
+        Action<VideoSegmentContent>? onSegmentReady, CancellationToken cancellationToken = default);
+}
+
 /// <summary>An open video from which single frames can be grabbed.</summary>
 public interface IVideoFrameSession : IAsyncDisposable
 {
@@ -40,7 +55,7 @@ public interface IVideoFrameSource
 /// Plans the segments and grabs their frames. Frame sources are tried in order: the first one that can open the file
 /// and produce at least one frame wins, so the preferred decoder can be backed by another one for files it cannot read.
 /// </summary>
-public sealed class VideoSegmentExtractor : IVideoSegmentExtractor
+public sealed class VideoSegmentExtractor : IStreamingVideoSegmentExtractor
 {
     private readonly IReadOnlyList<IVideoFrameSource> _sources;
 
@@ -73,8 +88,13 @@ public sealed class VideoSegmentExtractor : IVideoSegmentExtractor
         return result;
     }
 
-    public async Task<IReadOnlyList<VideoSegmentContent>> ExtractAsync(
+    public Task<IReadOnlyList<VideoSegmentContent>> ExtractAsync(
         string videoPath, string outputDirectory, int segmentSeconds, int overlapSeconds, CancellationToken cancellationToken = default)
+        => ExtractAsync(videoPath, outputDirectory, segmentSeconds, overlapSeconds, null, cancellationToken);
+
+    public async Task<IReadOnlyList<VideoSegmentContent>> ExtractAsync(
+        string videoPath, string outputDirectory, int segmentSeconds, int overlapSeconds,
+        Action<VideoSegmentContent>? onSegmentReady, CancellationToken cancellationToken = default)
     {
         Directory.CreateDirectory(outputDirectory);
         string baseName = Path.GetFileNameWithoutExtension(videoPath);
@@ -118,8 +138,14 @@ public sealed class VideoSegmentExtractor : IVideoSegmentExtractor
                         ok = false;
                     }
 
-                    if (ok && File.Exists(path)) grabbed++;
-                    segments.Add(new VideoSegmentContent(i, start, end, ok && File.Exists(path) ? path : null));
+                    bool hasFrame = ok && File.Exists(path);
+                    var segment = new VideoSegmentContent(i, start, end, hasFrame ? path : null);
+                    segments.Add(segment);
+                    if (hasFrame)
+                    {
+                        grabbed++;
+                        onSegmentReady?.Invoke(segment);
+                    }
                 }
 
                 if (grabbed > 0) return segments;
