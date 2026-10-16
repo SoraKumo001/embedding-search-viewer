@@ -109,7 +109,7 @@ jobs:
           $name = 'EmbeddingSearchViewer-${{ steps.version.outputs.version }}-win-x64'
           $folder = "artifacts/$name"
           Move-Item artifacts/publish $folder
-          Copy-Item README.md $folder
+          Copy-Item README.md, LICENSE $folder
           # license notices of everything that is shipped (FFmpeg is LGPL: its license text must travel with the DLLs)
           ./tools/New-ThirdPartyNotices.ps1 -OutputDirectory $folder
           Compress-Archive -Path $folder -DestinationPath "artifacts/$name.zip" -CompressionLevel Optimal
@@ -139,7 +139,7 @@ jobs:
           - 初回起動時に、AI モデル（約 1.76 GB）をアプリ内でダウンロードします。
           - ``SHA256SUMS.txt`` で、zip のチェックサムを確認できます。
           - 動作環境と使い方は、同梱の ``README.md`` を参照してください。
-          - サードパーティのライセンスは、同梱の ``THIRD-PARTY-NOTICES.md`` と ``licenses/`` にまとめています。
+          - このアプリは MIT ライセンスです（同梱の ``LICENSE``）。サードパーティのライセンスは、``THIRD-PARTY-NOTICES.md`` と ``licenses/`` にまとめています。
           "@ | Set-Content -Encoding utf8 artifacts/release-notes.md
 
           $ghArgs = @(

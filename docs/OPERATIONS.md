@@ -100,7 +100,7 @@ gh release delete v0.1.0 --cleanup-tag --yes
 | Build | `dotnet build EmbeddingSearchViewer.slnx -c Release` |
 | Test | `--filter "Requires!=WindowsMedia"`（下記） |
 | Publish | `-c Release -p:Platform=x64 -r win-x64 --self-contained true` |
-| Package | フォルダ名にバージョンを入れ、`README.md` とライセンス（7 章）を加えて zip にし、SHA-256 を作る |
+| Package | フォルダ名にバージョンを入れ、`README.md`、`LICENSE`、サードパーティのライセンス（7 章）を加えて zip にし、SHA-256 を作る |
 | Keep the package | ドライランのときだけ、zip を成果物として残す |
 | Create the tag and the release | `gh release create`。`--target $GITHUB_SHA` でタグも作る。`-` を含むバージョンは `--prerelease`、そうでなければ `--latest` |
 

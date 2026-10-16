@@ -188,7 +188,7 @@ GPU がない（または使えない）と、画像 1 枚あたり数秒かか�
 - このアプリが利用しているサードパーティのソフトウェアのライセンスは、配布している zip の `THIRD-PARTY-NOTICES.md` と `licenses` フォルダにまとめています。
 - 動画の処理には、**FFmpeg**（LGPL）を使っています。詳しくは、`THIRD-PARTY-NOTICES.md` を参照してください。
 - AI モデルは、[onnx-community/embeddinggemma-2-ONNX](https://huggingface.co/onnx-community/embeddinggemma-2-ONNX) です（配布元のページで、Apache-2.0 と表示されています）。
-- このアプリ自体のライセンスは、現時点では定めていません。
+- このアプリ自体は、**MIT ライセンス**です（[LICENSE](LICENSE)）。配布している zip にも、`LICENSE` を入れています。
 
 ---
 
