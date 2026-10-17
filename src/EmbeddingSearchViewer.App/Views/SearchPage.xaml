@@ -16,10 +16,14 @@
               Background="{ThemeResource LayerFillColorDefaultBrush}" Padding="16" CornerRadius="8">
             <Grid Grid.Row="0" ColumnDefinitions="*,Auto,Auto,Auto,Auto" ColumnSpacing="8">
                 <!-- Text Query -->
-                <TextBox loc:L.Uid="Search.SearchBox" x:Name="SearchBox" Grid.Column="0"
-                         Text="{x:Bind ViewModel.QueryText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                         KeyDown="SearchBox_KeyDown"
-                         AutomationProperties.Name="Search Query" />
+                <!-- Offers past query texts while typing; Enter (or choosing a suggestion) runs the search. -->
+                <AutoSuggestBox loc:L.Uid="Search.SearchBox" x:Name="SearchBox" Grid.Column="0"
+                                Text="{x:Bind ViewModel.QueryText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                UpdateTextOnSelect="False"
+                                TextChanged="SearchBox_TextChanged"
+                                SuggestionChosen="SearchBox_SuggestionChosen"
+                                QuerySubmitted="SearchBox_QuerySubmitted"
+                                AutomationProperties.Name="Search Query" />
 
                 <!-- Search History -->
                 <Button loc:L.Uid="Search.Button01" Grid.Column="1" AutomationProperties.Name="Search History">
@@ -71,7 +75,7 @@
             </Grid>
 
             <!-- Search Options -->
-            <Grid Grid.Row="2" ColumnDefinitions="Auto,220,Auto,Auto,Auto,Auto" ColumnSpacing="16" VerticalAlignment="Center">
+            <Grid Grid.Row="2" ColumnDefinitions="Auto,220,Auto,Auto,Auto,Auto,Auto" ColumnSpacing="16" VerticalAlignment="Center">
                 <CheckBox loc:L.Uid="Search.CheckBox01" Grid.Column="0" MinWidth="0"
                           IsChecked="{x:Bind ViewModel.EnableFts, Mode=TwoWay}" AutomationProperties.Name="Enable FTS" />
                 <Slider loc:L.Uid="Search.Slider01" Grid.Column="1" Minimum="0" Maximum="1" StepFrequency="0.05"
@@ -88,6 +92,9 @@
                 <CheckBox loc:L.Uid="Search.CheckBox02" Grid.Column="5" MinWidth="0"
                           IsChecked="{x:Bind ViewModel.GroupVideos, Mode=TwoWay}"
                           AutomationProperties.Name="Group Video Scenes" />
+                <CheckBox loc:L.Uid="Search.CheckBox03" Grid.Column="6" MinWidth="0"
+                          IsChecked="{x:Bind ViewModel.SaveOptionsInHistory, Mode=TwoWay}"
+                          AutomationProperties.Name="Save Search Options In History" />
             </Grid>
 
             <!-- Metadata Filters -->

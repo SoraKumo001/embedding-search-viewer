@@ -575,7 +575,34 @@
     <value>詳細フィルタ (期間・サイズ・フォルダ)</value>
   </data>
   <data name="Search.History.Clear" xml:space="preserve">
-    <value>履歴を消去</value>
+    <value>履歴を消去（ピン留めを除く）</value>
+  </data>
+  <data name="Search.History.ClearAll" xml:space="preserve">
+    <value>ピン留めも含めて、すべて消去</value>
+  </data>
+  <data name="Search.History.Delete" xml:space="preserve">
+    <value>履歴から削除</value>
+  </data>
+  <data name="Search.History.Image" xml:space="preserve">
+    <value>画像: {0}</value>
+  </data>
+  <data name="Search.History.ImageMissing" xml:space="preserve">
+    <value>検索に使った画像が見つかりません: {0}</value>
+  </data>
+  <data name="Search.History.Pin" xml:space="preserve">
+    <value>ピン留めする</value>
+  </data>
+  <data name="Search.History.PinLimit" xml:space="preserve">
+    <value>ピン留めできるのは、{0} 件までです。</value>
+  </data>
+  <data name="Search.History.Unpin" xml:space="preserve">
+    <value>ピン留めを外す</value>
+  </data>
+  <data name="Search.CheckBox03.Content" xml:space="preserve">
+    <value>検索の条件も履歴に残す</value>
+  </data>
+  <data name="Search.CheckBox03.ToolTip" xml:space="preserve">
+    <value>オンにすると、履歴から呼び出したときに、種類・類似度・並べ替え・絞り込みも元に戻ります。履歴の項目は、クリックで再実行、右クリックでピン留めと削除です</value>
   </data>
   <data name="Search.History.Empty" xml:space="preserve">
     <value>履歴はありません</value>

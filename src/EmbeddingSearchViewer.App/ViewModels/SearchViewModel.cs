@@ -18,9 +18,106 @@ public partial class SearchViewModel : ObservableObject
     private readonly HybridSearchEngine _searchEngine;
     private readonly SearchHistoryStore _historyStore;
 
-    public IReadOnlyList<string> History => _historyStore.Load();
+    private readonly AppSettingsStore? _appSettings;
+    private bool _applyingHistory;
 
-    public void ClearHistory() => _historyStore.Clear();
+    /// <summary>Pinned searches first, then the recent ones.</summary>
+    public IReadOnlyList<SearchHistoryEntry> History => _historyStore.Load();
+
+    /// <summary>Removes the recent searches; the pinned ones stay unless <paramref name="includePinned"/> is set.</summary>
+    public void ClearHistory(bool includePinned = false) => _historyStore.Clear(includePinned);
+
+    public void RemoveHistory(Guid id) => _historyStore.Remove(id);
+
+    /// <summary>Pins or unpins an entry; false when the pin limit is reached.</summary>
+    public bool SetHistoryPinned(Guid id, bool pinned) => _historyStore.SetPinned(id, pinned);
+
+    /// <summary>Whether the conditions of a search (type, similarity, sort, filters) are kept in its history entry.</summary>
+    [ObservableProperty]
+    private bool _saveOptionsInHistory = true;
+
+    partial void OnSaveOptionsInHistoryChanged(bool value)
+    {
+        if (_appSettings == null) return;
+        var settings = _appSettings.Load();
+        settings.SaveSearchOptionsInHistory = value;
+        _appSettings.Save(settings);
+    }
+
+    public const int MaxSuggestions = 8;
+
+    /// <summary>Past query texts to offer while typing: those that start with the input first, then those that contain it.</summary>
+    public IReadOnlyList<string> SuggestHistory(string? input)
+    {
+        string typed = (input ?? string.Empty).Trim();
+        if (typed.Length == 0) return Array.Empty<string>();
+
+        var texts = History
+            .Select(e => e.Text)
+            .Where(t => !string.IsNullOrWhiteSpace(t) && !string.Equals(t, typed, StringComparison.CurrentCultureIgnoreCase))
+            .Select(t => t!)
+            .Distinct(StringComparer.CurrentCultureIgnoreCase)
+            .ToList();
+        return texts.Where(t => t.StartsWith(typed, StringComparison.CurrentCultureIgnoreCase))
+            .Concat(texts.Where(t => !t.StartsWith(typed, StringComparison.CurrentCultureIgnoreCase)
+                                     && t.Contains(typed, StringComparison.CurrentCultureIgnoreCase)))
+            .Take(MaxSuggestions)
+            .ToList();
+    }
+
+    /// <summary>
+    /// Puts a history entry back into the search form (text, image and, if saved, the conditions) and runs it.
+    /// An image that has been moved or deleted is reported instead of searching with a different query.
+    /// </summary>
+    public async Task ApplyHistoryAsync(SearchHistoryEntry entry)
+    {
+        if (!string.IsNullOrWhiteSpace(entry.ImagePath) && !System.IO.File.Exists(entry.ImagePath))
+        {
+            ErrorMessage = Loc.T("Search.History.ImageMissing", entry.ImagePath);
+            return;
+        }
+
+        _applyingHistory = true;
+        try
+        {
+            QueryText = entry.Text ?? string.Empty;
+            QueryImagePath = string.IsNullOrWhiteSpace(entry.ImagePath) ? null : entry.ImagePath;
+
+            var o = entry.Options;
+            if (o != null)
+            {
+                SelectedMediaTypeIndex = o.MediaTypeIndex;
+                MinSimilarity = o.MinSimilarity;
+                SortIndex = o.SortIndex;
+                EnableFts = o.EnableFts;
+                GroupVideos = o.GroupVideos;
+                FilterDateFrom = o.DateFrom;
+                FilterDateTo = o.DateTo;
+                FilterMinSizeMb = o.MinSizeMb ?? double.NaN;
+                FilterMaxSizeMb = o.MaxSizeMb ?? double.NaN;
+                FilterFolder = o.Folder ?? string.Empty;
+            }
+        }
+        finally
+        {
+            _applyingHistory = false;
+        }
+        await SearchCommand.ExecuteAsync(null);
+    }
+
+    private SearchHistoryOptions SnapshotOptions() => new()
+    {
+        MediaTypeIndex = SelectedMediaTypeIndex,
+        MinSimilarity = MinSimilarity,
+        SortIndex = SortIndex,
+        EnableFts = EnableFts,
+        GroupVideos = GroupVideos,
+        DateFrom = FilterDateFrom,
+        DateTo = FilterDateTo,
+        MinSizeMb = double.IsNaN(FilterMinSizeMb) ? null : FilterMinSizeMb,
+        MaxSizeMb = double.IsNaN(FilterMaxSizeMb) ? null : FilterMaxSizeMb,
+        Folder = string.IsNullOrWhiteSpace(FilterFolder) ? null : FilterFolder.Trim()
+    };
 
     [ObservableProperty]
     private string _queryText = string.Empty;
@@ -102,7 +199,7 @@ public partial class SearchViewModel : ObservableObject
     {
         // Show the same search in the other form right away.
         bool hasQuery = !string.IsNullOrWhiteSpace(QueryText) || !string.IsNullOrWhiteSpace(QueryImagePath);
-        if (hasQuery && SearchResults.Count > 0 && !IsSearching) _ = SearchCommand.ExecuteAsync(null);
+        if (!_applyingHistory && hasQuery && SearchResults.Count > 0 && !IsSearching) _ = SearchCommand.ExecuteAsync(null);
     }
 
     // ---- scenes of the selected video (below the preview) ----
@@ -259,10 +356,12 @@ public partial class SearchViewModel : ObservableObject
     [ObservableProperty]
     private string _resultsHeaderText = Loc.T("Search.ResultsHeader", 0);
 
-    public SearchViewModel(HybridSearchEngine searchEngine, SearchHistoryStore historyStore)
+    public SearchViewModel(HybridSearchEngine searchEngine, SearchHistoryStore historyStore, AppSettingsStore? appSettings = null)
     {
         _searchEngine = searchEngine;
         _historyStore = historyStore;
+        _appSettings = appSettings;
+        if (appSettings != null) _saveOptionsInHistory = appSettings.Load().SaveSearchOptionsInHistory;
     }
 
     /// <summary>Clears the query and the results of the previous profile; they do not belong to the new index.</summary>
@@ -319,9 +418,14 @@ public partial class SearchViewModel : ObservableObject
 
             var results = await _searchEngine.SearchAsync(query, cancellationToken);
 
-            if (!string.IsNullOrWhiteSpace(QueryText) && string.IsNullOrWhiteSpace(QueryImagePath))
+            if (!string.IsNullOrWhiteSpace(QueryText) || !string.IsNullOrWhiteSpace(QueryImagePath))
             {
-                _historyStore.Add(QueryText);
+                _historyStore.Add(new SearchHistoryEntry
+                {
+                    Text = QueryText,
+                    ImagePath = string.IsNullOrWhiteSpace(QueryImagePath) ? null : QueryImagePath,
+                    Options = SaveOptionsInHistory ? SnapshotOptions() : null
+                });
             }
 
             _rawResults = results.ToList();

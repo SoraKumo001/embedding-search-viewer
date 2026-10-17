@@ -9,6 +9,9 @@ public sealed class AppSettings
 {
     /// <summary>"auto" (follow Windows), "ja" or "en". Takes effect at the next start.</summary>
     public string Language { get; set; } = "auto";
+
+    /// <summary>Remember the search conditions (type, similarity, sort, filters) together with each history entry.</summary>
+    public bool SaveSearchOptionsInHistory { get; set; } = true;
 }
 
 /// <summary>Keeps <see cref="AppSettings"/> in settings.json under LocalAppData.</summary>

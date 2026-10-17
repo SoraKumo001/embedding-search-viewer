@@ -60,12 +60,24 @@ public sealed partial class SearchPage : Page
         }
     }
 
-    private async void SearchBox_KeyDown(object sender, KeyRoutedEventArgs e)
+    private void SearchBox_TextChanged(AutoSuggestBox sender, AutoSuggestBoxTextChangedEventArgs args)
     {
-        if (e.Key == Windows.System.VirtualKey.Enter)
-        {
-            await ViewModel.SearchCommand.ExecuteAsync(null);
-        }
+        // Only what the user types gets suggestions; text set by the program (a history entry, a new profile) does not.
+        if (args.Reason != AutoSuggestionBoxTextChangeReason.UserInput) return;
+
+        ViewModel.QueryText = sender.Text;
+        sender.ItemsSource = ViewModel.SuggestHistory(sender.Text);
+    }
+
+    private void SearchBox_SuggestionChosen(AutoSuggestBox sender, AutoSuggestBoxSuggestionChosenEventArgs args)
+    {
+        if (args.SelectedItem is string text) ViewModel.QueryText = text;
+    }
+
+    private async void SearchBox_QuerySubmitted(AutoSuggestBox sender, AutoSuggestBoxQuerySubmittedEventArgs args)
+    {
+        if (args.ChosenSuggestion is string text) ViewModel.QueryText = text;
+        await ViewModel.SearchCommand.ExecuteAsync(null);
     }
 
     private async void PickQueryImage_Click(object sender, RoutedEventArgs e)
@@ -243,7 +255,21 @@ public sealed partial class SearchPage : Page
         await ViewModel.SearchCommand.ExecuteAsync(null);
     }
 
-    private void HistoryFlyout_Opening(object? sender, object e)
+    private void HistoryFlyout_Opening(object? sender, object e) => BuildHistoryMenu();
+
+    /// <summary>The label of a history entry: its text, the name of its image, or both.</summary>
+    private static string HistoryLabel(EmbeddingSearchViewer.Infrastructure.Library.SearchHistoryEntry entry)
+    {
+        string image = string.IsNullOrWhiteSpace(entry.ImagePath) ? string.Empty : Loc.T("Search.History.Image", Path.GetFileName(entry.ImagePath));
+        if (string.IsNullOrWhiteSpace(entry.Text)) return image;
+        return image.Length == 0 ? entry.Text : $"{entry.Text}  ({image})";
+    }
+
+    /// <summary>
+    /// Click runs the entry again; right-click offers pin and delete. The menu is built again after each change,
+    /// because the pinned entries move to the top.
+    /// </summary>
+    private void BuildHistoryMenu()
     {
         HistoryFlyout.Items.Clear();
         var history = ViewModel.History;
@@ -253,15 +279,32 @@ public sealed partial class SearchPage : Page
             return;
         }
 
-        foreach (var query in history)
+        foreach (var entry in history)
         {
-            var item = new MenuFlyoutItem { Text = query };
-            item.Click += async (_, _) =>
+            var item = new MenuFlyoutItem
             {
-                ViewModel.QueryText = query;
-                ViewModel.ClearQueryImageCommand.Execute(null);
-                await ViewModel.SearchCommand.ExecuteAsync(null);
+                Text = HistoryLabel(entry),
+                Icon = entry.Pinned ? new FontIcon { Glyph = "" } : null
             };
+            item.Click += async (_, _) => await ViewModel.ApplyHistoryAsync(entry);
+
+            var context = new MenuFlyout();
+            var pin = new MenuFlyoutItem { Text = entry.Pinned ? Loc.T("Search.History.Unpin") : Loc.T("Search.History.Pin") };
+            pin.Click += (_, _) =>
+            {
+                if (!ViewModel.SetHistoryPinned(entry.Id, !entry.Pinned)) ViewModel.ErrorMessage = Loc.T("Search.History.PinLimit", EmbeddingSearchViewer.Infrastructure.Library.SearchHistoryStore.MaxPinned);
+                BuildHistoryMenu();
+            };
+            var delete = new MenuFlyoutItem { Text = Loc.T("Search.History.Delete") };
+            delete.Click += (_, _) =>
+            {
+                ViewModel.RemoveHistory(entry.Id);
+                BuildHistoryMenu();
+            };
+            context.Items.Add(pin);
+            context.Items.Add(delete);
+            item.ContextFlyout = context;
+
             HistoryFlyout.Items.Add(item);
         }
 
@@ -269,5 +312,12 @@ public sealed partial class SearchPage : Page
         var clear = new MenuFlyoutItem { Text = Loc.T("Search.History.Clear") };
         clear.Click += (_, _) => ViewModel.ClearHistory();
         HistoryFlyout.Items.Add(clear);
+
+        if (history.Any(h => h.Pinned))
+        {
+            var clearAll = new MenuFlyoutItem { Text = Loc.T("Search.History.ClearAll") };
+            clearAll.Click += (_, _) => ViewModel.ClearHistory(includePinned: true);
+            HistoryFlyout.Items.Add(clearAll);
+        }
     }
 }

@@ -151,17 +151,72 @@ public sealed class SearchViewModelTests : IDisposable
     // ---- history ----
 
     [Fact]
-    public async Task Search_RecordsTextQueriesButNotImageQueries()
+    public async Task Search_RecordsTextAndImageQueries()
     {
         _repo.Add(@"C:\p\a.png", 0.1f);
         _vm.QueryText = "red car";
         await _vm.SearchCommand.ExecuteAsync(null);
-        Assert.Equal(new[] { "red car" }, _vm.History);
+        Assert.Equal(new[] { "red car" }, _vm.History.Select(h => h.Text));
 
         _vm.SetQueryImage(@"C:\q\query.png");
-        _vm.QueryText = "ignored while image active";
+        _vm.QueryText = string.Empty;
         await _vm.SearchCommand.ExecuteAsync(null);
-        Assert.Equal(new[] { "red car" }, _vm.History);
+        Assert.Equal(new[] { @"C:\q\query.png", null }, _vm.History.Select(h => h.ImagePath));
+    }
+
+    [Fact]
+    public async Task ApplyHistory_RestoresTheSavedOptions_AndSearchesOnce()
+    {
+        _repo.Add(@"C:\p\pic.png", 0.1f, MediaType.Image);
+        _repo.Add(@"C:\p\doc.pdf", 0.2f, MediaType.Pdf);
+        _vm.QueryText = "report";
+        _vm.SelectedMediaTypeIndex = 1; // PDF
+        _vm.MinSimilarity = 0.3f;
+        await _vm.SearchCommand.ExecuteAsync(null);
+        var entry = _vm.History[0];
+        Assert.Equal(1, entry.Options!.MediaTypeIndex);
+
+        _vm.QueryText = "other";
+        _vm.SelectedMediaTypeIndex = 0;
+        _vm.MinSimilarity = 0f;
+        _vm.GroupVideos = false;
+        await _vm.ApplyHistoryAsync(entry);
+
+        Assert.Equal("report", _vm.QueryText);
+        Assert.Equal(1, _vm.SelectedMediaTypeIndex);
+        Assert.Equal(0.3f, _vm.MinSimilarity);
+        Assert.Equal(new[] { "doc.pdf" }, Names(_vm));
+    }
+
+    [Fact]
+    public async Task Search_WithoutSavingOptions_StoresNoOptions()
+    {
+        _vm.SaveOptionsInHistory = false;
+        _vm.QueryText = "plain";
+
+        await _vm.SearchCommand.ExecuteAsync(null);
+
+        Assert.Null(_vm.History[0].Options);
+    }
+
+    [Fact]
+    public async Task ApplyHistory_WithAMissingImage_ReportsInsteadOfSearching()
+    {
+        await _vm.ApplyHistoryAsync(new SearchHistoryEntry { ImagePath = Path.Combine(_dir, "gone.png") });
+
+        Assert.Contains("gone.png", _vm.ErrorMessage);
+        Assert.Empty(_vm.SearchResults);
+    }
+
+    [Fact]
+    public void SuggestHistory_PutsPrefixMatchesFirst_AndSkipsTheExactInput()
+    {
+        foreach (var q in new[] { "a red car", "car wash", "red", "cart", "bicycle" }) _history.Add(q);
+        _history.Add(new SearchHistoryEntry { ImagePath = @"C:\q\car.png" });
+
+        Assert.Equal(new[] { "cart", "car wash", "a red car" }, _vm.SuggestHistory("car"));
+        Assert.Empty(_vm.SuggestHistory("  "));
+        Assert.DoesNotContain("red", _vm.SuggestHistory("RED"));
     }
 
     // ---- sorting ----

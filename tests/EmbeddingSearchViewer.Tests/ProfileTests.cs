@@ -158,7 +158,7 @@ public sealed class ProfileTests : IDisposable
         manager.Switch(ProfileManager.DefaultId);
 
         Assert.Equal(new[] { @"C:\work" }, library.Load().Folders);
-        Assert.Equal(new[] { "work query" }, history.Load());
+        Assert.Equal(new[] { "work query" }, history.Load().Select(h => h.Text));
     }
 
     [Fact]

@@ -575,7 +575,34 @@
     <value>Advanced filters (date, size, folder)</value>
   </data>
   <data name="Search.History.Clear" xml:space="preserve">
-    <value>Clear history</value>
+    <value>Clear history (keep pinned)</value>
+  </data>
+  <data name="Search.History.ClearAll" xml:space="preserve">
+    <value>Clear everything, including pinned</value>
+  </data>
+  <data name="Search.History.Delete" xml:space="preserve">
+    <value>Remove from history</value>
+  </data>
+  <data name="Search.History.Image" xml:space="preserve">
+    <value>Image: {0}</value>
+  </data>
+  <data name="Search.History.ImageMissing" xml:space="preserve">
+    <value>The image used for this search was not found: {0}</value>
+  </data>
+  <data name="Search.History.Pin" xml:space="preserve">
+    <value>Pin</value>
+  </data>
+  <data name="Search.History.PinLimit" xml:space="preserve">
+    <value>You can pin up to {0} searches.</value>
+  </data>
+  <data name="Search.History.Unpin" xml:space="preserve">
+    <value>Unpin</value>
+  </data>
+  <data name="Search.CheckBox03.Content" xml:space="preserve">
+    <value>Keep search options in history</value>
+  </data>
+  <data name="Search.CheckBox03.ToolTip" xml:space="preserve">
+    <value>When on, running a history entry again also restores its type, similarity, sort order and filters. Click an entry to run it; right-click it to pin or remove it.</value>
   </data>
   <data name="Search.History.Empty" xml:space="preserve">
     <value>No history</value>
