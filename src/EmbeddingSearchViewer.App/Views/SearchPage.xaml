@@ -75,27 +75,34 @@
             </Grid>
 
             <!-- Search Options -->
-            <Grid Grid.Row="2" ColumnDefinitions="Auto,220,Auto,Auto,Auto,Auto,Auto" ColumnSpacing="16" VerticalAlignment="Center">
-                <CheckBox loc:L.Uid="Search.CheckBox01" Grid.Column="0" MinWidth="0"
-                          IsChecked="{x:Bind ViewModel.EnableFts, Mode=TwoWay}" AutomationProperties.Name="Enable FTS" />
-                <Slider loc:L.Uid="Search.Slider01" Grid.Column="1" Minimum="0" Maximum="1" StepFrequency="0.05"
-                        Value="{x:Bind ViewModel.MinSimilarity, Mode=TwoWay}" AutomationProperties.Name="Minimum Similarity" />
-                <TextBlock Grid.Column="2" VerticalAlignment="Center" MinWidth="72"
-                           Text="{x:Bind ViewModel.MinSimilarityText, Mode=OneWay}"
-                           Style="{ThemeResource CaptionTextBlockStyle}" />
-                <TextBlock loc:L.Uid="Search.TextBlock03" Grid.Column="3" VerticalAlignment="Center" Style="{ThemeResource CaptionTextBlockStyle}" />
-                <ComboBox Grid.Column="4" SelectedIndex="{x:Bind ViewModel.SortIndex, Mode=TwoWay}" AutomationProperties.Name="Sort Order">
-                    <ComboBoxItem loc:L.Uid="Search.ComboBoxItem05" />
-                    <ComboBoxItem loc:L.Uid="Search.ComboBoxItem06" />
-                    <ComboBoxItem loc:L.Uid="Search.ComboBoxItem07" />
-                </ComboBox>
-                <CheckBox loc:L.Uid="Search.CheckBox02" Grid.Column="5" MinWidth="0"
-                          IsChecked="{x:Bind ViewModel.GroupVideos, Mode=TwoWay}"
-                          AutomationProperties.Name="Group Video Scenes" />
-                <CheckBox loc:L.Uid="Search.CheckBox03" Grid.Column="6" MinWidth="0"
-                          IsChecked="{x:Bind ViewModel.SaveOptionsInHistory, Mode=TwoWay}"
-                          AutomationProperties.Name="Save Search Options In History" />
-            </Grid>
+            <!-- Two lines, so that nothing is cut off when the window is narrow: the slider takes what is left on
+                 the first, and the check boxes on the second share the width and wrap their text. -->
+            <StackPanel Grid.Row="2" Spacing="4">
+                <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="16" VerticalAlignment="Center">
+                    <CheckBox loc:L.Uid="Search.CheckBox01" Grid.Column="0" MinWidth="0"
+                              IsChecked="{x:Bind ViewModel.EnableFts, Mode=TwoWay}" AutomationProperties.Name="Enable FTS" />
+                    <Slider loc:L.Uid="Search.Slider01" Grid.Column="1" Minimum="0" Maximum="1" StepFrequency="0.05" MinWidth="80" MaxWidth="320"
+                            HorizontalAlignment="Stretch"
+                            Value="{x:Bind ViewModel.MinSimilarity, Mode=TwoWay}" AutomationProperties.Name="Minimum Similarity" />
+                    <TextBlock Grid.Column="2" VerticalAlignment="Center" MinWidth="72"
+                               Text="{x:Bind ViewModel.MinSimilarityText, Mode=OneWay}"
+                               Style="{ThemeResource CaptionTextBlockStyle}" />
+                </Grid>
+                <Grid ColumnDefinitions="Auto,Auto,*,*" ColumnSpacing="16" VerticalAlignment="Center">
+                    <TextBlock loc:L.Uid="Search.TextBlock03" Grid.Column="0" VerticalAlignment="Center" Style="{ThemeResource CaptionTextBlockStyle}" />
+                    <ComboBox Grid.Column="1" SelectedIndex="{x:Bind ViewModel.SortIndex, Mode=TwoWay}" AutomationProperties.Name="Sort Order">
+                        <ComboBoxItem loc:L.Uid="Search.ComboBoxItem05" />
+                        <ComboBoxItem loc:L.Uid="Search.ComboBoxItem06" />
+                        <ComboBoxItem loc:L.Uid="Search.ComboBoxItem07" />
+                    </ComboBox>
+                    <CheckBox loc:L.Uid="Search.CheckBox02" Grid.Column="2" MinWidth="0"
+                              IsChecked="{x:Bind ViewModel.GroupVideos, Mode=TwoWay}"
+                              AutomationProperties.Name="Group Video Scenes" />
+                    <CheckBox loc:L.Uid="Search.CheckBox03" Grid.Column="3" MinWidth="0"
+                              IsChecked="{x:Bind ViewModel.SaveOptionsInHistory, Mode=TwoWay}"
+                              AutomationProperties.Name="Save Search Options In History" />
+                </Grid>
+            </StackPanel>
 
             <!-- Metadata Filters -->
             <Expander loc:L.Uid="Search.Expander01" Grid.Row="3" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Padding="12,8">

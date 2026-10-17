@@ -13,7 +13,6 @@ using EmbeddingSearchViewer.Core.Models;
 using EmbeddingSearchViewer.Infrastructure.Ingestion;
 using EmbeddingSearchViewer.Infrastructure.Library;
 using EmbeddingSearchViewer.Infrastructure.Onnx;
-using EmbeddingSearchViewer.Infrastructure.Sidecar;
 
 namespace EmbeddingSearchViewer_App.ViewModels;
 
@@ -27,12 +26,13 @@ public partial class LibraryViewModel : ObservableObject
     private bool _loadingSettings;
     private readonly LibraryStatsRefresher _statsRefresher;
     private readonly IndexExclusionStore _exclusions;
+    private readonly IUiDispatcher _dispatcher;
 
     [ObservableProperty]
-    private string _sidecarStatus = Loc.T("Library.Engine.Name");
+    private string _engineStatus = Loc.T("Library.Engine.Name");
 
     [ObservableProperty]
-    private bool _isSidecarConnected = true;
+    private bool _isEngineReady = true;
 
     [ObservableProperty]
     private bool _isIndexing;
@@ -71,7 +71,47 @@ public partial class LibraryViewModel : ObservableObject
     [ObservableProperty]
     private bool _hasIndexedAssets;
 
+    /// <summary>The folders to index, in the order they were added (this is what is saved and indexed).</summary>
     public ObservableCollection<string> TargetFolders { get; } = new();
+
+    /// <summary>The same folders as shown on screen: in the chosen order, each with the number of files indexed under it.</summary>
+    public ObservableCollection<FolderEntry> FolderItems { get; } = new();
+
+    /// <summary>0: order added, 1: name, 2: number of indexed files.</summary>
+    [ObservableProperty]
+    private int _folderSortIndex;
+
+    partial void OnFolderSortIndexChanged(int value)
+    {
+        SyncFolderItems(recount: false);
+        if (!_loadingSettings) SaveSettings();
+    }
+
+    private IReadOnlyList<string> _indexedPaths = Array.Empty<string>();
+    private Dictionary<string, int> _folderCounts = new();
+
+    /// <summary>
+    /// Brings <see cref="FolderItems"/> in line with <see cref="TargetFolders"/>, the counts and the sort order.
+    /// Items are updated and moved in place, so the list does not jump back to the top while counts are refreshed.
+    /// </summary>
+    private void SyncFolderItems(bool recount = true)
+    {
+        foreach (var gone in FolderItems.Where(i => !TargetFolders.Contains(i.Path)).ToList()) FolderItems.Remove(gone);
+        foreach (var folder in TargetFolders.Where(f => FolderItems.All(i => i.Path != f))) FolderItems.Add(new FolderEntry(folder));
+
+        // Counting walks every indexed path for every folder, so it is only redone when the folders or the index changed.
+        if (recount) _folderCounts = FolderListing.CountFiles(TargetFolders, _indexedPaths);
+        var counts = _folderCounts;
+        foreach (var item in FolderItems) item.SetCount(counts.TryGetValue(item.Path, out int n) ? n : 0);
+
+        var mode = Enum.IsDefined(typeof(FolderSortMode), FolderSortIndex) ? (FolderSortMode)FolderSortIndex : FolderSortMode.Added;
+        var order = FolderListing.Order(TargetFolders.ToList(), counts, mode);
+        for (int i = 0; i < order.Count; i++)
+        {
+            int from = FolderItems.ToList().FindIndex(x => x.Path == order[i]);
+            if (from != i) FolderItems.Move(from, i);
+        }
+    }
 
     [ObservableProperty]
     private bool _autoIndex;
@@ -147,26 +187,8 @@ public partial class LibraryViewModel : ObservableObject
 
     private void CheckIndexModel(int assetCount)
     {
-        var saved = _store.Load();
-        if (assetCount == 0)
-        {
-            // An empty index belongs to whatever model is installed now.
-            AdoptCurrentModel(saved);
-            IndexModelWarning = string.Empty;
-        }
-        else
-        {
-            IndexModelWarning = saved.IndexModelTag == CurrentModelTag
-                ? string.Empty
-                : Loc.T("Library.IndexModelMismatch");
-        }
-    }
-
-    private void AdoptCurrentModel(LibrarySettings settings)
-    {
-        if (settings.IndexModelTag == CurrentModelTag) return;
-        settings.IndexModelTag = CurrentModelTag;
-        try { _store.Save(settings); } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+        bool compatible = _store.CheckIndexModelCompatibility(CurrentModelTag, assetCount, out _);
+        IndexModelWarning = compatible ? string.Empty : Loc.T("Library.IndexModelMismatch");
     }
 
     partial void OnAutoIndexChanged(bool value)
@@ -180,7 +202,8 @@ public partial class LibraryViewModel : ObservableObject
         IMediaRepository repository,
         LibrarySettingsStore store,
         FolderWatcher watcher,
-        IndexExclusionStore exclusions)
+        IndexExclusionStore exclusions,
+        IUiDispatcher? dispatcher = null)
     {
         _exclusions = exclusions;
         _store = store;
@@ -188,8 +211,10 @@ public partial class LibraryViewModel : ObservableObject
         _worker = worker;
         _embeddingService = embeddingService;
         _repository = repository;
+        _dispatcher = dispatcher ?? EmbeddingSearchViewer.Core.Services.ImmediateDispatcher.Instance;
 
         _worker.ProgressChanged += OnProgressChanged;
+        TargetFolders.CollectionChanged += (_, _) => SyncFolderItems();
 
         // While an index is being built, keep the statistics cards current (only when the data has changed).
         _statsRefresher = new LibraryStatsRefresher(repository, () => OnUiThreadAsync(RefreshLibraryStatsAsync), TimeSpan.FromSeconds(3));
@@ -198,7 +223,7 @@ public partial class LibraryViewModel : ObservableObject
     public async Task InitializeAsync()
     {
         bool ready = await _embeddingService.IsReadyAsync();
-        IsSidecarConnected = ready;
+        IsEngineReady = ready;
 
         if (TargetFolders.Count == 0)
         {
@@ -211,10 +236,11 @@ public partial class LibraryViewModel : ObservableObject
             AutoIndex = saved.AutoIndex;
             VideoSegmentIndex = Math.Max(0, VideoSegmentChoices.ToList().IndexOf(saved.VideoSegmentSeconds));
             VideoAutoSegment = saved.VideoAutoSegment;
+            FolderSortIndex = saved.FolderSortIndex;
             _loadingSettings = false;
             HasFolders = TargetFolders.Count > 0;
         }
-        SidecarStatus = ready
+        EngineStatus = ready
             ? Loc.T("Library.Engine.Ready")
             : UnavailableEmbeddingService.ReasonOf(_embeddingService) ?? Loc.T("Library.Engine.Initializing");
 
@@ -249,6 +275,12 @@ public partial class LibraryViewModel : ObservableObject
             HasIndexedAssets = assets.Count > 0;
             CheckIndexModel(assets.Count);
 
+            _indexedPaths = assets.Select(a => a.FilePath).ToList();
+            var folders = TargetFolders.ToList();
+            var paths = _indexedPaths;
+            _folderCounts = await Task.Run(() => FolderListing.CountFiles(folders, paths)); // off the UI thread
+            SyncFolderItems(recount: false); // the number of files per folder
+
             // Automatically restore folders from previously indexed assets if target folders is empty
             if (TargetFolders.Count == 0 && assets.Count > 0 && !_store.Exists)
             {
@@ -282,34 +314,34 @@ public partial class LibraryViewModel : ObservableObject
     }
 
     /// <summary>Runs <paramref name="work"/> on the UI thread (the statistics are bound properties) and waits for it.</summary>
-    private Task OnUiThreadAsync(Func<Task> work)
-    {
-        var dq = _dispatcherQueue ?? App.MainWindowDispatcherQueue;
-        if (dq == null || dq.HasThreadAccess) return work();
-
-        var done = new TaskCompletionSource();
-        if (!dq.TryEnqueue(async () =>
-            {
-                try { await work(); done.SetResult(); }
-                catch (Exception ex) { done.SetException(ex); }
-            }))
-        {
-            done.SetCanceled();
-        }
-        return done.Task;
-    }
+    private Task OnUiThreadAsync(Func<Task> work) => _dispatcher.EnqueueAsync(work);
 
     private Microsoft.UI.Dispatching.DispatcherQueue? _dispatcherQueue;
 
     public void SetDispatcherQueue(Microsoft.UI.Dispatching.DispatcherQueue dispatcherQueue)
     {
         _dispatcherQueue = dispatcherQueue;
+        if (_dispatcher is EmbeddingSearchViewer_App.Services.WinUiDispatcher winUiDispatcher)
+        {
+            winUiDispatcher.Initialize(dispatcherQueue);
+        }
     }
+
+    private readonly IngestionEta _eta = new();
+
+    /// <summary>"About 3 min left"; empty until the speed is known, and when nothing is running.</summary>
+    [ObservableProperty]
+    private string _etaText = string.Empty;
 
     private void OnProgressChanged(IngestionProgress progress)
     {
         void UpdateState()
         {
+            if (progress.IsRunning && !IsIndexing) _eta.Reset(); // a new run
+            EtaText = progress.IsRunning && progress.TotalFiles > 0
+                ? _eta.Update(DateTime.UtcNow, progress) is { } left ? IngestionEta.Format(left) : string.Empty
+                : string.Empty;
+
             TotalFiles = progress.TotalFiles;
             ProcessedFiles = progress.ProcessedFiles;
             IsIndexing = progress.IsRunning;
@@ -349,15 +381,7 @@ public partial class LibraryViewModel : ObservableObject
             }
         }
 
-        var dq = _dispatcherQueue ?? App.MainWindowDispatcherQueue;
-        if (dq != null && !dq.HasThreadAccess)
-        {
-            dq.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Normal, UpdateState);
-        }
-        else
-        {
-            UpdateState();
-        }
+        _dispatcher.Enqueue(UpdateState);
     }
 
     [RelayCommand]
@@ -387,6 +411,7 @@ public partial class LibraryViewModel : ObservableObject
             settings.Folders = TargetFolders.ToList();
             settings.AutoIndex = AutoIndex;
             settings.VideoAutoSegment = VideoAutoSegment;
+            settings.FolderSortIndex = FolderSortIndex;
             if (VideoSegmentIndex >= 0 && VideoSegmentIndex < VideoSegmentChoices.Count)
             {
                 settings.VideoSegmentSeconds = VideoSegmentChoices[VideoSegmentIndex];
@@ -423,11 +448,20 @@ public partial class LibraryViewModel : ObservableObject
         ProgressPercentage = 0;
         CurrentStatusMessage = Loc.T("Library.Scanning");
 
-        _worker.Start();
-
-        foreach (var folder in TargetFolders)
+        try
         {
-            await _worker.QueueDirectoryAsync(folder, recursive: true);
+            _worker.Start();
+
+            foreach (var folder in TargetFolders.ToList())
+            {
+                await _worker.QueueDirectoryAsync(folder, recursive: true);
+            }
+        }
+        catch (Exception ex)
+        {
+            // An exception here would come out of the command on the UI thread and end the app.
+            EmbeddingSearchViewer_App.Services.CrashLog.Write("StartIndexing", ex);
+            ErrorMessage = Loc.T("Library.Error", ex.Message);
         }
     }
 
@@ -448,9 +482,9 @@ public partial class LibraryViewModel : ObservableObject
         {
             var assets = await _repository.GetAllAssetsAsync();
             var missing = assets.Where(a => !File.Exists(a.FilePath)).ToList();
-            foreach (var asset in missing)
+            if (missing.Count > 0)
             {
-                await _repository.DeleteAssetAsync(asset.Id);
+                await _repository.DeleteAssetsAsync(missing.Select(a => a.Id));
             }
 
             CurrentStatusMessage = missing.Count == 0
@@ -473,9 +507,9 @@ public partial class LibraryViewModel : ObservableObject
             CurrentStatusMessage = Loc.T("Library.Blank.Checking");
             var assets = await _repository.GetAllAssetsAsync();
             var blank = await BlankImageCleanup.FindBlankImagesAsync(assets);
-            foreach (var asset in blank)
+            if (blank.Count > 0)
             {
-                await _repository.DeleteAssetAsync(asset.Id);
+                await _repository.DeleteAssetsAsync(blank.Select(a => a.Id));
             }
 
             CurrentStatusMessage = blank.Count == 0
@@ -496,10 +530,7 @@ public partial class LibraryViewModel : ObservableObject
         try
         {
             var assets = await _repository.GetAllAssetsAsync();
-            foreach (var asset in assets)
-            {
-                await _repository.DeleteAssetAsync(asset.Id);
-            }
+            await _repository.ClearAllAsync();
 
             CurrentStatusMessage = Loc.T("Library.Cleared", assets.Count);
             ProgressPercentage = 0;

@@ -29,10 +29,7 @@ public sealed class IndexExclusionStore
 
     public IndexExclusionStore(string? path = null)
     {
-        string fixedPath = path ?? System.IO.Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "EmbeddingSearchViewer",
-            "excluded_files.json");
+        string fixedPath = path ?? AppDataPaths.DefaultExclusionsPath;
         _pathProvider = () => fixedPath;
     }
 
@@ -131,19 +128,7 @@ public sealed class IndexExclusionStore
 
     private void Save()
     {
-        try
-        {
-            string path = _loadedPath ?? _pathProvider();
-            var dir = System.IO.Path.GetDirectoryName(path);
-            if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
-
-            var tmp = path + ".tmp";
-            File.WriteAllText(tmp, JsonSerializer.Serialize(_items.Values.ToList(), new JsonSerializerOptions { WriteIndented = true }));
-            File.Move(tmp, path, overwrite: true);
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            // The list lives on in memory for this run; failing to save it must not stop the indexing.
-        }
+        string path = _loadedPath ?? _pathProvider();
+        AtomicJsonFile.Save(path, _items.Values.ToList());
     }
 }

@@ -68,7 +68,7 @@ public class HybridSearchEngine
         {
             queryEmbedding = await _embeddingService.GenerateQueryEmbeddingAsync(
                 query.QueryImagePath,
-                modality: "image",
+                modality: EmbeddingModalities.Image,
                 truncateDim: query.TruncateDim,
                 cancellationToken: cancellationToken);
         }
@@ -76,7 +76,7 @@ public class HybridSearchEngine
         {
             queryEmbedding = await _embeddingService.GenerateQueryEmbeddingAsync(
                 query.QueryAudioPath,
-                modality: "audio",
+                modality: EmbeddingModalities.Audio,
                 truncateDim: query.TruncateDim,
                 cancellationToken: cancellationToken);
         }
@@ -84,7 +84,7 @@ public class HybridSearchEngine
         {
             queryEmbedding = await _embeddingService.GenerateQueryEmbeddingAsync(
                 query.QueryText,
-                modality: "text",
+                modality: EmbeddingModalities.Text,
                 truncateDim: query.TruncateDim,
                 cancellationToken: cancellationToken);
         }

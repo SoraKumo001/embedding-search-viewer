@@ -115,6 +115,11 @@ public sealed partial class PdfPreviewControl : UserControl
         }
     }
 
+    private void OpenInExplorerButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_currentItem != null) EmbeddingSearchViewer_App.Services.ExplorerLauncher.Reveal(_currentItem.Asset.FilePath);
+    }
+
     private void OpenPdfExternalButton_Click(object sender, RoutedEventArgs e)
     {
         if (_currentItem != null && File.Exists(_currentItem.Asset.FilePath))

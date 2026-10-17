@@ -76,6 +76,42 @@ public sealed class IngestionWorkerTests : IDisposable
         Assert.True(await WaitUntilAsync(async () => (await _repo.GetAllAssetsAsync()).Count == 4 && Volatile.Read(ref _lastRunningFlag) == 0, 10000));
     }
 
+
+    [Fact]
+    public async Task Repository_ReportsTheHashOfEveryIndexedFile()
+    {
+        CreateImage("a.png");
+        CreateImage("b.jpg");
+        await _worker.QueueDirectoryAsync(_media);
+        Assert.True(await WaitUntilAsync(async () => (await _repo.GetAllAssetsAsync()).Count == 2 && Volatile.Read(ref _lastRunningFlag) == 0, 10000));
+
+        var hashes = await _repo.GetAssetHashesAsync();
+        var assets = await _repo.GetAllAssetsAsync();
+
+        Assert.Equal(assets.ToDictionary(a => a.FilePath, a => a.FileHash), hashes.ToDictionary(kv => kv.Key, kv => kv.Value));
+    }
+
+    [Fact]
+    public async Task Worker_SkipsUnchangedFilesOfAnEarlierRun_ButIndexesChangedAndNewOnes()
+    {
+        CreateImage("a.png");
+        CreateImage("b.jpg");
+        await _worker.QueueDirectoryAsync(_media);
+        Assert.True(await WaitUntilAsync(async () => (await _repo.GetAllAssetsAsync()).Count == 2 && Volatile.Read(ref _lastRunningFlag) == 0, 10000));
+        var before = (await _repo.GetAllAssetsAsync()).ToDictionary(a => a.FileName, a => a.IndexedAtUtc);
+
+        // Second run: a.png untouched, b.jpg changed (other size), c.webp new.
+        File.WriteAllBytes(Path.Combine(_media, "b.jpg"), new byte[] { 9, 9, 9, 9, 9, 9 });
+        CreateImage("c.webp");
+        Volatile.Write(ref _lastRunningFlag, 1);
+        await _worker.QueueDirectoryAsync(_media);
+        Assert.True(await WaitUntilAsync(async () => (await _repo.GetAllAssetsAsync()).Count == 3 && Volatile.Read(ref _lastRunningFlag) == 0, 10000));
+
+        var after = (await _repo.GetAllAssetsAsync()).ToDictionary(a => a.FileName, a => a.IndexedAtUtc);
+        Assert.Equal(before["a.png"], after["a.png"]);   // not indexed again
+        Assert.NotEqual(before["b.jpg"], after["b.jpg"]); // changed: indexed again
+    }
+
     [Fact]
     public async Task Worker_WithNoSupportedFiles_ReportsFinished()
     {

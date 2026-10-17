@@ -155,4 +155,18 @@ public sealed class SearchHistoryStoreTests : IDisposable
         var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => service.GenerateQueryEmbeddingAsync("q"));
         Assert.Contains("models", ex.Message);
     }
+
+    [Fact]
+    public void DisplayLabel_FormatsTextAndImageCorrectly()
+    {
+        var textOnly = new SearchHistoryEntry { Text = "search keyword" };
+        Assert.Equal("search keyword", textOnly.DisplayLabel);
+
+        var imageOnly = new SearchHistoryEntry { ImagePath = @"C:\photos\sample.jpg" };
+        Assert.Contains("sample.jpg", imageOnly.DisplayLabel);
+
+        var both = new SearchHistoryEntry { Text = "cat", ImagePath = @"C:\photos\sample.jpg" };
+        Assert.StartsWith("cat  (", both.DisplayLabel);
+        Assert.Contains("sample.jpg", both.DisplayLabel);
+    }
 }

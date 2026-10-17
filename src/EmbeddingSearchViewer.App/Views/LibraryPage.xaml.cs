@@ -50,9 +50,9 @@ public sealed partial class LibraryPage : Page
 
     private void RemoveFolderButton_Click(object sender, RoutedEventArgs e)
     {
-        if (sender is Button btn && btn.DataContext is string folderPath)
+        if (sender is Button btn && btn.DataContext is EmbeddingSearchViewer_App.ViewModels.FolderEntry folder)
         {
-            ViewModel.RemoveFolder(folderPath);
+            ViewModel.RemoveFolder(folder.Path);
         }
     }
 

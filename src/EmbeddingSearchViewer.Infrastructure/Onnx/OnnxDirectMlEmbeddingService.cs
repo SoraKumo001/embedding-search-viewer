@@ -9,6 +9,7 @@ using System.Threading.Tasks;
 using Microsoft.ML.OnnxRuntime;
 using Microsoft.ML.OnnxRuntime.Tensors;
 using EmbeddingSearchViewer.Core.Interfaces;
+using EmbeddingSearchViewer.Core.Models;
 
 namespace EmbeddingSearchViewer.Infrastructure.Onnx;
 
@@ -154,14 +155,14 @@ public class OnnxDirectMlEmbeddingService : IEmbeddingService, IDisposable
 
     public Task<float[]> GenerateQueryEmbeddingAsync(
         string query,
-        string modality = "text",
+        string modality = EmbeddingModalities.Text,
         int truncateDim = 768,
         CancellationToken cancellationToken = default)
     {
         // Inference is CPU/GPU bound and synchronous; keep it off the caller's (UI) thread.
         return Task.Run(() =>
         {
-            if (modality == "image" && File.Exists(query))
+            if (string.Equals(modality, EmbeddingModalities.Image, StringComparison.OrdinalIgnoreCase) && File.Exists(query))
             {
                 return EncodeImage(query, truncateDim);
             }
@@ -240,8 +241,8 @@ public class OnnxDirectMlEmbeddingService : IEmbeddingService, IDisposable
     /// <summary>The image file an item should be embedded from, or null when it is a text item.</summary>
     private static string? ImagePathOf(EmbeddingItemInput item)
     {
-        bool isImageLike = item.Type.Equals("image", StringComparison.OrdinalIgnoreCase)
-            || item.Type.Equals("video_segment", StringComparison.OrdinalIgnoreCase);
+        bool isImageLike = item.Type.Equals(EmbeddingModalities.Image, StringComparison.OrdinalIgnoreCase)
+            || item.Type.Equals(EmbeddingModalities.VideoSegment, StringComparison.OrdinalIgnoreCase);
         if (!isImageLike) return null;
 
         foreach (var candidate in new[] { item.Path, item.ThumbnailPath })

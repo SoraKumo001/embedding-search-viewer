@@ -34,9 +34,7 @@ public sealed class ProfileManager
 
     public ProfileManager(string? rootDirectory = null)
     {
-        _root = rootDirectory ?? Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "EmbeddingSearchViewer");
+        _root = rootDirectory ?? EmbeddingSearchViewer.Infrastructure.Library.AppDataPaths.RootDirectory;
         _listPath = Path.Combine(_root, "profiles.json");
         Directory.CreateDirectory(_root);
         Load();
@@ -158,9 +156,9 @@ public sealed class ProfileManager
 
     private void Save()
     {
-        string tmp = _listPath + ".tmp";
-        File.WriteAllText(tmp, JsonSerializer.Serialize(_file, new JsonSerializerOptions { WriteIndented = true }));
-        File.Move(tmp, _listPath, overwrite: true);
+        // The profile list is not a convenience setting: losing a change silently would leave the screen and the disk apart.
+        if (!EmbeddingSearchViewer.Infrastructure.Library.AtomicJsonFile.Save(_listPath, _file))
+            throw new IOException($"Could not save the profile list: {_listPath}");
     }
 
     private static string NormalizeName(string name)

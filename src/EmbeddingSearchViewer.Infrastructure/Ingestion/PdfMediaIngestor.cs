@@ -36,7 +36,7 @@ public class PdfMediaIngestor
             FileName = fi.Name,
             MediaType = MediaType.Pdf,
             FileSizeBytes = fi.Length,
-            FileHash = $"{fi.Length}_{fi.LastWriteTimeUtc.Ticks}",
+            FileHash = MediaAsset.ComputeFileHash(fi),
             LastModifiedUtc = fi.LastWriteTimeUtc
         };
 
@@ -73,12 +73,12 @@ public class PdfMediaIngestor
 
         foreach (var page in extraction.Pages)
         {
-            inputs.Add(new EmbeddingItemInput(Type: "image", Path: page.ImagePath));
+            inputs.Add(new EmbeddingItemInput(Type: EmbeddingModalities.Image, Path: page.ImagePath));
             metas.Add((ModalityType.PageImage, page));
 
             if (page.Text.Length > MinTextLengthForTextChunk)
             {
-                inputs.Add(new EmbeddingItemInput(Type: "text", Title: fileName, Text: page.Text));
+                inputs.Add(new EmbeddingItemInput(Type: EmbeddingModalities.Text, Title: fileName, Text: page.Text));
                 metas.Add((ModalityType.Text, page));
             }
         }
@@ -109,7 +109,7 @@ public class PdfMediaIngestor
 
     private async Task<MediaChunk> NameOnlyChunkAsync(MediaAsset asset, string fileName, int truncateDim, CancellationToken cancellationToken)
     {
-        var input = new EmbeddingItemInput(Type: "text", Title: fileName, Text: $"Document PDF file: {fileName}");
+        var input = new EmbeddingItemInput(Type: EmbeddingModalities.Text, Title: fileName, Text: $"Document PDF file: {fileName}");
         var embeddings = await _embeddingService.GenerateBatchEmbeddingsAsync(new[] { input }, truncateDim, cancellationToken);
 
         return new MediaChunk

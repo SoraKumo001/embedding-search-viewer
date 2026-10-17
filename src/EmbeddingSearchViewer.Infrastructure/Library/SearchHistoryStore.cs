@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
+using System.Text.Json.Serialization;
+using EmbeddingSearchViewer.Core.Localization;
 
 namespace EmbeddingSearchViewer.Infrastructure.Library;
 
@@ -33,6 +35,17 @@ public sealed class SearchHistoryEntry
 
     public bool IsEmpty => string.IsNullOrWhiteSpace(Text) && string.IsNullOrWhiteSpace(ImagePath);
 
+    [JsonIgnore]
+    public string DisplayLabel
+    {
+        get
+        {
+            string image = string.IsNullOrWhiteSpace(ImagePath) ? string.Empty : Loc.T("Search.History.Image", Path.GetFileName(ImagePath));
+            if (string.IsNullOrWhiteSpace(Text)) return image;
+            return image.Length == 0 ? Text : $"{Text}  ({image})";
+        }
+    }
+
     public bool SameSearchAs(SearchHistoryEntry other)
         => string.Equals(Text ?? string.Empty, other.Text ?? string.Empty, StringComparison.CurrentCultureIgnoreCase)
            && string.Equals(ImagePath ?? string.Empty, other.ImagePath ?? string.Empty, StringComparison.OrdinalIgnoreCase);
@@ -62,10 +75,7 @@ public class SearchHistoryStore
 
     public SearchHistoryStore(string? path = null)
     {
-        string fixedPath = path ?? Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "EmbeddingSearchViewer",
-            "search_history.json");
+        string fixedPath = path ?? AppDataPaths.DefaultSearchHistoryPath;
         _pathProvider = () => fixedPath;
     }
 
@@ -185,16 +195,6 @@ public class SearchHistoryStore
 
     private void Write(List<SearchHistoryEntry> list)
     {
-        try
-        {
-            string path = _path;
-            var dir = Path.GetDirectoryName(path);
-            if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
-            File.WriteAllText(path, JsonSerializer.Serialize(new FileContent { Entries = list }));
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            // History is a convenience; failing to persist it must not break searching.
-        }
+        AtomicJsonFile.Save(_path, new FileContent { Entries = list }, new JsonSerializerOptions { WriteIndented = false });
     }
 }

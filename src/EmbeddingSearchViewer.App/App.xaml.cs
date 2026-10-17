@@ -33,19 +33,23 @@ public partial class App : Application
 
         InitializeComponent();
 
+        CrashLog.Install();
+        // An error on the UI thread (for example while a progress update is drawn) is recorded and the app keeps running.
+        UnhandledException += (_, e) =>
+        {
+            CrashLog.Write("UI thread", e.Exception);
+            e.Handled = true;
+        };
+
         var services = new ServiceCollection();
 
         // 1. Core Services & Infrastructure
         services.AddSingleton<INavigationService, NavigationService>();
+        services.AddSingleton<IUiDispatcher, WinUiDispatcher>();
         services.AddSingleton<AppSettingsStore>();
         services.AddSingleton<ProfileManager>(_ => new ProfileManager());
         
-        services.AddSingleton<IMediaRepository>(sp =>
-        {
-            var repo = new ProfileScopedRepository(sp.GetRequiredService<ProfileManager>());
-            repo.InitializeAsync().GetAwaiter().GetResult();
-            return repo;
-        });
+        services.AddSingleton<IMediaRepository>(sp => new ProfileScopedRepository(sp.GetRequiredService<ProfileManager>()));
 
         // In-process ONNX Runtime embedding. The host starts "unavailable" when the model files are missing
         // and switches to the real engine after the model has been downloaded.
@@ -89,7 +93,11 @@ public partial class App : Application
         services.AddSingleton<SearchViewModel>();
         services.AddSingleton<ProfileViewModel>();
         services.AddSingleton<LibraryViewModel>();
-        services.AddSingleton<SettingsViewModel>();
+        services.AddSingleton<SettingsViewModel>(sp => new SettingsViewModel(
+            sp.GetRequiredService<IEmbeddingService>(),
+            sp.GetRequiredService<SearchViewModel>(),
+            sp.GetRequiredService<AppSettingsStore>(),
+            StartupLanguageSetting));
         services.AddSingleton<ModelSetupViewModel>();
 
         Services = services.BuildServiceProvider();
@@ -99,6 +107,7 @@ public partial class App : Application
     {
         CurrentWindow = new MainWindow();
         MainWindowDispatcherQueue = CurrentWindow.DispatcherQueue;
+        (Services.GetRequiredService<IUiDispatcher>() as WinUiDispatcher)?.Initialize(CurrentWindow.DispatcherQueue);
         CurrentWindow.Activate();
         Services.GetRequiredService<FolderWatcher>().Refresh();
     }

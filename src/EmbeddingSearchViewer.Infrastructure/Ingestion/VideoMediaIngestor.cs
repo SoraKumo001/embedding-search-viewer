@@ -51,7 +51,7 @@ public class VideoMediaIngestor
             FileName = fi.Name,
             MediaType = MediaType.Video,
             FileSizeBytes = fi.Length,
-            FileHash = $"{fi.Length}_{fi.LastWriteTimeUtc.Ticks}",
+            FileHash = MediaAsset.ComputeFileHash(fi),
             LastModifiedUtc = fi.LastWriteTimeUtc
         };
 
@@ -181,7 +181,7 @@ public class VideoMediaIngestor
     {
         var inputs = segments
             .Select(s => new EmbeddingItemInput(
-                Type: "video_segment", VideoPath: asset.FilePath, ThumbnailPath: s.ThumbnailPath, StartMs: s.StartMs, EndMs: s.EndMs))
+                Type: EmbeddingModalities.VideoSegment, VideoPath: asset.FilePath, ThumbnailPath: s.ThumbnailPath, StartMs: s.StartMs, EndMs: s.EndMs))
             .ToList();
 
         long embedStart = Stopwatch.GetTimestamp();
@@ -222,7 +222,7 @@ public class VideoMediaIngestor
 
     private async Task<MediaChunk> NameOnlyChunkAsync(MediaAsset asset, string fileName, int truncateDim, CancellationToken cancellationToken)
     {
-        var input = new EmbeddingItemInput(Type: "text", Title: fileName, Text: $"Video movie file: {fileName}");
+        var input = new EmbeddingItemInput(Type: EmbeddingModalities.Text, Title: fileName, Text: $"Video movie file: {fileName}");
         var embeddings = await _embeddingService.GenerateBatchEmbeddingsAsync(new[] { input }, truncateDim, cancellationToken);
 
         return new MediaChunk

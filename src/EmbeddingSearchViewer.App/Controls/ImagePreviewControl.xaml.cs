@@ -211,21 +211,7 @@ public sealed partial class ImagePreviewControl : UserControl
         if (string.IsNullOrEmpty(path)) path = _currentItem?.Chunk.PreviewImagePath;
         if (string.IsNullOrEmpty(path)) return;
 
-        try
-        {
-            if (File.Exists(path))
-            {
-                Process.Start(new ProcessStartInfo("explorer.exe", $"/select,\"{path}\"") { UseShellExecute = true });
-            }
-            else if (Path.GetDirectoryName(path) is { } folder && Directory.Exists(folder))
-            {
-                Process.Start(new ProcessStartInfo("explorer.exe", $"\"{folder}\"") { UseShellExecute = true });
-            }
-        }
-        catch (Exception ex)
-        {
-            Debug.WriteLine($"Could not open Explorer: {ex.Message}");
-        }
+        EmbeddingSearchViewer_App.Services.ExplorerLauncher.Reveal(path);
     }
 
     private void OpenImageExternalButton_Click(object sender, RoutedEventArgs e)

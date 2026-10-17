@@ -97,6 +97,11 @@ public sealed partial class VideoPreviewControl : UserControl
         }
     }
 
+    private void OpenInExplorerButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_currentItem != null) EmbeddingSearchViewer_App.Services.ExplorerLauncher.Reveal(_currentItem.Asset.FilePath);
+    }
+
     private void OpenVideoExternalButton_Click(object sender, RoutedEventArgs e)
     {
         if (_currentItem != null && File.Exists(_currentItem.Asset.FilePath))

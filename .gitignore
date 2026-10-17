@@ -50,12 +50,6 @@ certs/
 *.db-shm
 *.db-wal
 
-# ---- Python sidecar (legacy) ----
-sidecar/.venv/
-__pycache__/
-*.pyc
-.pytest_cache/
-
 # ---- Tool state ----
 .omc/
 .claude/settings.local.json

@@ -62,40 +62,11 @@ public sealed class WindowPlacementStore
 
     public WindowPlacementStore(string? path = null)
     {
-        _path = path ?? Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "EmbeddingSearchViewer",
-            "window.json");
+        _path = path ?? AppDataPaths.DefaultWindowPlacementPath;
     }
 
     /// <summary>The saved placement, or null when there is none or the file is unreadable.</summary>
-    public WindowPlacement? Load()
-    {
-        try
-        {
-            if (!File.Exists(_path)) return null;
-            return JsonSerializer.Deserialize<WindowPlacement>(File.ReadAllText(_path));
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or NotSupportedException)
-        {
-            return null;
-        }
-    }
+    public WindowPlacement? Load() => AtomicJsonFile.Load<WindowPlacement?>(_path, null);
 
-    public void Save(WindowPlacement placement)
-    {
-        try
-        {
-            var dir = Path.GetDirectoryName(_path);
-            if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
-
-            var tmp = _path + ".tmp";
-            File.WriteAllText(tmp, JsonSerializer.Serialize(placement, new JsonSerializerOptions { WriteIndented = true }));
-            File.Move(tmp, _path, overwrite: true);
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            // The window position is a convenience; failing to save it must not get in the way of closing the app.
-        }
-    }
+    public void Save(WindowPlacement placement) => AtomicJsonFile.Save(_path, placement);
 }

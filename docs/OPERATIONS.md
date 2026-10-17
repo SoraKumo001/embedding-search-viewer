@@ -435,8 +435,7 @@ GPU が使えない（作成に失敗、実行中に失敗）ときは、自動�
 3. 画像形式の追加（`Magick.NET` による GIF / HEIC / AVIF など）、アーカイブ内の画像のインデックス
 4. DB のバックアップ・エクスポート
 5. `LibraryViewModel` / `SettingsViewModel` のテスト
-6. 使っていない旧サイドカー（`sidecar/`、`Infrastructure/Sidecar/`）の整理
-7. アプリのコードの署名
+6. アプリのコードの署名
 
 ---
 

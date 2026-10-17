@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>net11.0-windows10.0.26100.0</TargetFramework>
@@ -21,6 +21,7 @@
     <!-- The WinUI app project cannot be referenced from a plain net11.0 test project; this view model has no UI dependencies. -->
     <Compile Include="..\..\src\EmbeddingSearchViewer.App\ViewModels\SearchViewModel.cs" Link="Linked\SearchViewModel.cs" />
     <Compile Include="..\..\src\EmbeddingSearchViewer.App\ViewModels\ModelSetupViewModel.cs" Link="Linked\ModelSetupViewModel.cs" />
+    <Compile Include="..\..\src\EmbeddingSearchViewer.App\ViewModels\SettingsViewModel.cs" Link="Linked\SettingsViewModel.cs" />
   </ItemGroup>
 
   <ItemGroup>

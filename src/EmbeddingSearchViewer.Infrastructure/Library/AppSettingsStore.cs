@@ -21,42 +21,10 @@ public sealed class AppSettingsStore
 
     public AppSettingsStore(string? path = null)
     {
-        _path = path ?? Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "EmbeddingSearchViewer",
-            "settings.json");
+        _path = path ?? AppDataPaths.DefaultSettingsPath;
     }
 
-    public AppSettings Load()
-    {
-        try
-        {
-            if (File.Exists(_path))
-            {
-                return JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(_path)) ?? new AppSettings();
-            }
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or NotSupportedException)
-        {
-            // Unreadable settings fall back to the defaults.
-        }
-        return new AppSettings();
-    }
+    public AppSettings Load() => AtomicJsonFile.Load(_path, new AppSettings());
 
-    public void Save(AppSettings settings)
-    {
-        try
-        {
-            var dir = Path.GetDirectoryName(_path);
-            if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
-
-            var tmp = _path + ".tmp";
-            File.WriteAllText(tmp, JsonSerializer.Serialize(settings, new JsonSerializerOptions { WriteIndented = true }));
-            File.Move(tmp, _path, overwrite: true);
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            // Not being able to remember the language must not get in the way of using the app.
-        }
-    }
+    public void Save(AppSettings settings) => AtomicJsonFile.Save(_path, settings);
 }

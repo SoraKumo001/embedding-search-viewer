@@ -247,6 +247,9 @@
   <data name="Library.InfoBar01.Title" xml:space="preserve">
     <value>インデックスの再作成が必要です</value>
   </data>
+  <data name="Library.Error" xml:space="preserve">
+    <value>インデックスの作成でエラーが発生しました: {0}</value>
+  </data>
   <data name="Library.Missing.Error" xml:space="preserve">
     <value>除去中にエラーが発生しました: {0}</value>
   </data>
@@ -255,6 +258,33 @@
   </data>
   <data name="Library.Missing.Removed" xml:space="preserve">
     <value>存在しないファイル {0} 件をインデックスから除去しました</value>
+  </data>
+  <data name="Library.Folder.Count" xml:space="preserve">
+    <value>インデックス済み {0:N0} 件</value>
+  </data>
+  <data name="Library.FolderSort.ToolTip" xml:space="preserve">
+    <value>フォルダの並べ替え</value>
+  </data>
+  <data name="Library.FolderSortAdded.Content" xml:space="preserve">
+    <value>追加した順</value>
+  </data>
+  <data name="Library.FolderSortCount.Content" xml:space="preserve">
+    <value>ファイル数の多い順</value>
+  </data>
+  <data name="Library.FolderSortName.Content" xml:space="preserve">
+    <value>名前順</value>
+  </data>
+  <data name="Library.Eta" xml:space="preserve">
+    <value>完了まで: {0}</value>
+  </data>
+  <data name="Library.Eta.Hours" xml:space="preserve">
+    <value>約 {0} 時間 {1} 分</value>
+  </data>
+  <data name="Library.Eta.LessThanMinute" xml:space="preserve">
+    <value>1 分未満</value>
+  </data>
+  <data name="Library.Eta.Minutes" xml:space="preserve">
+    <value>約 {0} 分</value>
   </data>
   <data name="Library.Progress.NoTotal" xml:space="preserve">
     <value>処理中: {0}</value>
@@ -462,6 +492,12 @@
   </data>
   <data name="PdfPreview.RenderFailed" xml:space="preserve">
     <value>レンダリング失敗: {0}</value>
+  </data>
+  <data name="PdfPreview.OpenInExplorerButton.ToolTip" xml:space="preserve">
+    <value>エクスプローラーで、このファイルの場所を開く</value>
+  </data>
+  <data name="PdfPreview.TextBlock02.Text" xml:space="preserve">
+    <value>エクスプローラーで開く</value>
   </data>
   <data name="PdfPreview.TextBlock01.Text" xml:space="preserve">
     <value>外部アプリで開く</value>
@@ -849,6 +885,12 @@
   </data>
   <data name="VideoPreview.OpenVideoExternalButton.ToolTip" xml:space="preserve">
     <value>既定のメディアプレイヤーで開く</value>
+  </data>
+  <data name="VideoPreview.OpenInExplorerButton.ToolTip" xml:space="preserve">
+    <value>エクスプローラーで、このファイルの場所を開く</value>
+  </data>
+  <data name="VideoPreview.TextBlock02.Text" xml:space="preserve">
+    <value>エクスプローラーで開く</value>
   </data>
   <data name="VideoPreview.TextBlock01.Text" xml:space="preserve">
     <value>外部アプリで再生</value>

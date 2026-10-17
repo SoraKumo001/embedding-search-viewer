@@ -14,4 +14,10 @@ public class MediaAsset
     public string? ThumbnailPath { get; set; }
     public int? DurationOrPages { get; set; }
     public DateTime IndexedAtUtc { get; set; } = DateTime.UtcNow;
+
+    public static string ComputeFileHash(long length, long lastWriteTimeUtcTicks) =>
+        $"{length}_{lastWriteTimeUtcTicks}";
+
+    public static string ComputeFileHash(System.IO.FileInfo fileInfo) =>
+        ComputeFileHash(fileInfo.Length, fileInfo.LastWriteTimeUtc.Ticks);
 }

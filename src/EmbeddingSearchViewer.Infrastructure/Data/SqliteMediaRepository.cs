@@ -139,16 +139,38 @@ public class SqliteMediaRepository : IMediaRepository
         return list;
     }
 
+    public async Task<IReadOnlyDictionary<string, string>> GetAssetHashesAsync(CancellationToken cancellationToken = default)
+    {
+        await using var conn = new SqliteConnection(_connectionString);
+        await conn.OpenAsync(cancellationToken);
+
+        await using var cmd = new SqliteCommand("SELECT FilePath, FileHash FROM MediaAssets;", conn);
+        await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
+
+        var result = new Dictionary<string, string>(StringComparer.Ordinal);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            result[reader.GetString(0)] = reader.GetString(1);
+        }
+        return result;
+    }
+
     public async Task SaveAssetWithChunksAsync(MediaAsset asset, IEnumerable<MediaChunk> chunks, CancellationToken cancellationToken = default)
     {
         await using var conn = new SqliteConnection(_connectionString);
         await conn.OpenAsync(cancellationToken);
         await using var tx = conn.BeginTransaction();
 
-        // 1. Delete existing asset chunks if updating
-        await using (var delCmd = new SqliteCommand("DELETE FROM MediaChunksFts WHERE ChunkId IN (SELECT Id FROM MediaChunks WHERE AssetId = @assetId); DELETE FROM MediaChunks WHERE AssetId = @assetId; DELETE FROM MediaAssets WHERE Id = @assetId;", conn, tx))
+        // 1. Delete what is stored for this asset, and for an earlier asset of the same file (a changed file is saved
+        //    with a new id; its path is unique, so the old row has to go first)
+        const string sameAsset = "SELECT Id FROM MediaAssets WHERE Id = @assetId OR FilePath = @filePath";
+        await using (var delCmd = new SqliteCommand(
+            $"DELETE FROM MediaChunksFts WHERE ChunkId IN (SELECT Id FROM MediaChunks WHERE AssetId IN ({sameAsset})); " +
+            $"DELETE FROM MediaChunks WHERE AssetId IN ({sameAsset}); " +
+            "DELETE FROM MediaAssets WHERE Id = @assetId OR FilePath = @filePath;", conn, tx))
         {
             delCmd.Parameters.AddWithValue("@assetId", asset.Id.ToString());
+            delCmd.Parameters.AddWithValue("@filePath", asset.FilePath);
             await delCmd.ExecuteNonQueryAsync(cancellationToken);
         }
 
@@ -227,6 +249,59 @@ public class SqliteMediaRepository : IMediaRepository
         """;
         await using var cmd = new SqliteCommand(sql, conn, tx);
         cmd.Parameters.AddWithValue("@assetId", assetId.ToString());
+        await cmd.ExecuteNonQueryAsync(cancellationToken);
+
+        await tx.CommitAsync(cancellationToken);
+        Interlocked.Increment(ref _dataVersion);
+    }
+
+    public async Task DeleteAssetsAsync(IEnumerable<Guid> assetIds, CancellationToken cancellationToken = default)
+    {
+        var ids = assetIds.ToList();
+        if (ids.Count == 0) return;
+
+        await using var conn = new SqliteConnection(_connectionString);
+        await conn.OpenAsync(cancellationToken);
+        await using var tx = conn.BeginTransaction();
+
+        // Delete in batches of up to 500 to stay well within SQLite parameter limits
+        const int batchSize = 500;
+        for (int i = 0; i < ids.Count; i += batchSize)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var chunk = ids.Skip(i).Take(batchSize).ToList();
+            var placeholders = string.Join(",", chunk.Select((_, idx) => $"@id{idx}"));
+
+            string sql = $"""
+                DELETE FROM MediaChunksFts WHERE ChunkId IN (SELECT Id FROM MediaChunks WHERE AssetId IN ({placeholders}));
+                DELETE FROM MediaChunks WHERE AssetId IN ({placeholders});
+                DELETE FROM MediaAssets WHERE Id IN ({placeholders});
+            """;
+
+            await using var cmd = new SqliteCommand(sql, conn, tx);
+            for (int idx = 0; idx < chunk.Count; idx++)
+            {
+                cmd.Parameters.AddWithValue($"@id{idx}", chunk[idx].ToString());
+            }
+            await cmd.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        await tx.CommitAsync(cancellationToken);
+        Interlocked.Increment(ref _dataVersion);
+    }
+
+    public async Task ClearAllAsync(CancellationToken cancellationToken = default)
+    {
+        await using var conn = new SqliteConnection(_connectionString);
+        await conn.OpenAsync(cancellationToken);
+        await using var tx = conn.BeginTransaction();
+
+        const string sql = """
+            DELETE FROM MediaChunksFts;
+            DELETE FROM MediaChunks;
+            DELETE FROM MediaAssets;
+        """;
+        await using var cmd = new SqliteCommand(sql, conn, tx);
         await cmd.ExecuteNonQueryAsync(cancellationToken);
 
         await tx.CommitAsync(cancellationToken);

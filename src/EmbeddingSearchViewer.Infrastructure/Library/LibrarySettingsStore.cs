@@ -16,6 +16,9 @@ public class LibrarySettings
     /// <summary>Lengthens the segments of long videos so that none needs more than <see cref="Ingestion.IngestionPipelineWorker.AutoMaxVideoSegments"/> segments.</summary>
     public bool VideoAutoSegment { get; set; } = true;
 
+    /// <summary>How the folder list is ordered on screen (<see cref="FolderSortMode"/>); the saved order of <see cref="Folders"/> is not changed.</summary>
+    public int FolderSortIndex { get; set; }
+
     /// <summary>Model that produced the current index; a different model makes the stored embeddings incomparable.</summary>
     public string? IndexModelTag { get; set; }
 }
@@ -30,10 +33,7 @@ public class LibrarySettingsStore
 
     public LibrarySettingsStore(string? path = null)
     {
-        string fixedPath = path ?? Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "EmbeddingSearchViewer",
-            "library.json");
+        string fixedPath = path ?? AppDataPaths.DefaultLibraryPath;
         _pathProvider = () => fixedPath;
     }
 
@@ -49,19 +49,7 @@ public class LibrarySettingsStore
     {
         lock (_lock)
         {
-            try
-            {
-                string path = _path;
-                if (File.Exists(path))
-                {
-                    return JsonSerializer.Deserialize<LibrarySettings>(File.ReadAllText(path)) ?? new LibrarySettings();
-                }
-            }
-            catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException)
-            {
-                // Corrupt or unreadable settings fall back to defaults.
-            }
-            return new LibrarySettings();
+            return AtomicJsonFile.Load(_path, new LibrarySettings());
         }
     }
 
@@ -69,13 +57,29 @@ public class LibrarySettingsStore
     {
         lock (_lock)
         {
-            string path = _path;
-            var dir = Path.GetDirectoryName(path);
-            if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
-
-            var tmp = path + ".tmp";
-            File.WriteAllText(tmp, JsonSerializer.Serialize(settings, new JsonSerializerOptions { WriteIndented = true }));
-            File.Move(tmp, path, overwrite: true);
+            AtomicJsonFile.Save(_path, settings);
         }
+    }
+
+    /// <summary>
+    /// Checks whether the index matches the expected model tag. If the index is empty, adopts the expected model tag and saves it.
+    /// </summary>
+    /// <returns>True if compatible or adopted; false if mismatched with existing indexed assets.</returns>
+    public bool CheckIndexModelCompatibility(string expectedModelTag, int assetCount, out bool wasAdopted)
+    {
+        wasAdopted = false;
+        var settings = Load();
+        if (assetCount == 0)
+        {
+            if (settings.IndexModelTag != expectedModelTag)
+            {
+                settings.IndexModelTag = expectedModelTag;
+                Save(settings);
+                wasAdopted = true;
+            }
+            return true;
+        }
+
+        return settings.IndexModelTag == expectedModelTag;
     }
 }

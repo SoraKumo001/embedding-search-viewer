@@ -60,12 +60,12 @@ public partial class SettingsViewModel : ObservableObject
     [ObservableProperty]
     private string _healthDetails = Loc.T("Settings.Health.Unchecked");
 
-    public SettingsViewModel(IEmbeddingService embeddingService, SearchViewModel search, AppSettingsStore appSettings)
+    public SettingsViewModel(IEmbeddingService embeddingService, SearchViewModel search, AppSettingsStore appSettings, string? startupLanguage = null)
     {
         _embeddingService = embeddingService;
         Search = search;
         _appSettings = appSettings;
-        _startupLanguage = App.StartupLanguageSetting;
+        _startupLanguage = startupLanguage ?? _appSettings.Load().Language;
         _languageIndex = Math.Max(0, Array.IndexOf(LanguageSettings, _appSettings.Load().Language));
         _restartRequired = LanguageSettings[_languageIndex] != _startupLanguage;
     }

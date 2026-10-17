@@ -19,12 +19,20 @@
                 </Button>
             </StackPanel>
 
-            <Button loc:L.Uid="VideoPreview.OpenVideoExternalButton" Grid.Column="2" x:Name="OpenVideoExternalButton" Click="OpenVideoExternalButton_Click" AutomationProperties.Name="Open in External App">
-                <StackPanel Orientation="Horizontal" Spacing="4">
-                    <FontIcon Glyph="&#xE8A7;" FontSize="14" />
-                    <TextBlock loc:L.Uid="VideoPreview.TextBlock01" />
-                </StackPanel>
-            </Button>
+            <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8">
+                <Button loc:L.Uid="VideoPreview.OpenInExplorerButton" Click="OpenInExplorerButton_Click" AutomationProperties.Name="Show in Explorer">
+                    <StackPanel Orientation="Horizontal" Spacing="4">
+                        <FontIcon Glyph="&#xE838;" FontSize="14" />
+                        <TextBlock loc:L.Uid="VideoPreview.TextBlock02" />
+                    </StackPanel>
+                </Button>
+                <Button loc:L.Uid="VideoPreview.OpenVideoExternalButton" x:Name="OpenVideoExternalButton" Click="OpenVideoExternalButton_Click" AutomationProperties.Name="Open in External App">
+                    <StackPanel Orientation="Horizontal" Spacing="4">
+                        <FontIcon Glyph="&#xE8A7;" FontSize="14" />
+                        <TextBlock loc:L.Uid="VideoPreview.TextBlock01" />
+                    </StackPanel>
+                </Button>
+            </StackPanel>
         </Grid>
 
         <!-- Media Player (Fit to Viewport, Aspect Ratio Preserved, No Scroll) -->

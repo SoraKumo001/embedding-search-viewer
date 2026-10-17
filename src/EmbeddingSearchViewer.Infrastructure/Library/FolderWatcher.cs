@@ -98,11 +98,8 @@ public sealed class FolderWatcher : IDisposable
         var settings = _store.Load();
         if (settings.IndexModelTag == current) return true;
 
-        if ((await _repository.GetAllAssetsAsync()).Count > 0) return false;
-
-        settings.IndexModelTag = current;
-        _store.Save(settings);
-        return true;
+        int assetCount = (await _repository.GetAllAssetsAsync()).Count;
+        return _store.CheckIndexModelCompatibility(current, assetCount, out _);
     }
 
     private async Task FlushAsync()

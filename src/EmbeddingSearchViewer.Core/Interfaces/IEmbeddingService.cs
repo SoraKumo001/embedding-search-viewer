@@ -21,7 +21,7 @@ public interface IEmbeddingService
     Task<bool> IsReadyAsync(CancellationToken cancellationToken = default);
     Task<float[]> GenerateQueryEmbeddingAsync(
         string query,
-        string modality = "text",
+        string modality = EmbeddingModalities.Text,
         int truncateDim = 768,
         CancellationToken cancellationToken = default
     );

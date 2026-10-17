@@ -72,11 +72,20 @@ public sealed class ProfileScopedRepository : IMediaRepository, IDisposable
     public Task<IReadOnlyList<MediaAsset>> GetAllAssetsAsync(CancellationToken cancellationToken = default)
         => Current().GetAllAssetsAsync(cancellationToken);
 
+    public Task<IReadOnlyDictionary<string, string>> GetAssetHashesAsync(CancellationToken cancellationToken = default)
+        => Current().GetAssetHashesAsync(cancellationToken);
+
     public Task SaveAssetWithChunksAsync(MediaAsset asset, IEnumerable<MediaChunk> chunks, CancellationToken cancellationToken = default)
         => Current().SaveAssetWithChunksAsync(asset, chunks, cancellationToken);
 
     public Task DeleteAssetAsync(Guid assetId, CancellationToken cancellationToken = default)
         => Current().DeleteAssetAsync(assetId, cancellationToken);
+
+    public Task DeleteAssetsAsync(IEnumerable<Guid> assetIds, CancellationToken cancellationToken = default)
+        => Current().DeleteAssetsAsync(assetIds, cancellationToken);
+
+    public Task ClearAllAsync(CancellationToken cancellationToken = default)
+        => Current().ClearAllAsync(cancellationToken);
 
     public Task<IReadOnlyList<MediaChunk>> GetAllChunksWithEmbeddingsAsync(MediaType? mediaTypeFilter = null, CancellationToken cancellationToken = default)
         => Current().GetAllChunksWithEmbeddingsAsync(mediaTypeFilter, cancellationToken);

@@ -23,7 +23,9 @@ public record IngestionProgress(
     int SkippedFiles = 0,
     string? Summary = null,
     string? Detail = null,
-    int ExcludedFiles = 0
+    int ExcludedFiles = 0,
+    double InFlightFiles = 0, // how many files' worth of work the videos being processed have already done (for the time estimate)
+    int QuickFiles = 0 // of the processed files, those that needed no work (already indexed, or left out): they say nothing about the speed
 );
 
 public class IngestionPipelineWorker
@@ -88,6 +90,7 @@ public class IngestionPipelineWorker
     private int _processedFiles;
     private int _skippedFiles;
     private int _excludedFiles;
+    private int _quickFiles;
     private readonly IndexExclusionStore? _exclusions;
     private bool _isRunning;
 
@@ -95,9 +98,9 @@ public class IngestionPipelineWorker
     private readonly object _stateLock = new();
     private int _activeProducers;
 
-    private static readonly HashSet<string> PdfExts = new(StringComparer.OrdinalIgnoreCase) { ".pdf" };
-    private static readonly HashSet<string> ImageExts = new(StringComparer.OrdinalIgnoreCase) { ".jpg", ".jpeg", ".png", ".bmp", ".webp" };
-    private static readonly HashSet<string> VideoExts = new(StringComparer.OrdinalIgnoreCase) { ".mp4", ".mkv", ".avi", ".mov", ".wmv", ".webm", ".flv" };
+    private static readonly HashSet<string> PdfExts = SupportedMediaTypes.PdfExtensions;
+    private static readonly HashSet<string> ImageExts = SupportedMediaTypes.ImageExtensions;
+    private static readonly HashSet<string> VideoExts = SupportedMediaTypes.VideoExtensions;
 
     public IngestionPipelineWorker(
         IMediaRepository repository,
@@ -145,7 +148,9 @@ public class IngestionPipelineWorker
         _processedFiles = 0;
         _skippedFiles = 0;
         _excludedFiles = 0;
+        _quickFiles = 0;
         VideoStats.Reset();
+        _knownHashes = null; // what is in the index is read again for each run
         _runWatch.Restart();
         _isRunning = true;
         _workerCts = new CancellationTokenSource();
@@ -189,28 +194,42 @@ public class IngestionPipelineWorker
         _channel.Writer.TryWrite(string.Empty);
     }
 
-    private static bool IsSupported(string path)
-    {
-        string ext = Path.GetExtension(path);
-        return PdfExts.Contains(ext) || ImageExts.Contains(ext) || VideoExts.Contains(ext);
-    }
+    private static bool IsSupported(string path) => SupportedMediaTypes.IsSupported(path);
 
     public async Task QueueDirectoryAsync(string directoryPath, bool recursive = true)
     {
         if (!Directory.Exists(directoryPath)) return;
 
         BeginProduce();
+        var cancellationToken = _workerCts?.Token ?? CancellationToken.None; // "stop" also ends the search for files
         try
         {
-            var opt = recursive ? SearchOption.AllDirectories : SearchOption.TopDirectoryOnly;
-            foreach (var file in Directory.EnumerateFiles(directoryPath, "*.*", opt))
+            // Walking a big folder tree takes a long time and the caller is usually the UI thread, so it is done on
+            // another thread. Folders that cannot be read are skipped instead of ending the whole search.
+            var options = new EnumerationOptions { RecurseSubdirectories = recursive, IgnoreInaccessible = true, AttributesToSkip = 0 };
+            string? failure = await Task.Run(() =>
             {
-                if (!IsSupported(file)) continue;
-                Interlocked.Increment(ref _totalFiles);
-                await _channel.Writer.WriteAsync(file);
-            }
+                try
+                {
+                    foreach (var file in Directory.EnumerateFiles(directoryPath, "*.*", options))
+                    {
+                        if (cancellationToken.IsCancellationRequested) break;
+                        if (!IsSupported(file)) continue;
+                        Interlocked.Increment(ref _totalFiles);
+                        _channel.Writer.TryWrite(file); // unbounded: always succeeds
+                    }
+                    return null;
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
+                {
+                    // A folder that disappears or a drive that goes away halfway must not end the app (or the other
+                    // folders): what was found so far is still indexed.
+                    return ex.Message;
+                }
+            }, CancellationToken.None);
 
-            NotifyProgress(Loc.T("Ingest.Queued", _totalFiles));
+            if (failure != null) NotifyProgress(Path.GetFileName(directoryPath), $"{directoryPath}: {failure}");
+            else NotifyProgress(Loc.T("Ingest.Queued", _totalFiles));
         }
         finally
         {
@@ -408,11 +427,33 @@ public class IngestionPipelineWorker
         try
         {
             await _repository.SaveAssetWithChunksAsync(asset, chunks, cancellationToken);
+            if (_knownHashes is { IsCompletedSuccessfully: true } loaded) loaded.Result[asset.FilePath] = asset.FileHash;
         }
         finally
         {
             _saveLock.Release();
         }
+    }
+
+    // The hash of every file that was indexed before this run (plus those saved during it), read with one query. Checking
+    // each file with its own query takes minutes for a library of hundreds of thousands of files.
+    private Task<ConcurrentDictionary<string, string>>? _knownHashes;
+
+    private Task<ConcurrentDictionary<string, string>> KnownHashesAsync()
+    {
+        lock (_stateLock)
+        {
+            if (_knownHashes is { IsFaulted: true } or { IsCanceled: true }) _knownHashes = null; // try again
+            return _knownHashes ??= Task.Run(async () =>
+                new ConcurrentDictionary<string, string>(await _repository.GetAssetHashesAsync(), StringComparer.Ordinal));
+        }
+    }
+
+    /// <summary>True when the file is in the index with the same size and modification time.</summary>
+    private async Task<bool> IsUnchangedAsync(string filePath, string fileHash, CancellationToken cancellationToken)
+    {
+        var known = await KnownHashesAsync().WaitAsync(cancellationToken);
+        return known.TryGetValue(filePath, out var indexed) && indexed == fileHash;
     }
 
     private async Task ProcessImageBatchAsync(List<string> filePaths, CancellationToken cancellationToken)
@@ -422,27 +463,42 @@ public class IngestionPipelineWorker
         var toProcess = new List<string>();
         foreach (var p in filePaths)
         {
-            if (!File.Exists(p)) continue;
-            var fi = new FileInfo(p);
-            string fileHash = $"{fi.Length}_{fi.LastWriteTimeUtc.Ticks}";
+            FileInfo fi;
+            string fileHash;
+            try
+            {
+                if (!File.Exists(p))
+                {
+                    Interlocked.Increment(ref _processedFiles); // gone since the search: nothing to do, but it was counted
+                    continue;
+                }
+                fi = new FileInfo(p);
+                fileHash = MediaAsset.ComputeFileHash(fi);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
+            {
+                Interlocked.Increment(ref _processedFiles); // a file that cannot even be looked at is left out of this run
+                continue;
+            }
 
             // A file that failed on every retry in an earlier run (and has not changed since) is left out.
             if (_exclusions != null && _exclusions.IsExcluded(p, fi.Length, fi.LastWriteTimeUtc.Ticks))
             {
                 Interlocked.Increment(ref _processedFiles);
                 Interlocked.Increment(ref _excludedFiles);
+                Interlocked.Increment(ref _quickFiles);
                 NotifyProgress(Path.GetFileName(p));
                 continue;
             }
 
-            var existing = await _repository.GetAssetByPathAsync(p, cancellationToken);
-            if (existing == null || existing.FileHash != fileHash)
+            if (!await IsUnchangedAsync(p, fileHash, cancellationToken))
             {
                 toProcess.Add(p);
             }
             else
             {
                 Interlocked.Increment(ref _processedFiles);
+                Interlocked.Increment(ref _quickFiles);
                 NotifyProgress(Path.GetFileName(p));
             }
         }
@@ -529,11 +585,11 @@ public class IngestionPipelineWorker
         if (!File.Exists(filePath)) return;
 
         var fi = new FileInfo(filePath);
-        string fileHash = $"{fi.Length}_{fi.LastWriteTimeUtc.Ticks}";
+        string fileHash = MediaAsset.ComputeFileHash(fi);
 
-        var existing = await _repository.GetAssetByPathAsync(filePath, cancellationToken);
-        if (existing != null && existing.FileHash == fileHash)
+        if (await IsUnchangedAsync(filePath, fileHash, cancellationToken))
         {
+            Interlocked.Increment(ref _quickFiles);
             return;
         }
 
@@ -564,8 +620,23 @@ public class IngestionPipelineWorker
         await SaveAsync(asset, chunks, cancellationToken);
     }
 
+    /// <summary>Routine progress reports are sent at most this often (seconds); errors and the final report always are.</summary>
+    private const double ProgressIntervalSeconds = 0.1;
+
+    private long _lastProgressTicks;
+
     private void NotifyProgress(string currentFile, string? error = null, string? summary = null)
     {
+        // Files that are already indexed are checked at thousands per second. One report per file would flood the UI
+        // thread, which handles each of them, and the window would stop responding. The screen only needs a few a second.
+        if (error == null && summary == null && _isRunning)
+        {
+            long now = Stopwatch.GetTimestamp();
+            long last = Interlocked.Read(ref _lastProgressTicks);
+            if (now - last < ProgressIntervalSeconds * Stopwatch.Frequency) return;
+            if (Interlocked.CompareExchange(ref _lastProgressTicks, now, last) != last) return;
+        }
+
         ProgressChanged?.Invoke(new IngestionProgress(
             TotalFiles: _totalFiles,
             ProcessedFiles: _processedFiles,
@@ -575,7 +646,9 @@ public class IngestionPipelineWorker
             SkippedFiles: _skippedFiles,
             Summary: summary,
             Detail: BuildVideoDetail(),
-            ExcludedFiles: _excludedFiles
+            ExcludedFiles: _excludedFiles,
+            QuickFiles: Volatile.Read(ref _quickFiles),
+            InFlightFiles: _videoProgress.Values.Sum(p => p.Total > 0 ? Math.Min(1.0, (double)p.Done / p.Total) : 0)
         ));
     }
 }

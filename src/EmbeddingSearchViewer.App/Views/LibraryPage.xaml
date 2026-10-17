@@ -6,6 +6,7 @@
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     xmlns:lib="using:EmbeddingSearchViewer.Infrastructure.Library"
     xmlns:loc="using:EmbeddingSearchViewer_App.Localization"
+    xmlns:vm="using:EmbeddingSearchViewer_App.ViewModels"
     mc:Ignorable="d">
 
     <ScrollViewer Padding="24">
@@ -23,7 +24,7 @@
                           Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" />
                 <StackPanel Grid.Column="1" VerticalAlignment="Center">
                     <TextBlock loc:L.Uid="Library.TextBlock03" FontWeight="SemiBold" />
-                    <TextBlock Text="{x:Bind ViewModel.SidecarStatus, Mode=OneWay}"
+                    <TextBlock Text="{x:Bind ViewModel.EngineStatus, Mode=OneWay}"
                                Style="{ThemeResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                 </StackPanel>
                 <ProgressRing Grid.Column="2" IsActive="{x:Bind ViewModel.IsIndexing, Mode=OneWay}" Width="24" Height="24" />
@@ -123,12 +124,19 @@
             <!-- Folder Management Section -->
             <Grid Background="{ThemeResource LayerFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="8" Padding="16" RowDefinitions="Auto,Auto,Auto" RowSpacing="12"
                   AllowDrop="True" DragOver="Folders_DragOver" Drop="Folders_Drop">
-                <Grid Grid.Row="0" ColumnDefinitions="*,Auto">
+                <Grid Grid.Row="0" ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
                     <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
                         <FontIcon Glyph="&#xED25;" FontSize="16" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" />
                         <TextBlock loc:L.Uid="Library.TextBlock13" FontWeight="SemiBold" VerticalAlignment="Center" />
                     </StackPanel>
-                    <Button Grid.Column="1" Click="AddFolderButton_Click" Style="{ThemeResource AccentButtonStyle}" AutomationProperties.Name="Add Folder">
+                    <ComboBox loc:L.Uid="Library.FolderSort" Grid.Column="1" SelectedIndex="{x:Bind ViewModel.FolderSortIndex, Mode=TwoWay}"
+                              Visibility="{x:Bind ViewModel.HasFolders, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
+                              AutomationProperties.Name="Folder Sort Order">
+                        <ComboBoxItem loc:L.Uid="Library.FolderSortAdded" />
+                        <ComboBoxItem loc:L.Uid="Library.FolderSortName" />
+                        <ComboBoxItem loc:L.Uid="Library.FolderSortCount" />
+                    </ComboBox>
+                    <Button Grid.Column="2" Click="AddFolderButton_Click" Style="{ThemeResource AccentButtonStyle}" AutomationProperties.Name="Add Folder">
                         <StackPanel Orientation="Horizontal" Spacing="6">
                             <FontIcon Glyph="&#xE8F4;" FontSize="14" />
                             <TextBlock loc:L.Uid="Library.TextBlock14" />
@@ -152,14 +160,16 @@
 
                     <!-- Active Folder List -->
                     <ListView Visibility="{x:Bind ViewModel.HasFolders, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
-                              ItemsSource="{x:Bind ViewModel.TargetFolders, Mode=OneWay}"
+                              ItemsSource="{x:Bind ViewModel.FolderItems, Mode=OneWay}"
                               MaxHeight="220" BorderThickness="1" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" CornerRadius="6">
                         <ListView.ItemTemplate>
-                            <DataTemplate x:DataType="x:String">
-                                <Grid ColumnDefinitions="Auto,*,Auto" Padding="8,4" ColumnSpacing="10">
+                            <DataTemplate x:DataType="vm:FolderEntry">
+                                <Grid ColumnDefinitions="Auto,*,Auto,Auto" Padding="8,4" ColumnSpacing="10">
                                     <FontIcon Glyph="&#xED25;" FontSize="16" VerticalAlignment="Center" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" />
-                                    <TextBlock Grid.Column="1" Text="{x:Bind}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
-                                    <Button loc:L.Uid="Library.Button05" Grid.Column="2" Click="RemoveFolderButton_Click" AutomationProperties.Name="Remove Folder"
+                                    <TextBlock Grid.Column="1" Text="{x:Bind Path}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                                    <TextBlock Grid.Column="2" Text="{x:Bind CountText, Mode=OneWay}" VerticalAlignment="Center"
+                                               Style="{ThemeResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                    <Button loc:L.Uid="Library.Button05" Grid.Column="3" Click="RemoveFolderButton_Click" AutomationProperties.Name="Remove Folder"
                                             Background="Transparent" BorderThickness="0" Padding="6">
                                         <FontIcon Glyph="&#xE74D;" FontSize="14" Foreground="{ThemeResource SystemFillColorCriticalBrush}" />
                                     </Button>
@@ -197,6 +207,11 @@
                     </Grid>
 
                     <ProgressBar Value="{x:Bind ViewModel.ProgressPercentage, Mode=OneWay}" Maximum="100" />
+
+                    <!-- Estimated time left (empty until the speed is known) -->
+                    <TextBlock Text="{x:Bind ViewModel.EtaText, Mode=OneWay}"
+                               Visibility="{x:Bind ViewModel.EtaText, Mode=OneWay, Converter={StaticResource StringNotEmptyToVisibilityConverter}}"
+                               Style="{ThemeResource CaptionTextBlockStyle}" />
 
                     <!-- How far each video being processed has come -->
                     <TextBlock Text="{x:Bind ViewModel.VideoProgressText, Mode=OneWay}"

@@ -197,10 +197,9 @@ public sealed partial class SearchPage : Page
 
     private void ResultMenu_OpenFolder_Click(object sender, RoutedEventArgs e)
     {
-        if (ItemOf(sender) is { } item && File.Exists(item.Asset.FilePath))
+        if (ItemOf(sender) is { } item && !EmbeddingSearchViewer_App.Services.ExplorerLauncher.Reveal(item.Asset.FilePath))
         {
-            try { Process.Start(new ProcessStartInfo("explorer.exe", $"/select,\"{item.Asset.FilePath}\"") { UseShellExecute = true }); }
-            catch (Exception ex) { ViewModel.ErrorMessage = Loc.T("Search.OpenFolderFailed", ex.Message); }
+            ViewModel.ErrorMessage = Loc.T("Search.OpenFolderFailed", item.Asset.FilePath);
         }
     }
 
@@ -227,8 +226,6 @@ public sealed partial class SearchPage : Page
         }
     }
 
-    private static readonly string[] QueryImageExtensions = { ".jpg", ".jpeg", ".png", ".webp" };
-
     private void Page_DragOver(object sender, DragEventArgs e)
     {
         if (e.DataView.Contains(Windows.ApplicationModel.DataTransfer.StandardDataFormats.StorageItems))
@@ -244,7 +241,7 @@ public sealed partial class SearchPage : Page
 
         var items = await e.DataView.GetStorageItemsAsync();
         var file = items.OfType<Windows.Storage.StorageFile>()
-            .FirstOrDefault(f => QueryImageExtensions.Contains(Path.GetExtension(f.Path).ToLowerInvariant()));
+            .FirstOrDefault(f => SupportedMediaTypes.ImageExtensions.Contains(Path.GetExtension(f.Path)));
         if (file == null)
         {
             ViewModel.ErrorMessage = Loc.T("Search.UnsupportedImage");
@@ -256,14 +253,6 @@ public sealed partial class SearchPage : Page
     }
 
     private void HistoryFlyout_Opening(object? sender, object e) => BuildHistoryMenu();
-
-    /// <summary>The label of a history entry: its text, the name of its image, or both.</summary>
-    private static string HistoryLabel(EmbeddingSearchViewer.Infrastructure.Library.SearchHistoryEntry entry)
-    {
-        string image = string.IsNullOrWhiteSpace(entry.ImagePath) ? string.Empty : Loc.T("Search.History.Image", Path.GetFileName(entry.ImagePath));
-        if (string.IsNullOrWhiteSpace(entry.Text)) return image;
-        return image.Length == 0 ? entry.Text : $"{entry.Text}  ({image})";
-    }
 
     /// <summary>
     /// Click runs the entry again; right-click offers pin and delete. The menu is built again after each change,
@@ -283,7 +272,7 @@ public sealed partial class SearchPage : Page
         {
             var item = new MenuFlyoutItem
             {
-                Text = HistoryLabel(entry),
+                Text = entry.DisplayLabel,
                 Icon = entry.Pinned ? new FontIcon { Glyph = "" } : null
             };
             item.Click += async (_, _) => await ViewModel.ApplyHistoryAsync(entry);

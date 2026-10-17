@@ -7,7 +7,6 @@ using System.Threading.Tasks;
 using EmbeddingSearchViewer.Core.Interfaces;
 using EmbeddingSearchViewer.Core.Localization;
 using EmbeddingSearchViewer.Core.Models;
-using EmbeddingSearchViewer.Infrastructure.Sidecar;
 
 namespace EmbeddingSearchViewer.Infrastructure.Ingestion;
 
@@ -81,7 +80,7 @@ public class ImageMediaIngestor
 
         if (validFiles.Count == 0) return new ImageBatchResult(new(), new());
 
-        var batchInputs = validFiles.Select(fi => new EmbeddingItemInput(Type: "image", Path: fi.FullName)).ToList();
+        var batchInputs = validFiles.Select(fi => new EmbeddingItemInput(Type: EmbeddingModalities.Image, Path: fi.FullName)).ToList();
 
         IReadOnlyList<float[]> embeddings;
         var failedIndexes = new Dictionary<int, string>();
@@ -117,7 +116,7 @@ public class ImageMediaIngestor
                 FileName = fi.Name,
                 MediaType = MediaType.Image,
                 FileSizeBytes = fi.Length,
-                FileHash = $"{fi.Length}_{fi.LastWriteTimeUtc.Ticks}",
+                FileHash = MediaAsset.ComputeFileHash(fi),
                 LastModifiedUtc = fi.LastWriteTimeUtc,
                 ThumbnailPath = fi.FullName
             };
