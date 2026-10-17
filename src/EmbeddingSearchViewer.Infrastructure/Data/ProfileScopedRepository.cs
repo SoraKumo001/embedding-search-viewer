@@ -75,6 +75,9 @@ public sealed class ProfileScopedRepository : IMediaRepository, IDisposable
     public Task<IReadOnlyDictionary<string, string>> GetAssetHashesAsync(CancellationToken cancellationToken = default)
         => Current().GetAssetHashesAsync(cancellationToken);
 
+    public Task<AssetStats> GetAssetStatsAsync(CancellationToken cancellationToken = default)
+        => Current().GetAssetStatsAsync(cancellationToken);
+
     public Task SaveAssetWithChunksAsync(MediaAsset asset, IEnumerable<MediaChunk> chunks, CancellationToken cancellationToken = default)
         => Current().SaveAssetWithChunksAsync(asset, chunks, cancellationToken);
 

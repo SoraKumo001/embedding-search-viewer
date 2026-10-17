@@ -396,6 +396,7 @@ public partial class SearchViewModel : ObservableObject
                 1 => MediaType.Pdf,
                 2 => MediaType.Image,
                 3 => MediaType.Video,
+                4 => MediaType.Document,
                 _ => null
             };
 

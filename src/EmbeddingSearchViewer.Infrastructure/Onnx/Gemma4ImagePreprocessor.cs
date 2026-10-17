@@ -216,13 +216,9 @@ public static class Gemma4ImagePreprocessor
         return oriented;
     }
 
-    /// <summary>Decodes, drops alpha, applies the EXIF orientation, and resizes (aspect ratio kept) to at most <paramref name="maxPatches"/> patches. Returns packed RGB.</summary>
-    internal static (byte[] Rgb, int Height, int Width) LoadResizedRgb(string imagePath, int maxPatches)
+    /// <summary>Decodes without premultiplying alpha, drops alpha (equivalent to PIL's convert("RGB")) and applies the EXIF orientation. The caller owns the result.</summary>
+    private static SKBitmap DecodeWithSkia(SKCodec codec, string imagePath)
     {
-        using var data = SKData.Create(imagePath) ?? throw new FileNotFoundException("Image file not found.", imagePath);
-        using var codec = SKCodec.Create(data) ?? throw new InvalidDataException($"Unsupported or corrupt image: {imagePath}");
-
-        // Decode without premultiplying alpha, then drop alpha (equivalent to PIL's convert("RGB")).
         var info = new SKImageInfo(codec.Info.Width, codec.Info.Height, SKColorType.Rgba8888, SKAlphaType.Unpremul);
         using var decoded = new SKBitmap(info);
         if (codec.GetPixels(info, decoded.GetPixels()) != SKCodecResult.Success && decoded.IsNull)
@@ -230,7 +226,7 @@ public static class Gemma4ImagePreprocessor
             throw new InvalidDataException($"Could not decode image: {imagePath}");
         }
 
-        using var opaqueStored = new SKBitmap(new SKImageInfo(info.Width, info.Height, SKColorType.Rgba8888, SKAlphaType.Opaque));
+        var opaqueStored = new SKBitmap(new SKImageInfo(info.Width, info.Height, SKColorType.Rgba8888, SKAlphaType.Opaque));
         var src = decoded.GetPixelSpan();
         var dst = opaqueStored.GetPixelSpan();
         for (int i = 0; i < src.Length; i += 4)
@@ -241,8 +237,20 @@ public static class Gemma4ImagePreprocessor
             dst[i + 3] = 255;
         }
 
-        var opaque = Orient(opaqueStored, codec.EncodedOrigin);
-        bool ownsOpaque = !ReferenceEquals(opaque, opaqueStored);
+        var oriented = Orient(opaqueStored, codec.EncodedOrigin);
+        if (!ReferenceEquals(oriented, opaqueStored)) opaqueStored.Dispose();
+        return oriented;
+    }
+
+    /// <summary>Decodes, drops alpha, applies the EXIF orientation, and resizes (aspect ratio kept) to at most <paramref name="maxPatches"/> patches. Returns packed RGB.</summary>
+    internal static (byte[] Rgb, int Height, int Width) LoadResizedRgb(string imagePath, int maxPatches)
+    {
+        using var data = SKData.Create(imagePath) ?? throw new FileNotFoundException("Image file not found.", imagePath);
+
+        // Skia first; formats it cannot read (TIFF, ...) go through the Windows imaging codecs.
+        using var codec = SKCodec.Create(data);
+        var opaque = codec != null ? DecodeWithSkia(codec, imagePath) : WicImageDecoder.Decode(imagePath);
+        bool ownsOpaque = true;
 
         var (targetH, targetW) = GetTargetSize(opaque.Height, opaque.Width, maxPatches: maxPatches);
 

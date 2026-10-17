@@ -32,6 +32,20 @@ public sealed partial class LibraryPage : Page
         }
     }
 
+    // The view model outlives the page; without clearing it, a dismissed error would reappear on return.
+    private void ErrorInfoBar_Closed(InfoBar sender, InfoBarClosedEventArgs args)
+    {
+        ViewModel.ErrorMessage = null;
+    }
+
+    private void RevealExcluded_Click(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.Tag is EmbeddingSearchViewer.Infrastructure.Library.ExcludedFile file)
+        {
+            EmbeddingSearchViewer_App.Services.ExplorerLauncher.Reveal(file.Path);
+        }
+    }
+
     private async void AddFolderButton_Click(object sender, RoutedEventArgs e)
     {
         var picker = new FolderPicker();

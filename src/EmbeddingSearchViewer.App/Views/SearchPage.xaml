@@ -40,6 +40,7 @@
                     <ComboBoxItem loc:L.Uid="Search.ComboBoxItem02" />
                     <ComboBoxItem loc:L.Uid="Search.ComboBoxItem03" />
                     <ComboBoxItem loc:L.Uid="Search.ComboBoxItem04" />
+                    <ComboBoxItem loc:L.Uid="Search.ComboBoxItem20" />
                 </ComboBox>
 
                 <!-- Query Image Picker Button -->
@@ -137,7 +138,7 @@
                 </Grid>
 
                 <!-- Error InfoBar -->
-                <InfoBar Grid.Row="1" Margin="0,0,0,8"
+                <InfoBar Grid.Row="1" Margin="0,0,0,8" Closed="ErrorInfoBar_Closed"
                          IsOpen="{x:Bind ViewModel.ErrorMessage, Mode=OneWay, Converter={StaticResource StringNotEmptyConverter}}"
                          Severity="Error" Message="{x:Bind ViewModel.ErrorMessage, Mode=OneWay}" />
 
@@ -211,6 +212,7 @@
             <Grid Grid.Column="1" RowDefinitions="*,Auto">
                 <!-- PDF Viewer -->
                 <controls:PdfPreviewControl x:Name="PdfViewer" Visibility="Collapsed" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" />
+                <controls:DocumentPreviewControl x:Name="DocumentViewer" Visibility="Collapsed" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" />
 
                 <!-- Video Viewer -->
                 <controls:VideoPreviewControl x:Name="VideoViewer" Visibility="Collapsed" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" />

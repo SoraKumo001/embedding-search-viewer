@@ -66,6 +66,9 @@ public partial class LibraryViewModel : ObservableObject
     private int _indexedVideoCount;
 
     [ObservableProperty]
+    private int _indexedDocumentCount;
+
+    [ObservableProperty]
     private bool _hasFolders;
 
     [ObservableProperty]
@@ -131,6 +134,23 @@ public partial class LibraryViewModel : ObservableObject
     {
         if (!_loadingSettings && value >= 0) SaveSettings();
     }
+
+    [ObservableProperty]
+    private bool _indexImages = true;
+
+    [ObservableProperty]
+    private bool _indexPdfs = true;
+
+    [ObservableProperty]
+    private bool _indexVideos = true;
+
+    [ObservableProperty]
+    private bool _indexDocuments = true;
+
+    partial void OnIndexImagesChanged(bool value) { if (!_loadingSettings) SaveSettings(); }
+    partial void OnIndexPdfsChanged(bool value) { if (!_loadingSettings) SaveSettings(); }
+    partial void OnIndexVideosChanged(bool value) { if (!_loadingSettings) SaveSettings(); }
+    partial void OnIndexDocumentsChanged(bool value) { if (!_loadingSettings) SaveSettings(); }
 
     [ObservableProperty]
     private bool _videoAutoSegment = true;
@@ -236,6 +256,10 @@ public partial class LibraryViewModel : ObservableObject
             AutoIndex = saved.AutoIndex;
             VideoSegmentIndex = Math.Max(0, VideoSegmentChoices.ToList().IndexOf(saved.VideoSegmentSeconds));
             VideoAutoSegment = saved.VideoAutoSegment;
+            IndexImages = saved.IndexImages;
+            IndexPdfs = saved.IndexPdfs;
+            IndexVideos = saved.IndexVideos;
+            IndexDocuments = saved.IndexDocuments;
             FolderSortIndex = saved.FolderSortIndex;
             _loadingSettings = false;
             HasFolders = TargetFolders.Count > 0;
@@ -267,24 +291,26 @@ public partial class LibraryViewModel : ObservableObject
     {
         try
         {
-            var assets = await _repository.GetAllAssetsAsync();
-            TotalIndexedAssets = assets.Count;
-            IndexedImageCount = assets.Count(a => a.MediaType == MediaType.Image);
-            IndexedPdfCount = assets.Count(a => a.MediaType == MediaType.Pdf);
-            IndexedVideoCount = assets.Count(a => a.MediaType == MediaType.Video);
-            HasIndexedAssets = assets.Count > 0;
-            CheckIndexModel(assets.Count);
+            // Counts and paths come from two light queries; the files themselves are only loaded when folders must be restored.
+            var stats = await _repository.GetAssetStatsAsync();
+            TotalIndexedAssets = stats.Total;
+            IndexedImageCount = stats.Images;
+            IndexedPdfCount = stats.Pdfs;
+            IndexedVideoCount = stats.Videos;
+            IndexedDocumentCount = stats.Documents;
+            HasIndexedAssets = stats.Total > 0;
+            CheckIndexModel(stats.Total);
 
-            _indexedPaths = assets.Select(a => a.FilePath).ToList();
+            _indexedPaths = (await _repository.GetAssetHashesAsync()).Keys.ToList();
             var folders = TargetFolders.ToList();
             var paths = _indexedPaths;
             _folderCounts = await Task.Run(() => FolderListing.CountFiles(folders, paths)); // off the UI thread
             SyncFolderItems(recount: false); // the number of files per folder
 
             // Automatically restore folders from previously indexed assets if target folders is empty
-            if (TargetFolders.Count == 0 && assets.Count > 0 && !_store.Exists)
+            if (TargetFolders.Count == 0 && stats.Total > 0 && !_store.Exists)
             {
-                var dirs = assets
+                var dirs = (await _repository.GetAllAssetsAsync())
                     .Select(a => Path.GetDirectoryName(a.FilePath))
                     .Where(d => !string.IsNullOrEmpty(d) && Directory.Exists(d))
                     .Distinct(StringComparer.OrdinalIgnoreCase)
@@ -411,6 +437,10 @@ public partial class LibraryViewModel : ObservableObject
             settings.Folders = TargetFolders.ToList();
             settings.AutoIndex = AutoIndex;
             settings.VideoAutoSegment = VideoAutoSegment;
+            settings.IndexImages = IndexImages;
+            settings.IndexPdfs = IndexPdfs;
+            settings.IndexVideos = IndexVideos;
+            settings.IndexDocuments = IndexDocuments;
             settings.FolderSortIndex = FolderSortIndex;
             if (VideoSegmentIndex >= 0 && VideoSegmentIndex < VideoSegmentChoices.Count)
             {

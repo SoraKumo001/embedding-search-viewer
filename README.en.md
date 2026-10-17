@@ -81,9 +81,12 @@ Wait a little until the index has been built. From the second time on, only **ne
 
 | Target | What is processed |
 |---|---|
-| Images (JPEG / PNG / WebP / BMP) | The content of the image. The orientation of photos from smartphones is taken into account |
+| Images (JPEG / PNG / WebP / BMP / GIF / ICO / TIFF) | The content of the image. The orientation of photos from smartphones is taken into account. For GIF, only the first frame is used |
 | PDF | The look of each page and the text of each page |
-| Videos (mp4 / mkv / webm / wmv / avi / mov / flv) | A scene every 15 seconds (you can change it to 30, 60 or 120 seconds in "Library") |
+| Office (docx / xlsx / pptx) | The text of the document (for Excel, only text cells). PowerPoint is searched per slide and Excel per sheet. Office does not need to be installed. The preview shows the matched text |
+| Videos (mp4 / mkv / webm / wmv / avi / mov / flv / m4v / ts / mts / m2ts / mpg / mpeg / 3gp / ogv) | A scene every 15 seconds (you can change it to 30, 60 or 120 seconds in "Library") |
+
+**You can choose which kinds of files go in the index.** In "Library", under the file types to put in the index, tick only the ones you need among images, PDFs, Office files and videos (all are on by default). A change applies from the next time you build the index. Files already in the index stay (to remove them, press "Clear" and index again).
 
 **Indexing videos takes time.** As a guide, a one-hour video takes about 3–5 minutes (around 300 scenes; several videos are processed at the same time). A movie of several hours takes more than 10 minutes each.
 - While it is running, the progress of each video is shown, such as "**scene 420 / 1,050**".
@@ -249,8 +252,10 @@ An older version of the app is still running (this happens only the first time y
 
 ## Not supported
 
-- Image formats such as GIF / HEIC / AVIF.
+- Image formats such as HEIC / AVIF.
 - The contents of archives such as zip / cbz.
+- Old Office formats (doc / xls / ppt) and password-protected Office files (they can still be found by file name).
+- Searching Office files by how they look (figures, charts, layout).
 - Windows on ARM.
 - Searching audio.
 

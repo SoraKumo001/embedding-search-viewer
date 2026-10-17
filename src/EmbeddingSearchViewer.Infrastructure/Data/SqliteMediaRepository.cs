@@ -155,6 +155,30 @@ public class SqliteMediaRepository : IMediaRepository
         return result;
     }
 
+    public async Task<AssetStats> GetAssetStatsAsync(CancellationToken cancellationToken = default)
+    {
+        await using var conn = new SqliteConnection(_connectionString);
+        await conn.OpenAsync(cancellationToken);
+
+        await using var cmd = new SqliteCommand("SELECT MediaType, COUNT(*) FROM MediaAssets GROUP BY MediaType;", conn);
+        await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
+
+        int total = 0, images = 0, pdfs = 0, videos = 0, documents = 0;
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            int count = reader.GetInt32(1);
+            total += count;
+            switch (reader.GetString(0))
+            {
+                case nameof(MediaType.Image): images = count; break;
+                case nameof(MediaType.Pdf): pdfs = count; break;
+                case nameof(MediaType.Video): videos = count; break;
+                case nameof(MediaType.Document): documents = count; break;
+            }
+        }
+        return new AssetStats(total, images, pdfs, videos, documents);
+    }
+
     public async Task SaveAssetWithChunksAsync(MediaAsset asset, IEnumerable<MediaChunk> chunks, CancellationToken cancellationToken = default)
     {
         await using var conn = new SqliteConnection(_connectionString);

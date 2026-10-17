@@ -187,6 +187,42 @@
   <data name="Library.Button09.Content" xml:space="preserve">
     <value>Restore all</value>
   </data>
+  <data name="Library.Button10.Content" xml:space="preserve">
+    <value>Show in Explorer</value>
+  </data>
+  <data name="Library.Button10.ToolTip" xml:space="preserve">
+    <value>Opens Explorer with the file selected</value>
+  </data>
+  <data name="Library.TextBlock19.Text" xml:space="preserve">
+    <value>File types to put in the index (a change applies from the next time you build the index; files already in it stay)</value>
+  </data>
+  <data name="Library.CheckBox02.Content" xml:space="preserve">
+    <value>Images (JPEG / PNG / WebP / BMP / GIF / ICO / TIFF)</value>
+  </data>
+  <data name="Library.CheckBox03.Content" xml:space="preserve">
+    <value>PDF</value>
+  </data>
+  <data name="Library.CheckBox04.Content" xml:space="preserve">
+    <value>Videos (mp4 / mkv / webm / mov / avi / wmv / flv / m4v / ts / mpg / 3gp and more)</value>
+  </data>
+  <data name="Library.CheckBox05.Content" xml:space="preserve">
+    <value>Office (the text of Word / Excel / PowerPoint)</value>
+  </data>
+  <data name="Search.ComboBoxItem20.Content" xml:space="preserve">
+    <value>Office documents</value>
+  </data>
+  <data name="Library.TextBlock20.Text" xml:space="preserve">
+    <value>Office</value>
+  </data>
+  <data name="DocPreview.Slide" xml:space="preserve">
+    <value>Slide {0} / {1}</value>
+  </data>
+  <data name="DocPreview.Sheet" xml:space="preserve">
+    <value>Sheet {0} / {1}</value>
+  </data>
+  <data name="DocPreview.Document" xml:space="preserve">
+    <value>Text of the document (the matched part)</value>
+  </data>
   <data name="Library.Clear.Error" xml:space="preserve">
     <value>An error occurred while clearing: {0}</value>
   </data>
@@ -314,7 +350,7 @@
     <value>Media library</value>
   </data>
   <data name="Library.TextBlock02.Text" xml:space="preserve">
-    <value>Add the folders that contain PDF documents, images and videos, and build and manage the EmbeddingGemma 2 index.</value>
+    <value>Add the folders that contain PDFs, images, videos and Office documents, and build and manage the EmbeddingGemma 2 index.</value>
   </data>
   <data name="Library.TextBlock03.Text" xml:space="preserve">
     <value>Inference engine (EmbeddingGemma 2)</value>

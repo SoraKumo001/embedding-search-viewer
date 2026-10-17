@@ -43,6 +43,12 @@ public sealed partial class SearchPage : Page
     private SearchResultItem? _playerScene;
 
     /// <summary>Plays the clicked scene of the selected video from its start.</summary>
+    // The view model outlives the page; without clearing it, a dismissed error would reappear on return.
+    private void ErrorInfoBar_Closed(InfoBar sender, InfoBarClosedEventArgs args)
+    {
+        ViewModel.ErrorMessage = null;
+    }
+
     private void ShowScene(SearchResultItem? scene)
     {
         if (scene == null || scene.Asset.MediaType != MediaType.Video) return;
@@ -88,10 +94,7 @@ public sealed partial class SearchPage : Page
 
         picker.ViewMode = PickerViewMode.Thumbnail;
         picker.SuggestedStartLocation = PickerLocationId.PicturesLibrary;
-        picker.FileTypeFilter.Add(".jpg");
-        picker.FileTypeFilter.Add(".jpeg");
-        picker.FileTypeFilter.Add(".png");
-        picker.FileTypeFilter.Add(".webp");
+        foreach (var ext in SupportedMediaTypes.ImageExtensions) picker.FileTypeFilter.Add(ext);
 
         var file = await picker.PickSingleFileAsync();
         if (file != null)
@@ -133,6 +136,7 @@ public sealed partial class SearchPage : Page
         if (item == null)
         {
             PdfViewer.Visibility = Visibility.Collapsed;
+            DocumentViewer.Visibility = Visibility.Collapsed;
             VideoViewer.Visibility = Visibility.Collapsed;
             ImageViewer.Visibility = Visibility.Collapsed;
             EmptyPreviewPlaceholder.Visibility = Visibility.Visible;
@@ -148,12 +152,14 @@ public sealed partial class SearchPage : Page
                 VideoViewer.Visibility = Visibility.Collapsed;
                 ImageViewer.Visibility = Visibility.Collapsed;
                 PdfViewer.Visibility = Visibility.Visible;
+                DocumentViewer.Visibility = Visibility.Collapsed;
                 VideoViewer.Cleanup();
                 await PdfViewer.LoadItemAsync(item);
                 break;
 
             case MediaType.Video:
                 PdfViewer.Visibility = Visibility.Collapsed;
+                DocumentViewer.Visibility = Visibility.Collapsed;
                 ImageViewer.Visibility = Visibility.Collapsed;
                 VideoViewer.Visibility = Visibility.Visible;
                 _playerScene = item;
@@ -162,14 +168,25 @@ public sealed partial class SearchPage : Page
 
             case MediaType.Image:
                 PdfViewer.Visibility = Visibility.Collapsed;
+                DocumentViewer.Visibility = Visibility.Collapsed;
                 VideoViewer.Visibility = Visibility.Collapsed;
                 ImageViewer.Visibility = Visibility.Visible;
                 VideoViewer.Cleanup();
                 await ImageViewer.LoadItemAsync(item);
                 break;
 
+            case MediaType.Document:
+                PdfViewer.Visibility = Visibility.Collapsed;
+                VideoViewer.Visibility = Visibility.Collapsed;
+                ImageViewer.Visibility = Visibility.Collapsed;
+                DocumentViewer.Visibility = Visibility.Visible;
+                VideoViewer.Cleanup();
+                DocumentViewer.LoadItem(item);
+                break;
+
             default:
                 PdfViewer.Visibility = Visibility.Collapsed;
+                DocumentViewer.Visibility = Visibility.Collapsed;
                 VideoViewer.Visibility = Visibility.Collapsed;
                 ImageViewer.Visibility = Visibility.Collapsed;
                 EmptyPreviewPlaceholder.Visibility = Visibility.Visible;

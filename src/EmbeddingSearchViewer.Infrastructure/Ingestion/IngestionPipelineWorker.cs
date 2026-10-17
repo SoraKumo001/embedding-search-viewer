@@ -32,6 +32,7 @@ public class IngestionPipelineWorker
 {
     private readonly IMediaRepository _repository;
     private readonly PdfMediaIngestor _pdfIngestor;
+    private readonly OfficeMediaIngestor _officeIngestor;
     private readonly ImageMediaIngestor _imageIngestor;
     private readonly VideoMediaIngestor _videoIngestor;
 
@@ -58,6 +59,9 @@ public class IngestionPipelineWorker
     public const int AutoMaxVideoSegments = 400;
 
     private readonly Func<bool> _videoAutoSegment;
+
+    /// <summary>The kinds of files the user chose to index; read once per queued folder or file, not per file.</summary>
+    private readonly Func<MediaTypeSelection> _mediaTypes;
 
     /// <summary>Where video indexing time goes (frame extraction vs. embedding); reset at the start of each run.</summary>
     public VideoIngestStats VideoStats { get; } = new();
@@ -101,6 +105,7 @@ public class IngestionPipelineWorker
     private static readonly HashSet<string> PdfExts = SupportedMediaTypes.PdfExtensions;
     private static readonly HashSet<string> ImageExts = SupportedMediaTypes.ImageExtensions;
     private static readonly HashSet<string> VideoExts = SupportedMediaTypes.VideoExtensions;
+    private static readonly HashSet<string> OfficeExts = SupportedMediaTypes.OfficeExtensions;
 
     public IngestionPipelineWorker(
         IMediaRepository repository,
@@ -112,13 +117,16 @@ public class IngestionPipelineWorker
         int videoParallelism = DefaultVideoParallelism,
         Func<int>? videoSegmentSeconds = null,
         IndexExclusionStore? exclusions = null,
-        Func<bool>? videoAutoSegment = null)
+        Func<bool>? videoAutoSegment = null,
+        Func<MediaTypeSelection>? mediaTypes = null)
     {
+        _mediaTypes = mediaTypes ?? (() => MediaTypeSelection.All);
         _exclusions = exclusions;
         _videoAutoSegment = videoAutoSegment ?? (() => false);
         _videoSegmentSeconds = videoSegmentSeconds ?? (() => DefaultVideoSegmentSeconds);
         _repository = repository;
         _pdfIngestor = new PdfMediaIngestor(embeddingService, pdfExtractor);
+        _officeIngestor = new OfficeMediaIngestor(embeddingService);
         _imageIngestor = new ImageMediaIngestor(embeddingService);
         _videoIngestor = new VideoMediaIngestor(
             embeddingService, videoExtractor, VideoStats, Onnx.EmbeddingModelLocation.ModelTag(Onnx.EmbeddingModelLocation.DefaultPrecision));
@@ -194,12 +202,11 @@ public class IngestionPipelineWorker
         _channel.Writer.TryWrite(string.Empty);
     }
 
-    private static bool IsSupported(string path) => SupportedMediaTypes.IsSupported(path);
-
     public async Task QueueDirectoryAsync(string directoryPath, bool recursive = true)
     {
         if (!Directory.Exists(directoryPath)) return;
 
+        var selection = _mediaTypes();
         BeginProduce();
         var cancellationToken = _workerCts?.Token ?? CancellationToken.None; // "stop" also ends the search for files
         try
@@ -214,7 +221,7 @@ public class IngestionPipelineWorker
                     foreach (var file in Directory.EnumerateFiles(directoryPath, "*.*", options))
                     {
                         if (cancellationToken.IsCancellationRequested) break;
-                        if (!IsSupported(file)) continue;
+                        if (!SupportedMediaTypes.IsSelected(file, selection)) continue;
                         Interlocked.Increment(ref _totalFiles);
                         _channel.Writer.TryWrite(file); // unbounded: always succeeds
                     }
@@ -240,7 +247,7 @@ public class IngestionPipelineWorker
     /// <summary>Queues a single file (e.g. reported by a folder watcher). Unchanged files are skipped by the ingestors.</summary>
     public async Task QueueFileAsync(string filePath)
     {
-        if (!IsSupported(filePath) || !File.Exists(filePath)) return;
+        if (!SupportedMediaTypes.IsSelected(filePath, _mediaTypes()) || !File.Exists(filePath)) return;
 
         BeginProduce();
         try
@@ -600,6 +607,10 @@ public class IngestionPipelineWorker
         if (PdfExts.Contains(ext))
         {
             (asset, chunks) = await _pdfIngestor.IngestAsync(filePath, _cacheDirectory, cancellationToken: cancellationToken);
+        }
+        else if (OfficeExts.Contains(ext))
+        {
+            (asset, chunks) = await _officeIngestor.IngestAsync(filePath, cancellationToken: cancellationToken);
         }
         else if (VideoExts.Contains(ext))
         {

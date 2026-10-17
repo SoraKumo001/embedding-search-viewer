@@ -29,6 +29,19 @@ public interface IMediaRepository
         foreach (var asset in await GetAllAssetsAsync(cancellationToken)) result[asset.FilePath] = asset.FileHash;
         return result;
     }
+
+    /// <summary>How many files are indexed, in total and by type, without loading the files themselves.</summary>
+    async Task<AssetStats> GetAssetStatsAsync(CancellationToken cancellationToken = default)
+    {
+        var assets = await GetAllAssetsAsync(cancellationToken);
+        return new AssetStats(
+            assets.Count,
+            assets.Count(a => a.MediaType == MediaType.Image),
+            assets.Count(a => a.MediaType == MediaType.Pdf),
+            assets.Count(a => a.MediaType == MediaType.Video),
+            assets.Count(a => a.MediaType == MediaType.Document));
+    }
+
     Task SaveAssetWithChunksAsync(MediaAsset asset, IEnumerable<MediaChunk> chunks, CancellationToken cancellationToken = default);
     Task DeleteAssetAsync(Guid assetId, CancellationToken cancellationToken = default);
 

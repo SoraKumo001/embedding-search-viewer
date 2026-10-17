@@ -187,6 +187,42 @@
   <data name="Library.Button09.Content" xml:space="preserve">
     <value>すべて対象に戻す</value>
   </data>
+  <data name="Library.Button10.Content" xml:space="preserve">
+    <value>エクスプローラーで開く</value>
+  </data>
+  <data name="Library.Button10.ToolTip" xml:space="preserve">
+    <value>ファイルを選択した状態で、エクスプローラーを開きます</value>
+  </data>
+  <data name="Library.TextBlock19.Text" xml:space="preserve">
+    <value>インデックスに入れるファイルの種類（変更は、次回のインデックス作成から有効です。すでに入っているファイルは、そのまま残ります）</value>
+  </data>
+  <data name="Library.CheckBox02.Content" xml:space="preserve">
+    <value>画像（JPEG / PNG / WebP / BMP / GIF / ICO / TIFF）</value>
+  </data>
+  <data name="Library.CheckBox03.Content" xml:space="preserve">
+    <value>PDF</value>
+  </data>
+  <data name="Library.CheckBox04.Content" xml:space="preserve">
+    <value>動画（mp4 / mkv / webm / mov / avi / wmv / flv / m4v / ts / mpg / 3gp ほか）</value>
+  </data>
+  <data name="Library.CheckBox05.Content" xml:space="preserve">
+    <value>Office（Word / Excel / PowerPoint の文字）</value>
+  </data>
+  <data name="Search.ComboBoxItem20.Content" xml:space="preserve">
+    <value>Office 文書</value>
+  </data>
+  <data name="Library.TextBlock20.Text" xml:space="preserve">
+    <value>Office</value>
+  </data>
+  <data name="DocPreview.Slide" xml:space="preserve">
+    <value>スライド {0} / {1}</value>
+  </data>
+  <data name="DocPreview.Sheet" xml:space="preserve">
+    <value>シート {0} / {1}</value>
+  </data>
+  <data name="DocPreview.Document" xml:space="preserve">
+    <value>文書の文字（一致した部分）</value>
+  </data>
   <data name="Library.Clear.Error" xml:space="preserve">
     <value>クリア中にエラーが発生しました: {0}</value>
   </data>
@@ -314,7 +350,7 @@
     <value>メディアライブラリ管理</value>
   </data>
   <data name="Library.TextBlock02.Text" xml:space="preserve">
-    <value>PDFドキュメント、静止画、動画が存在するフォルダを追加して、EmbeddingGemma 2 によるインデックスを作成・管理します。</value>
+    <value>PDF、画像、動画、Office 文書が存在するフォルダを追加して、EmbeddingGemma 2 によるインデックスを作成・管理します。</value>
   </data>
   <data name="Library.TextBlock03.Text" xml:space="preserve">
     <value>推論エンジン (EmbeddingGemma 2)</value>

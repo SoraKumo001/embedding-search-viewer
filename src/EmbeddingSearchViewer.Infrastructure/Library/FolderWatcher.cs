@@ -98,7 +98,7 @@ public sealed class FolderWatcher : IDisposable
         var settings = _store.Load();
         if (settings.IndexModelTag == current) return true;
 
-        int assetCount = (await _repository.GetAllAssetsAsync()).Count;
+        int assetCount = (await _repository.GetAssetStatsAsync()).Total;
         return _store.CheckIndexModelCompatibility(current, assetCount, out _);
     }
 

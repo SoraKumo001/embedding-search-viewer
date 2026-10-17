@@ -8,6 +8,9 @@ public static class AtomicJsonFile
 {
     private static readonly JsonSerializerOptions DefaultOptions = new() { WriteIndented = true };
 
+    /// <summary>Called with the path and the error when a file could not be saved (the app logs it; saving stays best effort).</summary>
+    public static Action<string, Exception>? SaveFailed { get; set; }
+
     public static T Load<T>(string path, T defaultValue) where T : class?
     {
         try
@@ -39,6 +42,7 @@ public static class AtomicJsonFile
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
+            SaveFailed?.Invoke(path, ex);
             return false;
         }
     }

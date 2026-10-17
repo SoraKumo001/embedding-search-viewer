@@ -10,6 +10,12 @@ public class LibrarySettings
     public List<string> Folders { get; set; } = new();
     public bool AutoIndex { get; set; }
 
+    /// <summary>Kinds of files to put in the index. Files already indexed stay in it when a kind is switched off.</summary>
+    public bool IndexImages { get; set; } = true;
+    public bool IndexPdfs { get; set; } = true;
+    public bool IndexVideos { get; set; } = true;
+    public bool IndexDocuments { get; set; } = true;
+
     /// <summary>Length of one video segment in seconds (one frame is searched per segment). Applies to videos indexed from now on.</summary>
     public int VideoSegmentSeconds { get; set; } = 15;
 

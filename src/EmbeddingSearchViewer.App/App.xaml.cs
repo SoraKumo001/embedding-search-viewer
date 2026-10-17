@@ -5,6 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.UI.Xaml;
 using EmbeddingSearchViewer.Core.Interfaces;
 using EmbeddingSearchViewer.Core.Localization;
+using EmbeddingSearchViewer.Core.Models;
 using EmbeddingSearchViewer.Core.Services;
 using EmbeddingSearchViewer.Infrastructure.Data;
 using EmbeddingSearchViewer.Infrastructure.Ingestion;
@@ -34,6 +35,7 @@ public partial class App : Application
         InitializeComponent();
 
         CrashLog.Install();
+        EmbeddingSearchViewer.Infrastructure.Library.AtomicJsonFile.SaveFailed = (path, ex) => CrashLog.Write($"Could not save {path}", ex);
         // An error on the UI thread (for example while a progress update is drawn) is recorded and the app keeps running.
         UnhandledException += (_, e) =>
         {
@@ -69,6 +71,11 @@ public partial class App : Application
             return new IngestionPipelineWorker(repo, embeddingService, videoExtractor: videoExtractor, cacheDirectoryProvider: () => profiles.CacheDirectory,
                 videoSegmentSeconds: () => sp.GetRequiredService<LibrarySettingsStore>().Load().VideoSegmentSeconds,
                 videoAutoSegment: () => sp.GetRequiredService<LibrarySettingsStore>().Load().VideoAutoSegment,
+                mediaTypes: () =>
+                {
+                    var s = sp.GetRequiredService<LibrarySettingsStore>().Load();
+                    return new MediaTypeSelection(s.IndexImages, s.IndexPdfs, s.IndexVideos, s.IndexDocuments);
+                },
                 exclusions: sp.GetRequiredService<IndexExclusionStore>());
         });
 
