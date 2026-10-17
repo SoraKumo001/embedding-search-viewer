@@ -215,4 +215,52 @@ public class HybridSearchEngineTests
         Assert.Single(results);
         Assert.Equal(chunk.Id, results[0].Chunk.Id);
     }
+
+    [Fact]
+    public async Task SearchAsync_WhenVectorIndexReturnsNothing_FallsBackToBruteForce()
+    {
+        // Arrange: a versioned repository (so the vec-first path is attempted) whose index yields nothing.
+        var repo = new MockMediaRepository { DataVersion = 7 };
+        var embeddingService = new MockEmbeddingService();
+        var engine = new HybridSearchEngine(repo, embeddingService);
+
+        var asset1 = new MediaAsset
+        {
+            Id = Guid.NewGuid(),
+            FileName = "a.png",
+            FilePath = "C:\\test\\a.png",
+            MediaType = MediaType.Image
+        };
+        var asset2 = new MediaAsset
+        {
+            Id = Guid.NewGuid(),
+            FileName = "b.png",
+            FilePath = "C:\\test\\b.png",
+            MediaType = MediaType.Image
+        };
+        repo.Assets.Add(asset1);
+        repo.Assets.Add(asset2);
+
+        float[] v1 = new float[768];
+        v1[0] = 1.0f;
+        var chunk1 = new MediaChunk { Id = Guid.NewGuid(), AssetId = asset1.Id, Modality = ModalityType.Image, Embedding = v1 };
+
+        float[] v2 = new float[768];
+        v2[0] = 0.5f;
+        v2[1] = MathF.Sqrt(0.75f);
+        var chunk2 = new MediaChunk { Id = Guid.NewGuid(), AssetId = asset2.Id, Modality = ModalityType.Image, Embedding = v2 };
+
+        repo.Chunks.Add(chunk1);
+        repo.Chunks.Add(chunk2);
+
+        var query = new SearchQuery { QueryText = "q", MinSimilarity = 0.0f, TopK = 10, EnableFts = false };
+
+        // Act
+        var results = await engine.SearchAsync(query);
+
+        // Assert: the empty index result triggers the brute-force scan, which still finds both chunks correctly.
+        Assert.Equal(2, results.Count);
+        Assert.Equal(chunk1.Id, results[0].Chunk.Id);
+        Assert.True(results[0].SimilarityScore > results[1].SimilarityScore);
+    }
 }

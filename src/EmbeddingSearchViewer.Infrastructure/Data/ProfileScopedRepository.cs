@@ -96,5 +96,11 @@ public sealed class ProfileScopedRepository : IMediaRepository, IDisposable
     public Task<IReadOnlyList<(Guid ChunkId, float FtsRank)>> SearchFtsAsync(string keyword, int limit = 50, CancellationToken cancellationToken = default)
         => Current().SearchFtsAsync(keyword, limit, cancellationToken);
 
+    public Task<IReadOnlyList<(Guid ChunkId, float Distance)>> SearchVecAsync(float[] query, int k, CancellationToken cancellationToken = default)
+        => Current().SearchVecAsync(query, k, cancellationToken);
+
+    public Task<IReadOnlyList<(Guid ChunkId, float Distance)>> SearchVecRescoredAsync(float[] query, int k, int oversample = SqliteMediaRepository.DefaultVecOversample, CancellationToken cancellationToken = default)
+        => Current().SearchVecRescoredAsync(query, k, oversample, cancellationToken);
+
     public void Dispose() => _profiles.Changed -= OnProfilesChanged;
 }

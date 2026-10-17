@@ -92,6 +92,7 @@ public class HybridSearchEngine
         // 2. Fetch candidates (cached until the indexed data changes)
         var snapshot = await GetSnapshotAsync(cancellationToken);
         var assets = snapshot.Assets;
+        var chunkMap = snapshot.ChunkMap;
         var allChunks = snapshot.Chunks
             .Where(c => assets.TryGetValue(c.AssetId, out var a) && PassesFilters(query, a))
             .ToList();
@@ -100,27 +101,38 @@ public class HybridSearchEngine
             return Array.Empty<SearchResultItem>();
         }
 
-        // 3. Vector Similarity using TensorPrimitives.CosineSimilarity
+        // 3. Vector Similarity using TensorPrimitives.CosineSimilarity.
+        //    When the repository has a vector index (sqlite-vec), the nearest neighbours it returns become the
+        //    candidates. Phase 2 uses a binary-quantization coarse pass rescored with exact cosine; when that is not
+        //    available it falls back to the Phase-1 flat KNN and, last, to the brute-force scan. The exact cosine score
+        //    is always computed here on the returned hits only, so the scores, ranks, fusion and de-duplication stay the
+        //    same as the brute-force path. Any vec miss/error falls back to a scan.
         var allVectorScores = new Dictionary<Guid, float>();
         var vectorScores = new Dictionary<Guid, float>();
         if (queryEmbedding != null && queryEmbedding.Length > 0)
         {
-            ReadOnlySpan<float> qSpan = queryEmbedding;
-            foreach (var chunk in allChunks)
+            bool fromVec = await TryFillVectorScoresFromVecAsync(
+                query, queryEmbedding, chunkMap, assets, allVectorScores, vectorScores, cancellationToken);
+
+            if (!fromVec)
             {
-                if (chunk.Embedding.Length == 0) continue;
-
-                // If dimensions match, compute cosine similarity directly
-                // (or slice if query / target are MRL truncated)
-                int minDim = Math.Min(qSpan.Length, chunk.Embedding.Length);
-                var subQ = qSpan[..minDim];
-                var subChunk = chunk.Embedding.AsSpan()[..minDim];
-
-                float sim = TensorPrimitives.CosineSimilarity(subQ, subChunk);
-                allVectorScores[chunk.Id] = sim;
-                if (sim >= query.MinSimilarity)
+                ReadOnlySpan<float> qSpan = queryEmbedding;
+                foreach (var chunk in allChunks)
                 {
-                    vectorScores[chunk.Id] = sim;
+                    if (chunk.Embedding.Length == 0) continue;
+
+                    // If dimensions match, compute cosine similarity directly
+                    // (or slice if query / target are MRL truncated)
+                    int minDim = Math.Min(qSpan.Length, chunk.Embedding.Length);
+                    var subQ = qSpan[..minDim];
+                    var subChunk = chunk.Embedding.AsSpan()[..minDim];
+
+                    float sim = TensorPrimitives.CosineSimilarity(subQ, subChunk);
+                    allVectorScores[chunk.Id] = sim;
+                    if (sim >= query.MinSimilarity)
+                    {
+                        vectorScores[chunk.Id] = sim;
+                    }
                 }
             }
 
@@ -147,7 +159,6 @@ public class HybridSearchEngine
         }
 
         // 5. Fusion / Ranking (Reciprocal Rank Fusion or Normalized Weighted Sum)
-        var chunkMap = snapshot.ChunkMap;
         var targetChunkIds = vectorScores.Keys.Union(ftsScores.Keys).ToList();
 
         // Equal scores (e.g. identical images) are ordered by path so the ranking does not depend on storage order.
@@ -203,6 +214,71 @@ public class HybridSearchEngine
             .Take(query.TopK)
             .ToList();
     }
+
+    /// <summary>
+    /// Fills <paramref name="allVectorScores"/>/<paramref name="vectorScores"/> from the repository's vector index,
+    /// preferring the binary-quantization rescored KNN (Phase 2) and falling back to the flat KNN (Phase 1). The exact
+    /// cosine score is always recomputed here on the returned hits, so the scores, ranks, fusion and de-duplication stay
+    /// identical whichever index path produced the candidates. Returns false when the index is unusable (an unversioned
+    /// repository, no index, no usable hit, or any error) so the caller brute-forces instead.
+    /// </summary>
+    private async Task<bool> TryFillVectorScoresFromVecAsync(
+        SearchQuery query,
+        float[] queryEmbedding,
+        Dictionary<Guid, MediaChunk> chunkMap,
+        Dictionary<Guid, MediaAsset> assets,
+        Dictionary<Guid, float> allVectorScores,
+        Dictionary<Guid, float> vectorScores,
+        CancellationToken cancellationToken)
+    {
+        // A negative DataVersion means the repository does not track changes; it is a test double / non-indexed repo.
+        if (_repository.DataVersion < 0) return false;
+
+        try
+        {
+            // Filters (media type, metadata, single asset) cannot be pushed into the KNN, so ask for extra candidates
+            // and filter afterwards, otherwise a selective filter could empty the candidate list.
+            int k = HasSelectiveFilters(query) ? Math.Max(query.TopK * 20, query.TopK) : query.TopK;
+
+            // Phase 2 (binary-quantization coarse pass rescored exactly) first; if the repository has no rescored index
+            // (default implementation / older schema) or it yields nothing, fall back to the Phase-1 flat KNN.
+            var hits = await _repository.SearchVecRescoredAsync(queryEmbedding, k, cancellationToken: cancellationToken);
+            if (hits.Count == 0)
+            {
+                hits = await _repository.SearchVecAsync(queryEmbedding, k, cancellationToken);
+            }
+            if (hits.Count == 0) return false;
+
+            ReadOnlySpan<float> qSpan = queryEmbedding;
+            foreach (var (chunkId, _) in hits)
+            {
+                if (!chunkMap.TryGetValue(chunkId, out var chunk)) continue;
+                if (!assets.TryGetValue(chunk.AssetId, out var asset)) continue;
+                if (!PassesFilters(query, asset)) continue;
+                if (chunk.Embedding.Length == 0) continue;
+
+                int minDim = Math.Min(qSpan.Length, chunk.Embedding.Length);
+                float sim = TensorPrimitives.CosineSimilarity(qSpan[..minDim], chunk.Embedding.AsSpan()[..minDim]);
+                allVectorScores[chunk.Id] = sim;
+                if (sim >= query.MinSimilarity)
+                {
+                    vectorScores[chunk.Id] = sim;
+                }
+            }
+
+            // If every KNN hit was filtered out, report failure so the caller scans the filtered candidate list instead.
+            return allVectorScores.Count > 0;
+        }
+        catch
+        {
+            // A vector-index failure must never break search.
+            return false;
+        }
+    }
+
+    /// <summary>True when the query restricts candidates by media type, a single asset or metadata.</summary>
+    private static bool HasSelectiveFilters(SearchQuery query) =>
+        query.MediaTypeFilter.HasValue || query.AssetIdFilter.HasValue || query.HasMetadataFilters;
 
     /// <summary>
     /// Replaces the scenes of each video by one result at the rank of its best scene; that result lists all the matching

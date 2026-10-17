@@ -62,4 +62,22 @@ public interface IMediaRepository
 
     Task<IReadOnlyList<MediaChunk>> GetAllChunksWithEmbeddingsAsync(MediaType? mediaTypeFilter = null, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<(Guid ChunkId, float FtsRank)>> SearchFtsAsync(string keyword, int limit = 50, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Nearest neighbours by embedding distance, best first, through the repository's vector index when it has one.
+    /// The default implementation has no index and returns nothing, so search falls back to a brute-force scan; this
+    /// keeps existing implementations working unchanged.
+    /// </summary>
+    Task<IReadOnlyList<(Guid ChunkId, float Distance)>> SearchVecAsync(float[] query, int k, CancellationToken cancellationToken = default)
+        => Task.FromResult<IReadOnlyList<(Guid ChunkId, float Distance)>>(Array.Empty<(Guid, float)>());
+
+    /// <summary>
+    /// Nearest neighbours by embedding distance, best first, through a binary-quantization coarse pass that is then
+    /// rescored with exact cosine distance (Phase 2). <paramref name="oversample"/> is how many coarse candidates are
+    /// rescored per requested neighbour. The default implementation has no such index and returns nothing, so search
+    /// falls back to the flat <see cref="SearchVecAsync"/> KNN and, last, to a brute-force scan; this keeps existing
+    /// implementations working unchanged.
+    /// </summary>
+    Task<IReadOnlyList<(Guid ChunkId, float Distance)>> SearchVecRescoredAsync(float[] query, int k, int oversample = 8, CancellationToken cancellationToken = default)
+        => Task.FromResult<IReadOnlyList<(Guid ChunkId, float Distance)>>(Array.Empty<(Guid, float)>());
 }

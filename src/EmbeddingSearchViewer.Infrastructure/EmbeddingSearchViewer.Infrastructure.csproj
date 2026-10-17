@@ -9,6 +9,13 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!--
+      sqlite-vec: the vec0 virtual table + KNN used by SqliteMediaRepository. The package ships vec0.dll only under
+      runtimes/win-x64/native (x64), so this index is x64-only; the app and the release pipeline build/publish win-x64.
+      The package's own .targets fails an ARM64/x86 executable build rather than shipping a broken index, and search
+      falls back to the brute-force scan whenever the extension is absent.
+    -->
+    <PackageReference Include="HiraokaHyperTools.sqlite-vec" Version="0.1.9" />
     <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.13" />
     <PackageReference Include="Microsoft.ML.OnnxRuntime.DirectML" Version="1.24.4" />
     <PackageReference Include="PdfPig" Version="0.1.16" />
