@@ -20,7 +20,8 @@ public sealed partial class MainWindow : Window
     {
         InitializeComponent();
         Title = Loc.T("App.Title");
-        AppWindow.SetIcon("Assets/AppIcon.ico");
+        var iconPath = System.IO.Path.Combine(System.AppContext.BaseDirectory, "Assets", "AppIcon.ico");
+        AppWindow.SetIcon(System.IO.File.Exists(iconPath) ? iconPath : "Assets/AppIcon.ico");
 
         // The default: the standard size, at the place Windows chooses.
         AppWindow.Resize(DefaultSize);
