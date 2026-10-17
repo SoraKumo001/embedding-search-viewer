@@ -444,3 +444,38 @@ GPU が使えない（作成に失敗、実行中に失敗）ときは、自動�
 - [README.md](../README.md): 利用者向けの説明
 - 技術記事: `embedding-gemma-2-onnx.md`（Zenn。前処理の移植、DirectML のための修正、計測）
 - サードパーティのライセンス（`THIRD-PARTY-NOTICES.md`）: リリースの zip に入る。ワークフローが自動で作るので、リポジトリには置かない（7 章）
+
+---
+
+## 14. 大規模ベクトル検索のベンチマーク（120k × 768）
+
+Phase 1（`float[768]` の完全 KNN）と Phase 2（二値量子化の粗いパス + 正確な再スコア）が、120k × 768 の規模でどのくらい速く・正確かを、実際のインデックスを使わずに確かめるベンチマークです。合成したクラスタ化済みのベクトルを一時 DB に投入して測ります。
+
+**既定のテスト実行では動きません**（`dotnet test` を速いまま保つため）。環境変数で明示的に有効にします。
+
+```powershell
+$env:ESV_RUN_BENCHMARKS = "1"
+dotnet test tests/EmbeddingSearchViewer.Tests/EmbeddingSearchViewer.Tests.csproj -c Release `
+  --filter "FullyQualifiedName~LargeScaleVecBenchmark"
+```
+
+- 実装: `tests/EmbeddingSearchViewer.Tests/Benchmarks/LargeScaleVecBenchmarkTests.cs`（`[BenchmarkFact]`。既定では `Skip`）。
+- 内容: 120k 本の 768 次元・L2 正規化ベクトル（クラスタ化、固定シード）を `SqliteMediaRepository` で一時 DB に投入し、`EnsureVecBackfillAsync` のあとに、20 クエリの p50 を測ります。
+  - (a) 総当たりの `HybridSearchEngine`
+  - (b) `SearchVecAsync`（Phase 1 の完全 KNN）
+  - (c) `SearchVecRescoredAsync`（Phase 2、oversample = 8）
+  - (b)/(c) の recall@10 を、厳密な総当たり (a) と比較して表示します。
+- 結果はコンソールと `%TEMP%\esv_benchmark_120k.txt` に出ます。挿入に約 1 分かかります（合計 1.5 分程度）。
+- クラスタの深さは、候補数（`k × oversample` = 80）以内に収めています。これはこの索引が対象とする範囲（`SqliteVecTests` と同じ）です。クラスタが候補数より深いと、二値量子化の性質上、recall は下がります（例: 240 クラスタ × 500 本では oversample=8 で recall@10 ≈ 0.62。oversample を上げれば回復します）。
+
+**計測値（2026-10-17、Release、この開発機）**
+
+| 経路 | p50 | recall@10 | 対 (a) |
+|---|---|---|---|
+| (a) 総当たりエンジン | 205 ms | 1.000 | 1.0x |
+| (b) flat vec KNN | 379 ms | 1.000 | 0.5x |
+| (c) rescore（oversample = 8） | 17.6 ms | 1.000 | 11.6x |
+
+- 120k × 768 では、(b) の完全 KNN は、`TensorPrimitives` で回す総当たりより遅くなります（vec0 の完全走査がボトルネック）。速度は Phase 2 の粗いパスから得られます。
+- 以前の再スコアの SQL は、正確な距離のために vec0 の表へ再結合しており、候補ごとに索引全体を走査していました（約 105 ms）。`MediaChunks`（B-tree、rowid 参照）へ結合するよう直したことで 17.6 ms になりました。
+

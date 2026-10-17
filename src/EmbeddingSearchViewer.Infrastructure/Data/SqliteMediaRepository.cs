@@ -481,6 +481,9 @@ public class SqliteMediaRepository : IMediaRepository
             byte[] queryBytes = MemoryMarshal.AsBytes(query.AsSpan()).ToArray();
 
             var hits = new List<(long RowId, float Distance)>();
+            // The exact vectors are read from MediaChunks (the source of truth, a plain B-tree rowid lookup) rather
+            // than re-reading the vec0 table: joining back into the virtual table by chunk_id makes the planner scan
+            // the whole index once per candidate, which is several times slower than the coarse pass itself.
             const string rescoreSql = """
                 WITH coarse AS (
                     SELECT chunk_id
@@ -489,9 +492,9 @@ public class SqliteMediaRepository : IMediaRepository
                     ORDER BY distance
                     LIMIT @limit
                 )
-                SELECT c.chunk_id, vec_distance_cosine(v.embedding, @q) AS distance
+                SELECT c.chunk_id, vec_distance_cosine(m.Embedding, @q) AS distance
                 FROM coarse c
-                JOIN VecMediaChunks v ON v.chunk_id = c.chunk_id
+                JOIN MediaChunks m ON m.rowid = c.chunk_id
                 ORDER BY distance
                 LIMIT @k;
                 """;
