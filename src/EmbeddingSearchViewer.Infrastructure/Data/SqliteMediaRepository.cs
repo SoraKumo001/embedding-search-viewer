@@ -42,6 +42,22 @@ public class SqliteMediaRepository : IMediaRepository, IDisposable
     /// <summary>How many coarse (binary-quantization) candidates are rescored per requested neighbour by default.</summary>
     public const int DefaultVecOversample = 8;
 
+    /// <summary>Most attempts one write transaction makes before a transient lock error is surfaced to the caller.</summary>
+    private const int MaxWriteAttempts = 5;
+
+    /// <summary>Most attempts a read makes before it gives up (reads never hold the writer gate, so fewer suffice).</summary>
+    private const int MaxReadAttempts = 3;
+
+    /// <summary>Base backoff of the retry helpers: 50/100/200/400 ms doubling per attempt, plus up to this much jitter.</summary>
+    private const int RetryBaseDelayMs = 50;
+
+    /// <summary>
+    /// Per-connection busy wait. SQLITE_BUSY is an awaited condition for this long; SQLITE_LOCKED is not (which is why
+    /// the cache mode is private, see the constructor). 15s rides out a concurrent WAL writer/checkpoint and a bulk
+    /// ingest slice without failing the statement outright.
+    /// </summary>
+    private const int BusyTimeoutMs = 15000;
+
     private readonly string _connectionString;
     private readonly string _dbPath;
     private long _dataVersion;
@@ -97,7 +113,12 @@ public class SqliteMediaRepository : IMediaRepository, IDisposable
         {
             DataSource = _dbPath,
             Mode = SqliteOpenMode.ReadWriteCreate,
-            Cache = SqliteCacheMode.Shared
+            // Private cache (the provider default) is deliberate and must not become Shared: shared-cache mode makes
+            // SQLite take table-level locks and return SQLITE_LOCKED (6) on contention ("database table is locked"),
+            // which busy_timeout does NOT wait on. With the default private cache, WAL still gives us the one-writer
+            // plus concurrent-readers model we want, and contention surfaces as a plain SQLITE_BUSY (5) that
+            // busy_timeout does wait out.
+            Cache = SqliteCacheMode.Private
         }.ToString();
     }
 
@@ -197,6 +218,63 @@ public class SqliteMediaRepository : IMediaRepository, IDisposable
         return await cmd.ExecuteNonQueryAsync(cancellationToken);
     }
 
+    /// <summary>
+    /// True for the transient lock-contention errors a short backoff can clear: SQLITE_BUSY (5, "database is locked")
+    /// and SQLITE_LOCKED (6, "database table is locked"). busy_timeout waits out a plain BUSY but not LOCKED, so both
+    /// are retried explicitly here.
+    /// </summary>
+    private static bool IsTransientLock(SqliteException ex) => ex.SqliteErrorCode is 5 or 6;
+
+    /// <summary>Exponential backoff (50/100/200/400 ms) plus up to one base delay of jitter, to de-sync retriers.</summary>
+    private static int RetryDelayMs(int attempt) =>
+        (RetryBaseDelayMs << (attempt - 1)) + Random.Shared.Next(0, RetryBaseDelayMs);
+
+    /// <summary>
+    /// Runs one transaction attempt, retrying transient lock contention (SQLITE_BUSY/SQLITE_LOCKED) with exponential
+    /// backoff. The caller's delegate must create, commit and dispose its own transaction so every attempt starts from
+    /// a clean one. Cancellation and every non-transient failure propagate unchanged; the writer connection is reset by
+    /// the caller on such a failure, not here, so a retry deliberately reuses it.
+    /// </summary>
+    private static async Task<T> ExecuteWithRetryAsync<T>(Func<Task<T>> attempt, CancellationToken cancellationToken)
+    {
+        for (int i = 1; ; i++)
+        {
+            try
+            {
+                return await attempt();
+            }
+            catch (SqliteException ex) when (IsTransientLock(ex) && i < MaxWriteAttempts)
+            {
+                await Task.Delay(RetryDelayMs(i), cancellationToken);
+            }
+        }
+    }
+
+    /// <summary>Void overload of <see cref="ExecuteWithRetryAsync{T}"/>.</summary>
+    private static Task ExecuteWithRetryAsync(Func<Task> attempt, CancellationToken cancellationToken) =>
+        ExecuteWithRetryAsync(async () => { await attempt(); return true; }, cancellationToken);
+
+    /// <summary>
+    /// Opens its own connection and runs a read, retrying transient lock contention on a fresh connection (a new one
+    /// each attempt, so no locked state is inherited). The delegate must not depend on state from a previous attempt,
+    /// as a retry re-runs it from scratch. Signatures and fallbacks of the read callers are unchanged.
+    /// </summary>
+    private async Task<T> ExecuteReadWithRetryAsync<T>(Func<SqliteConnection, Task<T>> read, CancellationToken cancellationToken)
+    {
+        for (int i = 1; ; i++)
+        {
+            await using var conn = await OpenConnectionAsync(cancellationToken);
+            try
+            {
+                return await read(conn);
+            }
+            catch (SqliteException ex) when (IsTransientLock(ex) && i < MaxReadAttempts)
+            {
+                await Task.Delay(RetryDelayMs(i), cancellationToken);
+            }
+        }
+    }
+
     public void Dispose()
     {
         if (_disposed) return;
@@ -226,8 +304,11 @@ public class SqliteMediaRepository : IMediaRepository, IDisposable
             await conn.OpenAsync(cancellationToken);
 
             // busy_timeout is a per-connection setting and defaults to 0, so a writer that finds the database locked
-            // fails immediately instead of waiting. 5s is enough to ride out a concurrent WAL writer/checkpoint.
-            await using (var busyTimeout = new SqliteCommand("PRAGMA busy_timeout = 5000;", conn))
+            // fails immediately instead of waiting. 15s is enough to ride out a concurrent WAL writer/checkpoint and a
+            // bulk-ingest write slice. It only covers SQLITE_BUSY; SQLITE_LOCKED (a shared-cache lock) is not awaited
+            // by SQLite at all, so the cache mode is Private and the write paths retry LOCKED explicitly (see
+            // ExecuteWithRetryAsync).
+            await using (var busyTimeout = new SqliteCommand($"PRAGMA busy_timeout = {BusyTimeoutMs};", conn))
             {
                 await busyTimeout.ExecuteNonQueryAsync(cancellationToken);
             }
@@ -733,30 +814,41 @@ public class SqliteMediaRepository : IMediaRepository, IDisposable
 
         try
         {
-            await using var conn = await OpenConnectionAsync(cancellationToken);
-
             // sqlite-vec wants the query as a little-endian float32 blob (the native layout on x64).
             byte[] queryBytes = MemoryMarshal.AsBytes(query.AsSpan()).ToArray();
 
-            var hits = new List<(long RowId, float Distance)>();
-            const string knnSql = """
-                SELECT chunk_id, distance
-                FROM VecMediaChunks
-                WHERE embedding MATCH @q AND k = @k
-                ORDER BY distance;
-                """;
-            await using (var cmd = new SqliteCommand(knnSql, conn))
+            for (int attempt = 1; ; attempt++)
             {
-                cmd.Parameters.AddWithValue("@q", queryBytes);
-                cmd.Parameters.AddWithValue("@k", k);
-                await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
-                while (await reader.ReadAsync(cancellationToken))
+                await using var conn = await OpenConnectionAsync(cancellationToken);
+                try
                 {
-                    hits.Add((reader.GetInt64(0), (float)reader.GetDouble(1)));
+                    var hits = new List<(long RowId, float Distance)>();
+                    const string knnSql = """
+                        SELECT chunk_id, distance
+                        FROM VecMediaChunks
+                        WHERE embedding MATCH @q AND k = @k
+                        ORDER BY distance;
+                        """;
+                    await using (var cmd = new SqliteCommand(knnSql, conn))
+                    {
+                        cmd.Parameters.AddWithValue("@q", queryBytes);
+                        cmd.Parameters.AddWithValue("@k", k);
+                        await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
+                        while (await reader.ReadAsync(cancellationToken))
+                        {
+                            hits.Add((reader.GetInt64(0), (float)reader.GetDouble(1)));
+                        }
+                    }
+
+                    return await MapHitsToChunkIdsAsync(conn, hits, cancellationToken);
+                }
+                catch (SqliteException ex) when (IsTransientLock(ex) && attempt < MaxReadAttempts)
+                {
+                    // A transient lock is retried on a fresh connection; the final failure falls through to the
+                    // empty-result fallback below, which is unchanged.
+                    await Task.Delay(RetryDelayMs(attempt), cancellationToken);
                 }
             }
-
-            return await MapHitsToChunkIdsAsync(conn, hits, cancellationToken);
         }
         catch
         {
@@ -788,41 +880,52 @@ public class SqliteMediaRepository : IMediaRepository, IDisposable
 
         try
         {
-            await using var conn = await OpenConnectionAsync(cancellationToken);
-
             byte[] queryBytes = MemoryMarshal.AsBytes(query.AsSpan()).ToArray();
 
-            var hits = new List<(long RowId, float Distance)>();
-            // The exact vectors are read from MediaChunks (the source of truth, a plain B-tree rowid lookup) rather
-            // than re-reading the vec0 table: joining back into the virtual table by chunk_id makes the planner scan
-            // the whole index once per candidate, which is several times slower than the coarse pass itself.
-            const string rescoreSql = """
-                WITH coarse AS (
-                    SELECT chunk_id
-                    FROM VecMediaChunks
-                    WHERE embedding_coarse MATCH vec_quantize_binary(@q)
-                    ORDER BY distance
-                    LIMIT @limit
-                )
-                SELECT c.chunk_id, vec_distance_cosine(m.Embedding, @q) AS distance
-                FROM coarse c
-                JOIN MediaChunks m ON m.rowid = c.chunk_id
-                ORDER BY distance
-                LIMIT @k;
-                """;
-            await using (var cmd = new SqliteCommand(rescoreSql, conn))
+            for (int attempt = 1; ; attempt++)
             {
-                cmd.Parameters.AddWithValue("@q", queryBytes);
-                cmd.Parameters.AddWithValue("@limit", candidateLimit);
-                cmd.Parameters.AddWithValue("@k", k);
-                await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
-                while (await reader.ReadAsync(cancellationToken))
+                await using var conn = await OpenConnectionAsync(cancellationToken);
+                try
                 {
-                    hits.Add((reader.GetInt64(0), (float)reader.GetDouble(1)));
+                    var hits = new List<(long RowId, float Distance)>();
+                    // The exact vectors are read from MediaChunks (the source of truth, a plain B-tree rowid lookup) rather
+                    // than re-reading the vec0 table: joining back into the virtual table by chunk_id makes the planner scan
+                    // the whole index once per candidate, which is several times slower than the coarse pass itself.
+                    const string rescoreSql = """
+                        WITH coarse AS (
+                            SELECT chunk_id
+                            FROM VecMediaChunks
+                            WHERE embedding_coarse MATCH vec_quantize_binary(@q)
+                            ORDER BY distance
+                            LIMIT @limit
+                        )
+                        SELECT c.chunk_id, vec_distance_cosine(m.Embedding, @q) AS distance
+                        FROM coarse c
+                        JOIN MediaChunks m ON m.rowid = c.chunk_id
+                        ORDER BY distance
+                        LIMIT @k;
+                        """;
+                    await using (var cmd = new SqliteCommand(rescoreSql, conn))
+                    {
+                        cmd.Parameters.AddWithValue("@q", queryBytes);
+                        cmd.Parameters.AddWithValue("@limit", candidateLimit);
+                        cmd.Parameters.AddWithValue("@k", k);
+                        await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
+                        while (await reader.ReadAsync(cancellationToken))
+                        {
+                            hits.Add((reader.GetInt64(0), (float)reader.GetDouble(1)));
+                        }
+                    }
+
+                    return await MapHitsToChunkIdsAsync(conn, hits, cancellationToken);
+                }
+                catch (SqliteException ex) when (IsTransientLock(ex) && attempt < MaxReadAttempts)
+                {
+                    // A transient lock is retried on a fresh connection; the final failure falls through to the
+                    // empty-result fallback below, which is unchanged.
+                    await Task.Delay(RetryDelayMs(attempt), cancellationToken);
                 }
             }
-
-            return await MapHitsToChunkIdsAsync(conn, hits, cancellationToken);
         }
         catch
         {
@@ -895,20 +998,21 @@ public class SqliteMediaRepository : IMediaRepository, IDisposable
         return null;
     }
 
-    public async Task<IReadOnlyList<MediaAsset>> GetAllAssetsAsync(CancellationToken cancellationToken = default)
+    public Task<IReadOnlyList<MediaAsset>> GetAllAssetsAsync(CancellationToken cancellationToken = default)
     {
-        await using var conn = await OpenConnectionAsync(cancellationToken);
-
-        const string sql = "SELECT Id, FilePath, FileName, MediaType, FileSizeBytes, FileHash, LastModifiedUtc, ThumbnailPath, DurationOrPages, IndexedAtUtc FROM MediaAssets;";
-        await using var cmd = new SqliteCommand(sql, conn);
-        await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
-
-        var list = new List<MediaAsset>();
-        while (await reader.ReadAsync(cancellationToken))
+        return ExecuteReadWithRetryAsync<IReadOnlyList<MediaAsset>>(async conn =>
         {
-            list.Add(ReadAsset(reader));
-        }
-        return list;
+            const string sql = "SELECT Id, FilePath, FileName, MediaType, FileSizeBytes, FileHash, LastModifiedUtc, ThumbnailPath, DurationOrPages, IndexedAtUtc FROM MediaAssets;";
+            await using var cmd = new SqliteCommand(sql, conn);
+            await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
+
+            var list = new List<MediaAsset>();
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                list.Add(ReadAsset(reader));
+            }
+            return list;
+        }, cancellationToken);
     }
 
     public async Task<IReadOnlyDictionary<string, string>> GetAssetHashesAsync(CancellationToken cancellationToken = default)
@@ -969,16 +1073,19 @@ public class SqliteMediaRepository : IMediaRepository, IDisposable
             var conn = await EnsureWriteConnectionAsync(cancellationToken);
             try
             {
-                var tx = conn.BeginTransaction();
-                try
+                await ExecuteWithRetryAsync(async () =>
                 {
-                    await InsertAssetCoreAsync(tx, asset, list, cancellationToken);
-                    await tx.CommitAsync(cancellationToken);
-                }
-                finally
-                {
-                    await tx.DisposeAsync();
-                }
+                    var tx = conn.BeginTransaction();
+                    try
+                    {
+                        await InsertAssetCoreAsync(tx, asset, list, cancellationToken);
+                        await tx.CommitAsync(cancellationToken);
+                    }
+                    finally
+                    {
+                        await tx.DisposeAsync();
+                    }
+                }, cancellationToken);
             }
             catch
             {
@@ -1033,38 +1140,50 @@ public class SqliteMediaRepository : IMediaRepository, IDisposable
             {
                 var conn = await EnsureWriteConnectionAsync(cancellationToken);
                 bool changed = false;
+                IReadOnlyList<AssetSaveFailure> txFailures;
                 try
                 {
-                    var tx = conn.BeginTransaction();
-                    try
+                    txFailures = await ExecuteWithRetryAsync(async () =>
                     {
-                        for (int i = start; i < index; i++)
+                        // Failures are collected per attempt so a transient-lock retry never double-reports them (only
+                        // the attempt that commits contributes). Per-asset isolation is unchanged: a bad asset is
+                        // rolled back to its SAVEPOINT and reported, while a whole-transaction lock error is retried
+                        // at this level instead of being turned into a per-asset failure.
+                        var attemptFailures = new List<AssetSaveFailure>();
+                        var tx = conn.BeginTransaction();
+                        try
                         {
-                            cancellationToken.ThrowIfCancellationRequested();
-                            var item = items[i];
-                            var chunks = item.Chunks ?? Array.Empty<MediaChunk>();
+                            bool attemptChanged = false;
+                            for (int i = start; i < index; i++)
+                            {
+                                cancellationToken.ThrowIfCancellationRequested();
+                                var item = items[i];
+                                var chunks = item.Chunks ?? Array.Empty<MediaChunk>();
 
-                            await RunAsync(_savepointCmd!, tx, cancellationToken);
-                            try
-                            {
-                                await InsertAssetCoreAsync(tx, item.Asset, chunks, cancellationToken);
-                                await RunAsync(_releaseCmd!, tx, cancellationToken);
-                                changed = true;
+                                await RunAsync(_savepointCmd!, tx, cancellationToken);
+                                try
+                                {
+                                    await InsertAssetCoreAsync(tx, item.Asset, chunks, cancellationToken);
+                                    await RunAsync(_releaseCmd!, tx, cancellationToken);
+                                    attemptChanged = true;
+                                }
+                                catch (Exception ex) when (ex is not OperationCanceledException)
+                                {
+                                    // Undo just this asset and carry on: a bad asset must not discard the whole bundle.
+                                    await RunAsync(_rollbackCmd!, tx, cancellationToken);
+                                    attemptFailures.Add(new AssetSaveFailure(item.Asset.Id, item.Asset.FilePath, ex.Message));
+                                }
                             }
-                            catch (Exception ex) when (ex is not OperationCanceledException)
-                            {
-                                // Undo just this asset and carry on: a bad asset must not discard the whole bundle.
-                                await RunAsync(_rollbackCmd!, tx, cancellationToken);
-                                failures.Add(new AssetSaveFailure(item.Asset.Id, item.Asset.FilePath, ex.Message));
-                            }
+
+                            await tx.CommitAsync(cancellationToken);
+                            changed = attemptChanged;
+                            return attemptFailures;
                         }
-
-                        await tx.CommitAsync(cancellationToken);
-                    }
-                    finally
-                    {
-                        await tx.DisposeAsync();
-                    }
+                        finally
+                        {
+                            await tx.DisposeAsync();
+                        }
+                    }, cancellationToken);
                 }
                 catch
                 {
@@ -1072,6 +1191,7 @@ public class SqliteMediaRepository : IMediaRepository, IDisposable
                     throw;
                 }
 
+                failures.AddRange(txFailures);
                 if (changed) Interlocked.Increment(ref _dataVersion);
             }
             finally
@@ -1367,92 +1487,103 @@ public class SqliteMediaRepository : IMediaRepository, IDisposable
         }
     }
 
-    public async Task<IReadOnlyList<MediaChunk>> GetAllChunksWithEmbeddingsAsync(MediaType? mediaTypeFilter = null, CancellationToken cancellationToken = default)
+    public Task<IReadOnlyList<MediaChunk>> GetAllChunksWithEmbeddingsAsync(MediaType? mediaTypeFilter = null, CancellationToken cancellationToken = default)
     {
-        await using var conn = await OpenConnectionAsync(cancellationToken);
-
-        string sql = """
-            SELECT c.Id, c.AssetId, c.Modality, c.ChunkIndex, c.PageNumber, c.StartTimeMs, c.EndTimeMs, c.SnippetText, c.PreviewImagePath, c.Embedding
-            FROM MediaChunks c
-            INNER JOIN MediaAssets a ON c.AssetId = a.Id
-        """;
-        if (mediaTypeFilter.HasValue)
+        return ExecuteReadWithRetryAsync<IReadOnlyList<MediaChunk>>(async conn =>
         {
-            sql += " WHERE a.MediaType = @mediaType;";
-        }
-
-        await using var cmd = new SqliteCommand(sql, conn);
-        if (mediaTypeFilter.HasValue)
-        {
-            cmd.Parameters.AddWithValue("@mediaType", mediaTypeFilter.Value.ToString());
-        }
-
-        await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
-        var list = new List<MediaChunk>();
-        while (await reader.ReadAsync(cancellationToken))
-        {
-            byte[]? blob = reader.IsDBNull(9) ? null : (byte[])reader[9];
-            var embedding = blob != null ? ConvertBytesToFloatArray(blob) : Array.Empty<float>();
-
-            list.Add(new MediaChunk
+            string sql = """
+                SELECT c.Id, c.AssetId, c.Modality, c.ChunkIndex, c.PageNumber, c.StartTimeMs, c.EndTimeMs, c.SnippetText, c.PreviewImagePath, c.Embedding
+                FROM MediaChunks c
+                INNER JOIN MediaAssets a ON c.AssetId = a.Id
+            """;
+            if (mediaTypeFilter.HasValue)
             {
-                Id = Guid.Parse(reader.GetString(0)),
-                AssetId = Guid.Parse(reader.GetString(1)),
-                Modality = Enum.Parse<ModalityType>(reader.GetString(2)),
-                ChunkIndex = reader.GetInt32(3),
-                PageNumber = reader.IsDBNull(4) ? null : reader.GetInt32(4),
-                StartTimeMs = reader.IsDBNull(5) ? null : reader.GetInt32(5),
-                EndTimeMs = reader.IsDBNull(6) ? null : reader.GetInt32(6),
-                SnippetText = reader.IsDBNull(7) ? null : reader.GetString(7),
-                PreviewImagePath = reader.IsDBNull(8) ? null : reader.GetString(8),
-                Embedding = embedding
-            });
-        }
-        return list;
+                sql += " WHERE a.MediaType = @mediaType;";
+            }
+
+            await using var cmd = new SqliteCommand(sql, conn);
+            if (mediaTypeFilter.HasValue)
+            {
+                cmd.Parameters.AddWithValue("@mediaType", mediaTypeFilter.Value.ToString());
+            }
+
+            await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
+            var list = new List<MediaChunk>();
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                byte[]? blob = reader.IsDBNull(9) ? null : (byte[])reader[9];
+                var embedding = blob != null ? ConvertBytesToFloatArray(blob) : Array.Empty<float>();
+
+                list.Add(new MediaChunk
+                {
+                    Id = Guid.Parse(reader.GetString(0)),
+                    AssetId = Guid.Parse(reader.GetString(1)),
+                    Modality = Enum.Parse<ModalityType>(reader.GetString(2)),
+                    ChunkIndex = reader.GetInt32(3),
+                    PageNumber = reader.IsDBNull(4) ? null : reader.GetInt32(4),
+                    StartTimeMs = reader.IsDBNull(5) ? null : reader.GetInt32(5),
+                    EndTimeMs = reader.IsDBNull(6) ? null : reader.GetInt32(6),
+                    SnippetText = reader.IsDBNull(7) ? null : reader.GetString(7),
+                    PreviewImagePath = reader.IsDBNull(8) ? null : reader.GetString(8),
+                    Embedding = embedding
+                });
+            }
+            return list;
+        }, cancellationToken);
     }
 
     public async Task<IReadOnlyList<(Guid ChunkId, float FtsRank)>> SearchFtsAsync(string keyword, int limit = 50, CancellationToken cancellationToken = default)
     {
-        await using var conn = await OpenConnectionAsync(cancellationToken);
-
         // Escape keyword for FTS query
         string cleanKeyword = keyword.Replace("\"", "\"\"").Trim();
         if (string.IsNullOrEmpty(cleanKeyword)) return Array.Empty<(Guid, float)>();
 
-        // The content-sync index has no stored ChunkId: its rowid is the MediaChunks rowid, so the Guid is joined back
-        // from MediaChunks. bm25/MATCH read the inverted index only, so this stays a full-text lookup plus a rowid join.
-        const string sql = """
-            SELECT m.Id, bm25(MediaChunksFts) AS Rank
-            FROM MediaChunksFts
-            JOIN MediaChunks m ON m.rowid = MediaChunksFts.rowid
-            WHERE MediaChunksFts MATCH @query
-            ORDER BY Rank
-            LIMIT @limit;
-        """;
-
-        await using var cmd = new SqliteCommand(sql, conn);
-        cmd.Parameters.AddWithValue("@query", $"\"{cleanKeyword}\"");
-        cmd.Parameters.AddWithValue("@limit", limit);
-
-        var results = new List<(Guid, float)>();
-        try
+        for (int attempt = 1; ; attempt++)
         {
-            await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
-            while (await reader.ReadAsync(cancellationToken))
+            await using var conn = await OpenConnectionAsync(cancellationToken);
+
+            // The content-sync index has no stored ChunkId: its rowid is the MediaChunks rowid, so the Guid is joined
+            // back from MediaChunks. bm25/MATCH read the inverted index only, so this stays a full-text lookup plus a
+            // rowid join.
+            const string sql = """
+                SELECT m.Id, bm25(MediaChunksFts) AS Rank
+                FROM MediaChunksFts
+                JOIN MediaChunks m ON m.rowid = MediaChunksFts.rowid
+                WHERE MediaChunksFts MATCH @query
+                ORDER BY Rank
+                LIMIT @limit;
+            """;
+
+            await using var cmd = new SqliteCommand(sql, conn);
+            cmd.Parameters.AddWithValue("@query", $"\"{cleanKeyword}\"");
+            cmd.Parameters.AddWithValue("@limit", limit);
+
+            var results = new List<(Guid, float)>();
+            try
             {
-                var id = Guid.Parse(reader.GetString(0));
-                // bm25 returns lower is better (usually negative), normalize to positive score
-                float rank = (float)reader.GetDouble(1);
-                float positiveScore = 1.0f / (1.0f + Math.Abs(rank));
-                results.Add((id, positiveScore));
+                await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
+                while (await reader.ReadAsync(cancellationToken))
+                {
+                    var id = Guid.Parse(reader.GetString(0));
+                    // bm25 returns lower is better (usually negative), normalize to positive score
+                    float rank = (float)reader.GetDouble(1);
+                    float positiveScore = 1.0f / (1.0f + Math.Abs(rank));
+                    results.Add((id, positiveScore));
+                }
             }
-        }
-        catch (SqliteException)
-        {
-            // If FTS match query syntax is invalid, ignore
-        }
+            catch (SqliteException ex) when (IsTransientLock(ex) && attempt < MaxReadAttempts)
+            {
+                // A transient lock is retried on a fresh connection (this method never throws on a lock).
+                await Task.Delay(RetryDelayMs(attempt), cancellationToken);
+                continue;
+            }
+            catch (SqliteException)
+            {
+                // If FTS match query syntax is invalid, ignore
+            }
 
-        return results;
+            return results;
+        }
     }
 
     private static MediaAsset ReadAsset(SqliteDataReader reader)

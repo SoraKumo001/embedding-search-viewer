@@ -33,15 +33,15 @@ public class HybridSearchEngine
         var cached = _snapshot;
         if (version >= 0 && cached != null && cached.Version == version) return cached;
 
-        await _loadLock.WaitAsync(cancellationToken);
+        await _loadLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
             version = _repository.DataVersion;
             cached = _snapshot;
             if (version >= 0 && cached != null && cached.Version == version) return cached;
 
-            var chunks = await _repository.GetAllChunksWithEmbeddingsAsync(null, cancellationToken);
-            var assets = (await _repository.GetAllAssetsAsync(cancellationToken)).ToDictionary(a => a.Id);
+            var chunks = await _repository.GetAllChunksWithEmbeddingsAsync(null, cancellationToken).ConfigureAwait(false);
+            var assets = (await _repository.GetAllAssetsAsync(cancellationToken).ConfigureAwait(false)).ToDictionary(a => a.Id);
             var snapshot = new Snapshot(version, chunks, chunks.ToDictionary(c => c.Id), assets, GroupIdenticalEmbeddings(chunks));
             if (version >= 0) _snapshot = snapshot;
             return snapshot;
@@ -70,7 +70,7 @@ public class HybridSearchEngine
                 query.QueryImagePath,
                 modality: EmbeddingModalities.Image,
                 truncateDim: query.TruncateDim,
-                cancellationToken: cancellationToken);
+                cancellationToken: cancellationToken).ConfigureAwait(false);
         }
         else if (!string.IsNullOrWhiteSpace(query.QueryAudioPath))
         {
@@ -78,7 +78,7 @@ public class HybridSearchEngine
                 query.QueryAudioPath,
                 modality: EmbeddingModalities.Audio,
                 truncateDim: query.TruncateDim,
-                cancellationToken: cancellationToken);
+                cancellationToken: cancellationToken).ConfigureAwait(false);
         }
         else if (!string.IsNullOrWhiteSpace(query.QueryText))
         {
@@ -86,11 +86,11 @@ public class HybridSearchEngine
                 query.QueryText,
                 modality: EmbeddingModalities.Text,
                 truncateDim: query.TruncateDim,
-                cancellationToken: cancellationToken);
+                cancellationToken: cancellationToken).ConfigureAwait(false);
         }
 
         // 2. Fetch candidates (cached until the indexed data changes)
-        var snapshot = await GetSnapshotAsync(cancellationToken);
+        var snapshot = await GetSnapshotAsync(cancellationToken).ConfigureAwait(false);
         var assets = snapshot.Assets;
         var chunkMap = snapshot.ChunkMap;
         var allChunks = snapshot.Chunks
@@ -112,7 +112,7 @@ public class HybridSearchEngine
         if (queryEmbedding != null && queryEmbedding.Length > 0)
         {
             bool fromVec = await TryFillVectorScoresFromVecAsync(
-                query, queryEmbedding, chunkMap, assets, allVectorScores, vectorScores, cancellationToken);
+                query, queryEmbedding, chunkMap, assets, allVectorScores, vectorScores, cancellationToken).ConfigureAwait(false);
 
             if (!fromVec)
             {
@@ -151,7 +151,7 @@ public class HybridSearchEngine
         var ftsScores = new Dictionary<Guid, float>();
         if (query.EnableFts && !string.IsNullOrWhiteSpace(query.QueryText))
         {
-            var ftsResults = await _repository.SearchFtsAsync(query.QueryText, limit: 100, cancellationToken);
+            var ftsResults = await _repository.SearchFtsAsync(query.QueryText, limit: 100, cancellationToken).ConfigureAwait(false);
             foreach (var (chunkId, rank) in ftsResults)
             {
                 ftsScores[chunkId] = rank;
@@ -242,10 +242,10 @@ public class HybridSearchEngine
 
             // Phase 2 (binary-quantization coarse pass rescored exactly) first; if the repository has no rescored index
             // (default implementation / older schema) or it yields nothing, fall back to the Phase-1 flat KNN.
-            var hits = await _repository.SearchVecRescoredAsync(queryEmbedding, k, cancellationToken: cancellationToken);
+            var hits = await _repository.SearchVecRescoredAsync(queryEmbedding, k, cancellationToken: cancellationToken).ConfigureAwait(false);
             if (hits.Count == 0)
             {
-                hits = await _repository.SearchVecAsync(queryEmbedding, k, cancellationToken);
+                hits = await _repository.SearchVecAsync(queryEmbedding, k, cancellationToken).ConfigureAwait(false);
             }
             if (hits.Count == 0) return false;
 

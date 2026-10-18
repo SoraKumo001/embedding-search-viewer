@@ -306,7 +306,7 @@ public partial class SearchViewModel : ObservableObject
                 TopK = 200
             };
 
-            var results = await _searchEngine.SearchAsync(query, cancellationToken);
+            var results = await Task.Run(() => _searchEngine.SearchAsync(query, cancellationToken), cancellationToken);
             if (SelectedResult?.Asset.Id != video.Asset.Id) return; // another video was selected meanwhile
 
             _sceneSource = results.ToList();
@@ -417,7 +417,7 @@ public partial class SearchViewModel : ObservableObject
                 TopK = 50
             };
 
-            var results = await _searchEngine.SearchAsync(query, cancellationToken);
+            var results = await Task.Run(() => _searchEngine.SearchAsync(query, cancellationToken), cancellationToken);
 
             if (!string.IsNullOrWhiteSpace(QueryText) || !string.IsNullOrWhiteSpace(QueryImagePath))
             {
