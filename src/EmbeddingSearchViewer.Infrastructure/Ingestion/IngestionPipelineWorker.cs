@@ -77,6 +77,12 @@ public class IngestionPipelineWorker
 
     /// <summary>Where video indexing time goes (frame extraction vs. embedding); reset at the start of each run.</summary>
     public VideoIngestStats VideoStats { get; } = new();
+
+    /// <summary>
+    /// Where the embed and save time of this run goes (the P5 input); reset at the start of each run. Two timestamps
+    /// per call, and its numbers are only ever reported next to <see cref="VideoStats"/>, never merged into it.
+    /// </summary>
+    public IngestionStageStats StageStats { get; } = new();
     private readonly Func<string> _cacheDirectoryProvider;
 
     /// <summary>The cache folder of the current profile; created on demand.</summary>
@@ -173,6 +179,7 @@ public class IngestionPipelineWorker
         _quickFiles = 0;
         _imageBatchCount = 0;
         VideoStats.Reset();
+        StageStats.Reset();
         _knownHashes = null; // what is in the index is read again for each run
         _runWatch.Restart();
         lock (_workLock)
@@ -285,6 +292,11 @@ public class IngestionPipelineWorker
     {
         var inFlightVideos = new List<Task>();
 
+        // The vec0 insert trigger is suspended for the run and the vectors are back-filled in one pass at the end:
+        // maintaining the derived index one chunk at a time during ingestion is the expensive part. The delete and
+        // full-text triggers stay in place, so removals and search stay consistent throughout.
+        try { await _repository.BeginBulkIngestAsync(cancellationToken); } catch { }
+
         while (!cancellationToken.IsCancellationRequested)
         {
             inFlightVideos.RemoveAll(t => t.IsCompleted);
@@ -386,6 +398,10 @@ public class IngestionPipelineWorker
         // Videos still running (only after a cancellation) must be done before the run counts as stopped.
         try { await Task.WhenAll(inFlightVideos); } catch { }
 
+        // Bring the suspended vec0 index up to date in one pass (a no-op when the extension is unavailable or the run
+        // was cancelled; the next start repairs it, since InitializeAsync also back-fills).
+        try { await _repository.EndBulkIngestAsync(cancellationToken); } catch { }
+
         // On normal completion _isRunning was already cleared under the lock (a new run may have started since).
         if (cancellationToken.IsCancellationRequested)
         {
@@ -394,7 +410,23 @@ public class IngestionPipelineWorker
                 _isRunning = false;
             }
         }
-        NotifyProgress(Loc.T("Ingest.AllDone"), summary: VideoStats.Summary(WallSeconds, ActiveSeconds));
+        NotifyProgress(Loc.T("Ingest.AllDone"), summary: BuildCompletionSummary());
+
+        // Same console as the [EmbeddingStats] lines: one line per run with the embed/save split, so a 10k run can be
+        // measured without a debugger (manual procedure on IngestionStageStats). The shape is language-independent.
+        if (StageStats.HasSamples) Console.WriteLine($"[StageStats] {StageStats.Describe()}");
+    }
+
+    /// <summary>
+    /// The line shown when a run ends. The video totals are exactly what they were; the embed/save probe is appended
+    /// as its own clause (and stands alone when no video was processed), so neither set of numbers changes meaning.
+    /// </summary>
+    private string BuildCompletionSummary()
+    {
+        string video = VideoStats.Summary(WallSeconds, ActiveSeconds);
+        string stages = StageStats.Summary();
+        if (stages.Length == 0) return video;
+        return video.Length == 0 ? stages : video + stages;
     }
 
     /// <summary>Whole run including enumeration and already-indexed checks (the 6th arg of Ingest.VideoStats, unchanged).</summary>
@@ -485,6 +517,37 @@ public class IngestionPipelineWorker
         }
     }
 
+    /// <summary>
+    /// Stores a batch of assets in as few transactions as possible. The repository isolates a single failing asset, so
+    /// the rest of the batch still lands; this returns which ones failed (empty when all were stored).
+    /// </summary>
+    private async Task<IReadOnlyList<AssetSaveFailure>> SaveBatchAsync(IReadOnlyList<AssetChunkBatch> items, CancellationToken cancellationToken)
+    {
+        if (items.Count == 0) return Array.Empty<AssetSaveFailure>();
+
+        await _saveLock.WaitAsync(cancellationToken);
+        try
+        {
+            var failures = await _repository.SaveAssetsWithChunksAsync(items, cancellationToken);
+
+            // Only the assets that actually landed belong in the hash cache; a failed one is retried on the next run.
+            if (_knownHashes is { IsCompletedSuccessfully: true } loaded)
+            {
+                var failedIds = failures.Count > 0 ? new HashSet<Guid>(failures.Select(f => f.AssetId)) : null;
+                foreach (var item in items)
+                {
+                    if (failedIds != null && failedIds.Contains(item.Asset.Id)) continue;
+                    loaded.Result[item.Asset.FilePath] = item.Asset.FileHash;
+                }
+            }
+            return failures;
+        }
+        finally
+        {
+            _saveLock.Release();
+        }
+    }
+
     // The hash of every file that was indexed before this run (plus those saved during it), read with one query. Checking
     // each file with its own query takes minutes for a library of hundreds of thousands of files.
     private Task<ConcurrentDictionary<string, string>>? _knownHashes;
@@ -563,12 +626,26 @@ public class IngestionPipelineWorker
 
             try
             {
+                long embedStart = Stopwatch.GetTimestamp();
                 var batch = await _imageIngestor.IngestBatchWithSkipsAsync(toProcess, _cacheDirectory, cancellationToken: cancellationToken);
-                foreach (var (asset, chunks) in batch.Items)
+                StageStats.AddEmbed(Stopwatch.GetTimestamp() - embedStart, batch.Items.Count);
+
+                // Save the whole batch in as few transactions as possible; one failing asset is isolated by the
+                // repository, so its neighbours still land.
+                var items = batch.Items.Select(i => new AssetChunkBatch(i.Asset, i.Chunks)).ToList();
+                long saveStart = Stopwatch.GetTimestamp();
+                var failures = await SaveBatchAsync(items, cancellationToken);
+                StageStats.AddSave(Stopwatch.GetTimestamp() - saveStart, items.Count);
+                Dictionary<Guid, string>? failed = null;
+                foreach (var f in failures) (failed ??= new())[f.AssetId] = f.Error;
+
+                foreach (var (asset, _) in batch.Items)
                 {
-                    await SaveAsync(asset, chunks, cancellationToken);
                     Interlocked.Increment(ref _processedFiles);
-                    NotifyProgress(asset.FileName);
+                    NotifyProgress(asset.FileName,
+                        failed != null && failed.TryGetValue(asset.Id, out var error)
+                            ? $"Error processing {asset.FileName}: {error}"
+                            : null);
                 }
 
                 // Files that could not be read even after the retries are most likely damaged: leave them out of the
@@ -703,7 +780,9 @@ public class IngestionPipelineWorker
             return; // unreachable: unknown kinds returned above, kept so a future kind cannot silently embed nothing
         }
 
+        long saveStart = Stopwatch.GetTimestamp();
         await SaveAsync(asset, chunks, cancellationToken);
+        StageStats.AddSave(Stopwatch.GetTimestamp() - saveStart, 1); // the non-image side of the probe (video/PDF/Office)
     }
 
     /// <summary>Routine progress reports are sent at most this often (seconds); errors and the final report always are.</summary>

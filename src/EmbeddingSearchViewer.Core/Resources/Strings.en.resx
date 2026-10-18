@@ -148,6 +148,9 @@
   <data name="Ingest.VideoStats.Active" xml:space="preserve">
     <value> (of which active processing {0:F1} s)</value>
   </data>
+  <data name="Ingest.StageStats" xml:space="preserve">
+    <value> (embed {0:F1} s / save {1:F1} s, save is {2:F1}%)</value>
+  </data>
   <data name="Library.Blank.Checking" xml:space="preserve">
     <value>Looking for blank (almost single-colour) images...</value>
   </data>

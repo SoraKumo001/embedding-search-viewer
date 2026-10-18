@@ -244,8 +244,14 @@ public partial class LibraryViewModel : ObservableObject
         _worker.ProgressChanged += OnProgressChanged;
         TargetFolders.CollectionChanged += (_, _) => SyncFolderItems();
 
-        // While an index is being built, keep the statistics cards current (only when the data has changed).
-        _statsRefresher = new LibraryStatsRefresher(repository, () => OnUiThreadAsync(RefreshLibraryStatsAsync), TimeSpan.FromSeconds(3));
+        // While an index is being built, keep the statistics cards current (only when the data has changed). The refresh
+        // is the light path, and it is thinned to at most once every five seconds, so the UI does not load every indexed
+        // path and recount every folder on each tick while ingestion is writing to the database.
+        _statsRefresher = new LibraryStatsRefresher(
+            repository,
+            () => OnUiThreadAsync(() => RefreshLibraryStatsCoreAsync(full: false)),
+            TimeSpan.FromSeconds(3),
+            TimeSpan.FromSeconds(5));
     }
 
     public async Task InitializeAsync()
@@ -295,7 +301,16 @@ public partial class LibraryViewModel : ObservableObject
     }
 
     [RelayCommand]
-    public async Task RefreshLibraryStatsAsync()
+    public Task RefreshLibraryStatsAsync() => RefreshLibraryStatsCoreAsync(full: true);
+
+    /// <summary>
+    /// Loads the statistics cards. <paramref name="full"/> false is the light path used while an index is being built: it
+    /// runs only the counts query, and leaves the per-file work (reading every indexed hash, counting the files of each
+    /// folder, restoring folders) to a full refresh. That keeps the periodic UI refresh from loading every indexed path
+    /// and recounting every folder while ingestion is writing, at the cost of the cards lagging a little. Completion,
+    /// starting up and the manual actions always use the full path.
+    /// </summary>
+    private async Task RefreshLibraryStatsCoreAsync(bool full)
     {
         try
         {
@@ -308,6 +323,9 @@ public partial class LibraryViewModel : ObservableObject
             IndexedDocumentCount = stats.Documents;
             HasIndexedAssets = stats.Total > 0;
             CheckIndexModel(stats.Total);
+
+            // While indexing, stop here: the hashes, per-folder counts and folder restoration are deferred to the full refresh.
+            if (!full) return;
 
             _indexedPaths = (await _repository.GetAssetHashesAsync()).Keys.ToList();
             var folders = TargetFolders.ToList();

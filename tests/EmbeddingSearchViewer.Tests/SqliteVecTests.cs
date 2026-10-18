@@ -225,6 +225,34 @@ public sealed class SqliteVecTests : IDisposable
     }
 
     [Fact]
+    public async Task BulkIngest_SuspendsTheVecTrigger_AndBackfillsInOnePass()
+    {
+        var repo = await CreateInitializedRepoAsync();
+        Assert.True(SqliteMediaRepository.VecAvailable, "the vec0 extension did not load");
+
+        await repo.BeginBulkIngestAsync();
+
+        // While the insert trigger is suspended, chunks land but the derived index does not grow.
+        var seeded = await SeedAsync(repo, 40);
+        Assert.Empty(await repo.SearchVecAsync(QueryVector(), 10));
+        // The full-text triggers are deliberately left in place, so search stays consistent throughout.
+        Assert.NotEmpty(await repo.SearchFtsAsync("v0"));
+
+        await repo.EndBulkIngestAsync();
+
+        // One pass filled every skipped vector (a second request has nothing left to do).
+        var hits = await repo.SearchVecAsync(QueryVector(), 10);
+        Assert.Equal(seeded[0].Chunk.Id, hits[0].ChunkId);
+        Assert.Equal(0, await repo.EnsureVecBackfillAsync());
+
+        // The trigger is back: a later save is indexed immediately again.
+        var asset = new MediaAsset { FileName = "after.png", FilePath = @"C:\vec\after.png", MediaType = MediaType.Image, LastModifiedUtc = DateTime.UtcNow };
+        var chunk = new MediaChunk { AssetId = asset.Id, Modality = ModalityType.Image, ChunkIndex = 0, Embedding = AngleVector(0.005f) };
+        await repo.SaveAssetWithChunksAsync(asset, new[] { chunk });
+        Assert.Contains(chunk.Id, (await repo.SearchVecAsync(QueryVector(), 5)).Select(h => h.ChunkId));
+    }
+
+    [Fact]
     public async Task HybridEngine_VecFirst_RespectsMediaTypeFilterWithOversampling()
     {
         var repo = await CreateInitializedRepoAsync();

@@ -49,15 +49,19 @@ public sealed class ProfileScopedRepository : IMediaRepository, IDisposable
 
     private void OnProfilesChanged(object? sender, EventArgs e)
     {
+        SqliteMediaRepository? previous;
         lock (_lock)
         {
             if (string.Equals(_innerPath, _profiles.DatabasePath, StringComparison.OrdinalIgnoreCase)) return; // a rename keeps the same folder
 
+            previous = _inner;
             (_inner, _innerPath) = Open();
             Interlocked.Increment(ref _epoch);
         }
 
-        // Release the pooled connections of the previous database so its profile folder can be deleted.
+        // Close the previous profile's writer connection (it is not pooled), then release its pooled connections so the
+        // profile folder can be deleted.
+        previous.Dispose();
         SqliteConnection.ClearAllPools();
     }
 
@@ -81,6 +85,15 @@ public sealed class ProfileScopedRepository : IMediaRepository, IDisposable
     public Task SaveAssetWithChunksAsync(MediaAsset asset, IEnumerable<MediaChunk> chunks, CancellationToken cancellationToken = default)
         => Current().SaveAssetWithChunksAsync(asset, chunks, cancellationToken);
 
+    public Task<IReadOnlyList<AssetSaveFailure>> SaveAssetsWithChunksAsync(IReadOnlyList<AssetChunkBatch> items, CancellationToken cancellationToken = default)
+        => Current().SaveAssetsWithChunksAsync(items, cancellationToken);
+
+    public Task BeginBulkIngestAsync(CancellationToken cancellationToken = default)
+        => Current().BeginBulkIngestAsync(cancellationToken);
+
+    public Task EndBulkIngestAsync(CancellationToken cancellationToken = default)
+        => Current().EndBulkIngestAsync(cancellationToken);
+
     public Task DeleteAssetAsync(Guid assetId, CancellationToken cancellationToken = default)
         => Current().DeleteAssetAsync(assetId, cancellationToken);
 
@@ -102,5 +115,9 @@ public sealed class ProfileScopedRepository : IMediaRepository, IDisposable
     public Task<IReadOnlyList<(Guid ChunkId, float Distance)>> SearchVecRescoredAsync(float[] query, int k, int oversample = SqliteMediaRepository.DefaultVecOversample, CancellationToken cancellationToken = default)
         => Current().SearchVecRescoredAsync(query, k, oversample, cancellationToken);
 
-    public void Dispose() => _profiles.Changed -= OnProfilesChanged;
+    public void Dispose()
+    {
+        _profiles.Changed -= OnProfilesChanged;
+        Current().Dispose();
+    }
 }

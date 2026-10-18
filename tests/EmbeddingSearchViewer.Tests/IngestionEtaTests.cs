@@ -66,14 +66,51 @@ public class IngestionEtaTests
         // 30 s of checking 600 files that are already indexed: no estimate, because nothing has been worked on yet.
         for (int s = 5; s <= 30; s += 5) Assert.Null(eta.Update(T0.AddSeconds(s), Progress(1000, s * 20, s * 20)));
 
-        // Then 20 files of real work in 20 s (1 per second); 380 files are left and all of them are assumed to need work
-        // at the share seen so far (20 of 620: about 3%), but the speed is the speed of the work only.
+        // Then 20 files of real work in 20 s (1 per second). The speed is the speed of the work only (1 per second), and
+        // because the last minute is all work the 380 files left are assumed to need work too: about 380 s. Reading the
+        // whole-run share instead (20 of 620: about 3%) would say about 12 s, which is the underestimate being fixed.
         TimeSpan? left = null;
         for (int s = 1; s <= 20; s++) left = eta.Update(T0.AddSeconds(30 + s), Progress(1000, 600 + s, 600));
 
         Assert.NotNull(left);
-        // 380 files x 3.2% = about 12 files of work at 1 file per second: about 12 s. Counting the checking too would give 3 s.
-        Assert.InRange(left!.Value.TotalSeconds, 8, 20);
+        Assert.InRange(left!.Value.TotalSeconds, 300, 460);
+    }
+
+    [Fact]
+    public void ResumingBehindAQuickStart_DoesNotUnderestimateTheRest()
+    {
+        var eta = new IngestionEta();
+        eta.Update(T0, Progress(2000, 0, 0));
+
+        // A resume: 600 files are already indexed and fly through in the first 30 s.
+        for (int s = 5; s <= 30; s += 5) eta.Update(T0.AddSeconds(s), Progress(2000, s * 20, s * 20));
+
+        // Then real work at 1 file per second, long enough (70 s) that the whole last minute is work.
+        TimeSpan? left = null;
+        for (int s = 1; s <= 70; s++) left = eta.Update(T0.AddSeconds(30 + s), Progress(2000, 600 + s, 600));
+
+        Assert.NotNull(left);
+        // 1330 files left, all assumed to need work at 1 per second: about 1330 s. The whole-run share (70 of 670:
+        // about 10%) would say about 133 s.
+        Assert.InRange(left!.Value.TotalSeconds, 1200, 1450);
+    }
+
+    [Fact]
+    public void AStallDoesNotDiluteTheSpeed()
+    {
+        var eta = new IngestionEta();
+        eta.Update(T0, 0, 1000);
+
+        // 2 files per second for 10 s, then a 30 s stall with nothing to report, then the same speed again.
+        for (int s = 1; s <= 10; s++) eta.Update(T0.AddSeconds(s), s * 2, 1000);
+        for (int s = 11; s <= 40; s++) eta.Update(T0.AddSeconds(s), 20, 1000);
+        TimeSpan? left = null;
+        for (int s = 1; s <= 10; s++) left = eta.Update(T0.AddSeconds(40 + s), 20 + s * 2, 1000);
+
+        Assert.NotNull(left);
+        // The 30 s without work must not count: 40 files in 20 s of work is 2 per second, so 960 left is about 480 s.
+        // Counting the stall would give 0.8 per second, or about 1200 s.
+        Assert.InRange(left!.Value.TotalSeconds, 430, 530);
     }
 
     [Fact]

@@ -30,6 +30,7 @@ public sealed class IngestionWorkerTests : IDisposable
     private readonly SqliteMediaRepository _repo;
     private readonly IngestionPipelineWorker _worker;
     private int _lastRunningFlag = 1;
+    private string? _lastSummary;
 
     public IngestionWorkerTests()
     {
@@ -38,7 +39,11 @@ public sealed class IngestionWorkerTests : IDisposable
         _repo = new SqliteMediaRepository(Path.Combine(_root, "test.db"));
         _repo.InitializeAsync().GetAwaiter().GetResult();
         _worker = new IngestionPipelineWorker(_repo, new StubEmbeddingService(), Path.Combine(_root, "cache"));
-        _worker.ProgressChanged += p => Volatile.Write(ref _lastRunningFlag, p.IsRunning ? 1 : 0);
+        _worker.ProgressChanged += p =>
+        {
+            Volatile.Write(ref _lastRunningFlag, p.IsRunning ? 1 : 0);
+            if (p.Summary != null) Volatile.Write(ref _lastSummary, p.Summary);
+        };
     }
 
     public void Dispose()
@@ -89,6 +94,61 @@ public sealed class IngestionWorkerTests : IDisposable
         var assets = await _repo.GetAllAssetsAsync();
 
         Assert.Equal(assets.ToDictionary(a => a.FilePath, a => a.FileHash), hashes.ToDictionary(kv => kv.Key, kv => kv.Value));
+    }
+
+    [Fact]
+    public void StageStats_KeepsEmbedAndSaveApart_AndReportsTheirShare()
+    {
+        var stats = new IngestionStageStats();
+        Assert.False(stats.HasSamples);
+        Assert.Equal(string.Empty, stats.Summary()); // nothing timed: contributes nothing to the run summary
+
+        long quarter = System.Diagnostics.Stopwatch.Frequency / 4; // a quarter second, as the worker would measure it
+        stats.AddEmbed(3 * quarter, 16);
+        stats.AddSave(quarter, 16);
+
+        Assert.True(stats.HasSamples);
+        Assert.Equal(0.75, stats.EmbedSeconds, 3);
+        Assert.Equal(0.25, stats.SaveSeconds, 3);
+        Assert.Equal(25.0, stats.SaveSharePercent, 3);
+
+        // the totals and the ratio land in the screen line (its wording comes from the resources) ...
+        string summary = stats.Summary();
+        Assert.Contains("0.8", summary);
+        Assert.Contains("0.2", summary);
+        Assert.Contains("25.0", summary);
+        // ... and in the language-independent console line (the shape the 10k manual run is read from)
+        Assert.Contains("embed 0.8s", stats.Describe());
+        Assert.Contains("save 0.2s", stats.Describe());
+        Assert.Contains("save share 25.0%", stats.Describe());
+
+        stats.Reset();
+        Assert.False(stats.HasSamples);
+        Assert.Equal(string.Empty, stats.Summary());
+        Assert.Contains("no samples", stats.Describe());
+    }
+
+    [Fact]
+    public async Task Worker_ReportsEmbedAndSaveProbe_InTheCompletionSummary()
+    {
+        CreateImage("a.png");
+        CreateImage("b.png");
+
+        await _worker.QueueDirectoryAsync(_media);
+        Assert.True(await WaitUntilAsync(
+            async () => (await _repo.GetAllAssetsAsync()).Count == 2 && Volatile.Read(ref _lastSummary) is not null, 10000),
+            "the run should finish and report its summary");
+
+        // the probe saw the image batch (embed) and the save it fed, without changing any other counter
+        Assert.True(_worker.StageStats.HasSamples);
+        Assert.True(_worker.StageStats.EmbedCalls >= 1);
+        Assert.True(_worker.StageStats.SaveCalls >= 1);
+        Assert.True(_worker.StageStats.EmbedSeconds >= 0);
+        Assert.True(_worker.StageStats.SaveSeconds >= 0);
+
+        // it is appended to the run summary, and the video line of this run (no video) is unaffected by it
+        Assert.Contains(_worker.StageStats.Summary(), Volatile.Read(ref _lastSummary)!);
+        Assert.Equal(string.Empty, _worker.VideoStats.Summary(1.0));
     }
 
     [Fact]

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Data;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
@@ -11,7 +12,7 @@ using Microsoft.Data.Sqlite;
 
 namespace EmbeddingSearchViewer.Infrastructure.Data;
 
-public class SqliteMediaRepository : IMediaRepository
+public class SqliteMediaRepository : IMediaRepository, IDisposable
 {
     /// <summary>
     /// Embedding width of the model (768 for the bundled Gemma/CLIP image-text encoder). The sqlite-vec table is a
@@ -23,6 +24,21 @@ public class SqliteMediaRepository : IMediaRepository
     /// <summary>How many chunk vectors are inserted in one transaction while backfilling.</summary>
     private const int VecBackfillBatchSize = 5000;
 
+    /// <summary>Upper bound on assets in one bulk-save transaction, so a transaction never grows without limit.</summary>
+    private const int MaxAssetsPerTx = 150;
+
+    /// <summary>Upper bound on chunk rows in one bulk-save transaction (an asset with many chunks splits on its own).</summary>
+    private const int MaxChunksPerTx = 800;
+
+    /// <summary>The savepoint a bulk save wraps each asset in, so a bad asset rolls back only itself.</summary>
+    private const string SavepointName = "sp_asset";
+
+    /// <summary>
+    /// Upper bound on the write-ahead log: after a checkpoint the WAL is truncated back to at most this size instead of
+    /// growing without limit between checkpoints. 64 MB keeps a bulk ingest from leaving a multi-gigabyte -wal behind.
+    /// </summary>
+    private const long JournalSizeLimitBytes = 64L * 1024 * 1024;
+
     /// <summary>How many coarse (binary-quantization) candidates are rescored per requested neighbour by default.</summary>
     public const int DefaultVecOversample = 8;
 
@@ -31,6 +47,29 @@ public class SqliteMediaRepository : IMediaRepository
     private long _dataVersion;
 
     public long DataVersion => Interlocked.Read(ref _dataVersion);
+
+    // --- single reusable writer connection ---
+    // Every write goes through one connection, held open for the life of the repository, instead of opening a new
+    // connection (and re-loading the vec0 extension) per statement. _writeGate serialises writers, mirroring SQLite's
+    // own single-writer rule; the worker's _saveLock keeps saves ordered above this, so this is mostly about deletes
+    // that arrive from the folder watcher while an ingestion is running.
+    private readonly SemaphoreSlim _writeGate = new(1, 1);
+    private SqliteConnection? _writeConn;
+    private SqliteCommand? _saveDeleteCmd;
+    private SqliteCommand? _saveInsertAssetCmd;
+    private SqliteCommand? _saveInsertChunkCmd;
+    private SqliteCommand? _deleteAssetCmd;
+    private SqliteCommand? _clearCmd;
+    private SqliteCommand? _savepointCmd;
+    private SqliteCommand? _releaseCmd;
+    private SqliteCommand? _rollbackCmd;
+    private bool _disposed;
+
+    /// <summary>
+    /// Diagnostics for tests: how many transactions the most recent <see cref="SaveAssetsWithChunksAsync"/> call used.
+    /// It exists so a test can assert the run is sliced into bounded transactions without inspecting SQLite internals.
+    /// </summary>
+    internal int LastBulkSaveTransactionCount { get; private set; }
 
     // --- sqlite-vec native extension state (shared by every repository in the process) ---
     private static readonly object NativeLock = new();
@@ -63,6 +102,118 @@ public class SqliteMediaRepository : IMediaRepository
     }
 
     /// <summary>
+    /// The one writer connection, opened on first use and kept open: the vec0 extension is loaded once instead of on
+    /// every statement. Callers must already hold <see cref="_writeGate"/>.
+    /// </summary>
+    private async Task<SqliteConnection> EnsureWriteConnectionAsync(CancellationToken cancellationToken)
+    {
+        if (_writeConn is { State: ConnectionState.Open } open) return open;
+
+        ResetWriteConnection(); // a connection that somehow closed is dropped, commands and all
+        var conn = await OpenConnectionAsync(cancellationToken);
+        _writeConn = conn;
+        CreateWriteCommands(conn);
+        return conn;
+    }
+
+    /// <summary>Drops the writer connection and its cached commands so the next write opens a fresh one.</summary>
+    private void ResetWriteConnection()
+    {
+        _saveDeleteCmd?.Dispose();
+        _saveInsertAssetCmd?.Dispose();
+        _saveInsertChunkCmd?.Dispose();
+        _deleteAssetCmd?.Dispose();
+        _clearCmd?.Dispose();
+        _savepointCmd?.Dispose();
+        _releaseCmd?.Dispose();
+        _rollbackCmd?.Dispose();
+        _saveDeleteCmd = null;
+        _saveInsertAssetCmd = null;
+        _saveInsertChunkCmd = null;
+        _deleteAssetCmd = null;
+        _clearCmd = null;
+        _savepointCmd = null;
+        _releaseCmd = null;
+        _rollbackCmd = null;
+        _writeConn?.Dispose();
+        _writeConn = null;
+    }
+
+    /// <summary>
+    /// Prepares the commands the write paths reuse. They are bound to <paramref name="conn"/> without a transaction and
+    /// get the active one assigned per use (a transaction is per-statement in Microsoft.Data.Sqlite).
+    /// </summary>
+    private void CreateWriteCommands(SqliteConnection conn)
+    {
+        _saveDeleteCmd = new SqliteCommand(
+            "DELETE FROM MediaChunks WHERE AssetId IN (SELECT Id FROM MediaAssets WHERE Id = @assetId OR FilePath = @filePath); " +
+            "DELETE FROM MediaAssets WHERE Id = @assetId OR FilePath = @filePath;", conn);
+        _saveDeleteCmd.Parameters.Add("@assetId", SqliteType.Text);
+        _saveDeleteCmd.Parameters.Add("@filePath", SqliteType.Text);
+
+        _saveInsertAssetCmd = new SqliteCommand(InsertAssetSql, conn);
+        _saveInsertAssetCmd.Parameters.Add("@Id", SqliteType.Text);
+        _saveInsertAssetCmd.Parameters.Add("@FilePath", SqliteType.Text);
+        _saveInsertAssetCmd.Parameters.Add("@FileName", SqliteType.Text);
+        _saveInsertAssetCmd.Parameters.Add("@MediaType", SqliteType.Text);
+        _saveInsertAssetCmd.Parameters.Add("@FileSizeBytes", SqliteType.Integer);
+        _saveInsertAssetCmd.Parameters.Add("@FileHash", SqliteType.Text);
+        _saveInsertAssetCmd.Parameters.Add("@LastModifiedUtc", SqliteType.Text);
+        _saveInsertAssetCmd.Parameters.Add("@ThumbnailPath", SqliteType.Text);
+        _saveInsertAssetCmd.Parameters.Add("@DurationOrPages", SqliteType.Integer);
+        _saveInsertAssetCmd.Parameters.Add("@IndexedAtUtc", SqliteType.Text);
+
+        _saveInsertChunkCmd = new SqliteCommand(InsertChunkSql, conn);
+        _saveInsertChunkCmd.Parameters.Add("@Id", SqliteType.Text);
+        _saveInsertChunkCmd.Parameters.Add("@AssetId", SqliteType.Text);
+        _saveInsertChunkCmd.Parameters.Add("@Modality", SqliteType.Text);
+        _saveInsertChunkCmd.Parameters.Add("@ChunkIndex", SqliteType.Integer);
+        _saveInsertChunkCmd.Parameters.Add("@PageNumber", SqliteType.Integer);
+        _saveInsertChunkCmd.Parameters.Add("@StartTimeMs", SqliteType.Integer);
+        _saveInsertChunkCmd.Parameters.Add("@EndTimeMs", SqliteType.Integer);
+        _saveInsertChunkCmd.Parameters.Add("@SnippetText", SqliteType.Text);
+        _saveInsertChunkCmd.Parameters.Add("@PreviewImagePath", SqliteType.Text);
+        _saveInsertChunkCmd.Parameters.Add("@Embedding", SqliteType.Blob);
+        _saveInsertChunkCmd.Parameters.Add("@FileName", SqliteType.Text);
+
+        // The AFTER DELETE trigger on MediaChunks removes the matching FTS entries automatically.
+        _deleteAssetCmd = new SqliteCommand(
+            "DELETE FROM MediaChunks WHERE AssetId = @assetId; DELETE FROM MediaAssets WHERE Id = @assetId;", conn);
+        _deleteAssetCmd.Parameters.Add("@assetId", SqliteType.Text);
+
+        // MediaChunksFts is content-sync: the AFTER DELETE trigger clears its entries as the chunk rows go, so it must
+        // not be deleted from directly (a direct DELETE on an external-content table would wipe the whole index).
+        _clearCmd = new SqliteCommand("DELETE FROM MediaChunks; DELETE FROM MediaAssets;", conn);
+
+        _savepointCmd = new SqliteCommand($"SAVEPOINT {SavepointName};", conn);
+        _releaseCmd = new SqliteCommand($"RELEASE {SavepointName};", conn);
+        _rollbackCmd = new SqliteCommand($"ROLLBACK TO {SavepointName}; RELEASE {SavepointName};", conn);
+    }
+
+    /// <summary>Runs one prepared command inside a transaction (<paramref name="tx"/> is per-statement in this provider).</summary>
+    private static async Task<int> RunAsync(SqliteCommand cmd, SqliteTransaction tx, CancellationToken cancellationToken)
+    {
+        cmd.Transaction = tx;
+        return await cmd.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    public void Dispose()
+    {
+        if (_disposed) return;
+        _disposed = true;
+        _writeGate.Wait();
+        try
+        {
+            ResetWriteConnection();
+        }
+        finally
+        {
+            _writeGate.Release();
+            _writeGate.Dispose();
+        }
+    }
+
+    /// <summary>
     /// The single place connections are created: initialises the SQLitePCLRaw provider exactly once and tries to load
     /// the vec0 extension (when it is missing, callers silently fall back to the brute-force scan).
     /// </summary>
@@ -73,6 +224,22 @@ public class SqliteMediaRepository : IMediaRepository
         try
         {
             await conn.OpenAsync(cancellationToken);
+
+            // busy_timeout is a per-connection setting and defaults to 0, so a writer that finds the database locked
+            // fails immediately instead of waiting. 5s is enough to ride out a concurrent WAL writer/checkpoint.
+            await using (var busyTimeout = new SqliteCommand("PRAGMA busy_timeout = 5000;", conn))
+            {
+                await busyTimeout.ExecuteNonQueryAsync(cancellationToken);
+            }
+
+            // journal_size_limit bounds the -wal file after a checkpoint. Like busy_timeout it is per-connection (it
+            // applies to the connection that runs the checkpoint), so it is set here on every connection rather than
+            // once in InitializeAsync. It never disables WAL or relaxes synchronous: WAL + synchronous=NORMAL stay put.
+            await using (var journalLimit = new SqliteCommand($"PRAGMA journal_size_limit = {JournalSizeLimitBytes};", conn))
+            {
+                await journalLimit.ExecuteNonQueryAsync(cancellationToken);
+            }
+
             TryLoadVec(conn);
             return conn;
         }
@@ -189,6 +356,9 @@ public class SqliteMediaRepository : IMediaRepository
         await using var conn = await OpenConnectionAsync(cancellationToken);
 
         var sql = """
+            -- P3 maintenance policy: WAL + synchronous=NORMAL are the steady state (never OFF). The WAL is bounded by
+            -- journal_size_limit (set per connection in OpenConnectionAsync) and folded back by an explicit checkpoint
+            -- at idle/ingest-complete time (CheckpointWalAsync). VACUUM is deliberately never automated (see below).
             PRAGMA journal_mode = WAL;
             PRAGMA synchronous = NORMAL;
 
@@ -216,23 +386,25 @@ public class SqliteMediaRepository : IMediaRepository
                 SnippetText TEXT,
                 PreviewImagePath TEXT,
                 Embedding BLOB,
+                -- Denormalized copy of the owning asset's file name. It exists so the content-sync MediaChunksFts
+                -- (see EnsureFtsSchemaAsync) can read the indexed column back from its content table (on delete/update).
+                FileName TEXT,
                 FOREIGN KEY (AssetId) REFERENCES MediaAssets(Id) ON DELETE CASCADE
             );
 
             CREATE INDEX IF NOT EXISTS IX_MediaChunks_AssetId ON MediaChunks(AssetId);
 
-            CREATE VIRTUAL TABLE IF NOT EXISTS MediaChunksFts USING fts5(
-                ChunkId UNINDEXED,
-                FileName,
-                SnippetText,
-                tokenize = 'unicode61'
-            );
+            CREATE INDEX IF NOT EXISTS IX_MediaAssets_MediaType ON MediaAssets(MediaType);
         """;
 
         await using (var cmd = new SqliteCommand(sql, conn))
         {
             await cmd.ExecuteNonQueryAsync(cancellationToken);
         }
+
+        // The full-text index is a derived, content-sync copy of MediaChunks (see EnsureFtsSchemaAsync); it is created
+        // and, on an older database, migrated to the trigger-maintained form before the vec work runs.
+        await EnsureFtsSchemaAsync(conn, cancellationToken);
 
         // The vector index is a derived copy of MediaChunks.Embedding (the source of truth); it is only created when the
         // vec0 extension loaded. Chunk rows are keyed by MediaChunks.rowid, so a chunk_id can be joined back to its Guid.
@@ -314,6 +486,146 @@ public class SqliteMediaRepository : IMediaRepository
         await using (var triggers = new SqliteCommand(VecTriggerSql, conn))
         {
             await triggers.ExecuteNonQueryAsync(cancellationToken);
+        }
+    }
+
+    /// <summary>
+    /// The content-sync full-text index. It stores no text of its own: <c>content='MediaChunks'</c> makes FTS5 read
+    /// every indexed column straight from <c>MediaChunks</c> by <c>rowid</c>, so the index can never drift from the
+    /// chunk rows. The indexed columns are <c>MediaChunks.FileName</c> and <c>MediaChunks.SnippetText</c>; there is no
+    /// stored ChunkId (the rowid is the join key), which is what lets every write be a plain rowid lookup instead of the
+    /// former <c>DELETE ... WHERE ChunkId IN (...)</c> full scan over an UNINDEXED column.
+    /// </summary>
+    private const string FtsTableSql = """
+        CREATE VIRTUAL TABLE IF NOT EXISTS MediaChunksFts USING fts5(
+            FileName,
+            SnippetText,
+            content='MediaChunks',
+            content_rowid='rowid',
+            tokenize = 'unicode61'
+        );
+        """;
+
+    /// <summary>
+    /// The triggers that keep the content-sync index in step with <c>MediaChunks</c>. FTS5 external content cannot be
+    /// updated by a plain INSERT/DELETE: a delete must use the special <c>'delete'</c> command, and it must be handed the
+    /// exact values that were indexed (otherwise the index becomes corrupt). Hence the AFTER DELETE/UPDATE triggers pass
+    /// the <c>OLD</c> FileName/SnippetText, and the OUTER INSERT trigger indexes every row so those values always exist.
+    /// The definitions are dropped and re-created on every start (like the vec triggers) so they self-heal. Note there is
+    /// deliberately no direct <c>DELETE FROM MediaChunksFts</c> anywhere: on an external-content table that would wipe the
+    /// whole index instead of the intended rows.
+    /// </summary>
+    private const string FtsTriggerSql = """
+        DROP TRIGGER IF EXISTS trg_chunks_fts_ai;
+        DROP TRIGGER IF EXISTS trg_chunks_fts_ad;
+        DROP TRIGGER IF EXISTS trg_chunks_fts_au;
+
+        CREATE TRIGGER trg_chunks_fts_ai AFTER INSERT ON MediaChunks
+        BEGIN
+            INSERT INTO MediaChunksFts(rowid, FileName, SnippetText)
+            VALUES (NEW.rowid, NEW.FileName, NEW.SnippetText);
+        END;
+
+        CREATE TRIGGER trg_chunks_fts_ad AFTER DELETE ON MediaChunks
+        BEGIN
+            INSERT INTO MediaChunksFts(MediaChunksFts, rowid, FileName, SnippetText)
+            VALUES ('delete', OLD.rowid, OLD.FileName, OLD.SnippetText);
+        END;
+
+        CREATE TRIGGER trg_chunks_fts_au AFTER UPDATE ON MediaChunks
+        BEGIN
+            INSERT INTO MediaChunksFts(MediaChunksFts, rowid, FileName, SnippetText)
+            VALUES ('delete', OLD.rowid, OLD.FileName, OLD.SnippetText);
+            INSERT INTO MediaChunksFts(rowid, FileName, SnippetText)
+            VALUES (NEW.rowid, NEW.FileName, NEW.SnippetText);
+        END;
+        """;
+
+    /// <summary>
+    /// Ensures the content-sync FTS index and its triggers exist, migrating a database that still carries the old
+    /// standalone index (<c>ChunkId UNINDEXED, FileName, SnippetText</c>). The old shape is recognised from
+    /// <c>sqlite_master</c> (it has no <c>content='MediaChunks'</c> option); the derived table is dropped and rebuilt
+    /// from <c>MediaChunks</c>, which is the source of truth, so no re-import is needed.
+    /// <para>
+    /// The one-off rebuild is the expensive part: <c>INSERT INTO MediaChunksFts(MediaChunksFts) VALUES('rebuild')</c>
+    /// re-tokenizes every snippet, which can take several minutes for a ~150k-chunk library. It runs inside
+    /// <see cref="InitializeAsync"/> (which does not take a transaction here, so WAL keeps other readers usable).
+    /// No automatic backup is taken; the database is a rebuildable cache of the source files, and an operator wanting a
+    /// snapshot should close the app and copy <c>media_index.db</c> (with its <c>-wal</c>/<c>-shm</c> sidecars) before the
+    /// first P1b start.
+    /// </para>
+    /// </summary>
+    private static async Task EnsureFtsSchemaAsync(SqliteConnection conn, CancellationToken cancellationToken)
+    {
+        // MediaChunks.FileName is the denormalized column the external-content FTS reads back. Databases created before
+        // this change lack it, so add it and back-fill it from the owning asset before the index is (re)built.
+        bool hasFileNameColumn;
+        await using (var col = new SqliteCommand(
+            "SELECT count(*) FROM pragma_table_info('MediaChunks') WHERE name = 'FileName';", conn))
+        {
+            hasFileNameColumn = Convert.ToInt64(await col.ExecuteScalarAsync(cancellationToken) ?? 0L) > 0;
+        }
+
+        if (!hasFileNameColumn)
+        {
+            await using (var addColumn = new SqliteCommand("ALTER TABLE MediaChunks ADD COLUMN FileName TEXT;", conn))
+            {
+                await addColumn.ExecuteNonQueryAsync(cancellationToken);
+            }
+
+            await using (var backfill = new SqliteCommand(
+                "UPDATE MediaChunks SET FileName = (SELECT a.FileName FROM MediaAssets a WHERE a.Id = MediaChunks.AssetId) " +
+                "WHERE FileName IS NULL;", conn))
+            {
+                await backfill.ExecuteNonQueryAsync(cancellationToken);
+            }
+        }
+
+        // Version check: a pre-P1b database has the old standalone FTS table, whose stored SQL never mentions
+        // content='MediaChunks'. Anything already carrying the content-sync definition is left as is.
+        bool ftsExistedBefore = false;
+        bool legacyFts = false;
+        await using (var meta = new SqliteCommand(
+            "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'MediaChunksFts';", conn))
+        {
+            if (await meta.ExecuteScalarAsync(cancellationToken) is string createSql && !string.IsNullOrEmpty(createSql))
+            {
+                ftsExistedBefore = true;
+                legacyFts = !createSql.Contains("content='MediaChunks'", StringComparison.OrdinalIgnoreCase);
+            }
+        }
+
+        if (legacyFts)
+        {
+            // The index is derived, so dropping it (and its rows) loses nothing; it is rebuilt from MediaChunks below.
+            await using var drop = new SqliteCommand("DROP TABLE IF EXISTS MediaChunksFts;", conn);
+            await drop.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        await using (var create = new SqliteCommand(FtsTableSql, conn))
+        {
+            await create.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        await using (var triggers = new SqliteCommand(FtsTriggerSql, conn))
+        {
+            await triggers.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        // Rebuild when the index was the legacy form above, or when it did not exist at all on a database that already
+        // has chunks (a build predating FTS). The EXISTS probe is O(1), so a brand-new empty database stays a no-op.
+        bool needsRebuild = legacyFts;
+        if (!ftsExistedBefore)
+        {
+            await using var probe = new SqliteCommand("SELECT EXISTS (SELECT 1 FROM MediaChunks LIMIT 1);", conn);
+            needsRebuild = Convert.ToInt64(await probe.ExecuteScalarAsync(cancellationToken) ?? 0L) > 0;
+        }
+
+        if (needsRebuild)
+        {
+            await using var rebuild = new SqliteCommand(
+                "INSERT INTO MediaChunksFts(MediaChunksFts) VALUES('rebuild');", conn);
+            await rebuild.ExecuteNonQueryAsync(cancellationToken);
         }
     }
 
@@ -637,102 +949,333 @@ public class SqliteMediaRepository : IMediaRepository
         return new AssetStats(total, images, pdfs, videos, documents);
     }
 
+    private const string InsertAssetSql = """
+        INSERT INTO MediaAssets (Id, FilePath, FileName, MediaType, FileSizeBytes, FileHash, LastModifiedUtc, ThumbnailPath, DurationOrPages, IndexedAtUtc)
+        VALUES (@Id, @FilePath, @FileName, @MediaType, @FileSizeBytes, @FileHash, @LastModifiedUtc, @ThumbnailPath, @DurationOrPages, @IndexedAtUtc);
+        """;
+
+    private const string InsertChunkSql = """
+        INSERT INTO MediaChunks (Id, AssetId, Modality, ChunkIndex, PageNumber, StartTimeMs, EndTimeMs, SnippetText, PreviewImagePath, Embedding, FileName)
+        VALUES (@Id, @AssetId, @Modality, @ChunkIndex, @PageNumber, @StartTimeMs, @EndTimeMs, @SnippetText, @PreviewImagePath, @Embedding, @FileName);
+        """;
+
     public async Task SaveAssetWithChunksAsync(MediaAsset asset, IEnumerable<MediaChunk> chunks, CancellationToken cancellationToken = default)
     {
-        await using var conn = await OpenConnectionAsync(cancellationToken);
-        await using var tx = conn.BeginTransaction();
+        var list = chunks as IReadOnlyList<MediaChunk> ?? chunks.ToList();
 
-        // 1. Delete what is stored for this asset, and for an earlier asset of the same file (a changed file is saved
-        //    with a new id; its path is unique, so the old row has to go first)
-        const string sameAsset = "SELECT Id FROM MediaAssets WHERE Id = @assetId OR FilePath = @filePath";
-        await using (var delCmd = new SqliteCommand(
-            $"DELETE FROM MediaChunksFts WHERE ChunkId IN (SELECT Id FROM MediaChunks WHERE AssetId IN ({sameAsset})); " +
-            $"DELETE FROM MediaChunks WHERE AssetId IN ({sameAsset}); " +
-            "DELETE FROM MediaAssets WHERE Id = @assetId OR FilePath = @filePath;", conn, tx))
+        await _writeGate.WaitAsync(cancellationToken);
+        try
         {
-            delCmd.Parameters.AddWithValue("@assetId", asset.Id.ToString());
-            delCmd.Parameters.AddWithValue("@filePath", asset.FilePath);
-            await delCmd.ExecuteNonQueryAsync(cancellationToken);
+            var conn = await EnsureWriteConnectionAsync(cancellationToken);
+            try
+            {
+                var tx = conn.BeginTransaction();
+                try
+                {
+                    await InsertAssetCoreAsync(tx, asset, list, cancellationToken);
+                    await tx.CommitAsync(cancellationToken);
+                }
+                finally
+                {
+                    await tx.DisposeAsync();
+                }
+            }
+            catch
+            {
+                // A failed transaction can leave the connection in a state the next statement must not inherit.
+                ResetWriteConnection();
+                throw;
+            }
+            Interlocked.Increment(ref _dataVersion);
+        }
+        finally
+        {
+            _writeGate.Release();
+        }
+    }
+
+    /// <summary>
+    /// Stores many assets with as few transactions as possible: the run is sliced into bounded transactions (at most
+    /// <see cref="MaxAssetsPerTx"/> assets and <see cref="MaxChunksPerTx"/> chunk rows each), and each asset is wrapped
+    /// in a SAVEPOINT so a single bad asset rolls back only itself. Failures are returned, never thrown, so one broken
+    /// asset cannot take its neighbours (or the run) down with it.
+    /// </summary>
+    public async Task<IReadOnlyList<AssetSaveFailure>> SaveAssetsWithChunksAsync(
+        IReadOnlyList<AssetChunkBatch> items, CancellationToken cancellationToken = default)
+    {
+        var failures = new List<AssetSaveFailure>();
+        if (items is null || items.Count == 0)
+        {
+            LastBulkSaveTransactionCount = 0;
+            return failures;
         }
 
-        // 2. Insert Asset
-        const string insertAssetSql = """
-            INSERT INTO MediaAssets (Id, FilePath, FileName, MediaType, FileSizeBytes, FileHash, LastModifiedUtc, ThumbnailPath, DurationOrPages, IndexedAtUtc)
-            VALUES (@Id, @FilePath, @FileName, @MediaType, @FileSizeBytes, @FileHash, @LastModifiedUtc, @ThumbnailPath, @DurationOrPages, @IndexedAtUtc);
-        """;
-        await using (var cmd = new SqliteCommand(insertAssetSql, conn, tx))
+        int index = 0;
+        int transactions = 0;
+        while (index < items.Count)
         {
-            cmd.Parameters.AddWithValue("@Id", asset.Id.ToString());
-            cmd.Parameters.AddWithValue("@FilePath", asset.FilePath);
-            cmd.Parameters.AddWithValue("@FileName", asset.FileName);
-            cmd.Parameters.AddWithValue("@MediaType", asset.MediaType.ToString());
-            cmd.Parameters.AddWithValue("@FileSizeBytes", asset.FileSizeBytes);
-            cmd.Parameters.AddWithValue("@FileHash", asset.FileHash);
-            cmd.Parameters.AddWithValue("@LastModifiedUtc", asset.LastModifiedUtc.ToString("O"));
-            cmd.Parameters.AddWithValue("@ThumbnailPath", (object?)asset.ThumbnailPath ?? DBNull.Value);
-            cmd.Parameters.AddWithValue("@DurationOrPages", (object?)asset.DurationOrPages ?? DBNull.Value);
-            cmd.Parameters.AddWithValue("@IndexedAtUtc", asset.IndexedAtUtc.ToString("O"));
-            await cmd.ExecuteNonQueryAsync(cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
+
+            // Slice the run into one bounded transaction. An asset with more chunks than the limit still gets its own
+            // transaction (the inner guard is skipped for the first asset of a slice).
+            int start = index;
+            int chunksInTx = 0;
+            while (index < items.Count && index - start < MaxAssetsPerTx)
+            {
+                int chunkCount = items[index].Chunks?.Count ?? 0;
+                if (index > start && chunksInTx + chunkCount > MaxChunksPerTx) break;
+                chunksInTx += chunkCount;
+                index++;
+            }
+
+            await _writeGate.WaitAsync(cancellationToken);
+            try
+            {
+                var conn = await EnsureWriteConnectionAsync(cancellationToken);
+                bool changed = false;
+                try
+                {
+                    var tx = conn.BeginTransaction();
+                    try
+                    {
+                        for (int i = start; i < index; i++)
+                        {
+                            cancellationToken.ThrowIfCancellationRequested();
+                            var item = items[i];
+                            var chunks = item.Chunks ?? Array.Empty<MediaChunk>();
+
+                            await RunAsync(_savepointCmd!, tx, cancellationToken);
+                            try
+                            {
+                                await InsertAssetCoreAsync(tx, item.Asset, chunks, cancellationToken);
+                                await RunAsync(_releaseCmd!, tx, cancellationToken);
+                                changed = true;
+                            }
+                            catch (Exception ex) when (ex is not OperationCanceledException)
+                            {
+                                // Undo just this asset and carry on: a bad asset must not discard the whole bundle.
+                                await RunAsync(_rollbackCmd!, tx, cancellationToken);
+                                failures.Add(new AssetSaveFailure(item.Asset.Id, item.Asset.FilePath, ex.Message));
+                            }
+                        }
+
+                        await tx.CommitAsync(cancellationToken);
+                    }
+                    finally
+                    {
+                        await tx.DisposeAsync();
+                    }
+                }
+                catch
+                {
+                    ResetWriteConnection();
+                    throw;
+                }
+
+                if (changed) Interlocked.Increment(ref _dataVersion);
+            }
+            finally
+            {
+                _writeGate.Release();
+            }
+
+            transactions++;
         }
 
-        // 3. Insert Chunks and FTS entries
-        const string insertChunkSql = """
-            INSERT INTO MediaChunks (Id, AssetId, Modality, ChunkIndex, PageNumber, StartTimeMs, EndTimeMs, SnippetText, PreviewImagePath, Embedding)
-            VALUES (@Id, @AssetId, @Modality, @ChunkIndex, @PageNumber, @StartTimeMs, @EndTimeMs, @SnippetText, @PreviewImagePath, @Embedding);
-        """;
-        const string insertFtsSql = """
-            INSERT INTO MediaChunksFts (ChunkId, FileName, SnippetText)
-            VALUES (@ChunkId, @FileName, @SnippetText);
-        """;
+        LastBulkSaveTransactionCount = transactions;
+        return failures;
+    }
 
+    /// <summary>
+    /// Writes one asset and its chunks using the writer connection's cached commands. Callers hold <see cref="_writeGate"/>
+    /// and pass the active transaction. The delete is a plain DELETE (never INSERT OR REPLACE): MediaChunksFts is
+    /// content-sync and kept in step by the AFTER DELETE trigger on MediaChunks, so its entries go with the chunk rows.
+    /// Every statement is a keyed lookup (Id PK / FilePath UNIQUE / IX_MediaChunks_AssetId).
+    /// </summary>
+    private async Task InsertAssetCoreAsync(SqliteTransaction tx, MediaAsset asset, IReadOnlyList<MediaChunk> chunks, CancellationToken cancellationToken)
+    {
+        var del = _saveDeleteCmd!;
+        del.Parameters["@assetId"].Value = asset.Id.ToString();
+        del.Parameters["@filePath"].Value = asset.FilePath;
+        await RunAsync(del, tx, cancellationToken);
+
+        var insertAsset = _saveInsertAssetCmd!;
+        insertAsset.Parameters["@Id"].Value = asset.Id.ToString();
+        insertAsset.Parameters["@FilePath"].Value = asset.FilePath;
+        insertAsset.Parameters["@FileName"].Value = asset.FileName;
+        insertAsset.Parameters["@MediaType"].Value = asset.MediaType.ToString();
+        insertAsset.Parameters["@FileSizeBytes"].Value = asset.FileSizeBytes;
+        insertAsset.Parameters["@FileHash"].Value = asset.FileHash;
+        insertAsset.Parameters["@LastModifiedUtc"].Value = asset.LastModifiedUtc.ToString("O");
+        insertAsset.Parameters["@ThumbnailPath"].Value = (object?)asset.ThumbnailPath ?? DBNull.Value;
+        insertAsset.Parameters["@DurationOrPages"].Value = (object?)asset.DurationOrPages ?? DBNull.Value;
+        insertAsset.Parameters["@IndexedAtUtc"].Value = asset.IndexedAtUtc.ToString("O");
+        await RunAsync(insertAsset, tx, cancellationToken);
+
+        // FileName is denormalized onto each chunk so the content-sync FTS can read it back; the FTS entry itself is
+        // written by the AFTER INSERT trigger, not here.
+        var insertChunk = _saveInsertChunkCmd!;
         foreach (var chunk in chunks)
         {
-            byte[] embeddingBytes = ConvertFloatArrayToBytes(chunk.Embedding);
-            await using (var chunkCmd = new SqliteCommand(insertChunkSql, conn, tx))
+            cancellationToken.ThrowIfCancellationRequested();
+            insertChunk.Parameters["@Id"].Value = chunk.Id.ToString();
+            insertChunk.Parameters["@AssetId"].Value = asset.Id.ToString();
+            insertChunk.Parameters["@Modality"].Value = chunk.Modality.ToString();
+            insertChunk.Parameters["@ChunkIndex"].Value = chunk.ChunkIndex;
+            insertChunk.Parameters["@PageNumber"].Value = (object?)chunk.PageNumber ?? DBNull.Value;
+            insertChunk.Parameters["@StartTimeMs"].Value = (object?)chunk.StartTimeMs ?? DBNull.Value;
+            insertChunk.Parameters["@EndTimeMs"].Value = (object?)chunk.EndTimeMs ?? DBNull.Value;
+            insertChunk.Parameters["@SnippetText"].Value = (object?)chunk.SnippetText ?? DBNull.Value;
+            insertChunk.Parameters["@PreviewImagePath"].Value = (object?)chunk.PreviewImagePath ?? DBNull.Value;
+            insertChunk.Parameters["@Embedding"].Value = ConvertFloatArrayToBytes(chunk.Embedding);
+            insertChunk.Parameters["@FileName"].Value = asset.FileName;
+            await RunAsync(insertChunk, tx, cancellationToken);
+        }
+    }
+
+    /// <summary>
+    /// Suspends the vec0 insert trigger for the duration of a bulk ingest. The trigger would otherwise maintain the
+    /// derived index one chunk at a time (a DELETE plus an INSERT plus a binary quantize per row); it is far cheaper to
+    /// back-fill in one pass at the end (<see cref="EndBulkIngestAsync"/>). The delete trigger and the full-text
+    /// triggers stay in place, so removals and search stay consistent throughout.
+    /// </summary>
+    public async Task BeginBulkIngestAsync(CancellationToken cancellationToken = default)
+    {
+        if (!VecAvailable) return;
+
+        await _writeGate.WaitAsync(cancellationToken);
+        try
+        {
+            var conn = await EnsureWriteConnectionAsync(cancellationToken);
+            await using var cmd = new SqliteCommand("DROP TRIGGER IF EXISTS trg_chunks_vec_ai;", conn);
+            await cmd.ExecuteNonQueryAsync(cancellationToken);
+        }
+        finally
+        {
+            _writeGate.Release();
+        }
+    }
+
+    /// <summary>
+    /// Ends a bulk ingest: restores the vec0 triggers and back-fills every vector the suspended trigger skipped, in one
+    /// pass. The vec0 work is skipped when the extension is unavailable, but the P3 upkeep still runs: one ANALYZE to
+    /// refresh planner statistics and a TRUNCATE WAL checkpoint now the run is quiescent.
+    /// </summary>
+    public async Task EndBulkIngestAsync(CancellationToken cancellationToken = default)
+    {
+        if (VecAvailable)
+        {
+            await _writeGate.WaitAsync(cancellationToken);
+            try
             {
-                chunkCmd.Parameters.AddWithValue("@Id", chunk.Id.ToString());
-                chunkCmd.Parameters.AddWithValue("@AssetId", asset.Id.ToString());
-                chunkCmd.Parameters.AddWithValue("@Modality", chunk.Modality.ToString());
-                chunkCmd.Parameters.AddWithValue("@ChunkIndex", chunk.ChunkIndex);
-                chunkCmd.Parameters.AddWithValue("@PageNumber", (object?)chunk.PageNumber ?? DBNull.Value);
-                chunkCmd.Parameters.AddWithValue("@StartTimeMs", (object?)chunk.StartTimeMs ?? DBNull.Value);
-                chunkCmd.Parameters.AddWithValue("@EndTimeMs", (object?)chunk.EndTimeMs ?? DBNull.Value);
-                chunkCmd.Parameters.AddWithValue("@SnippetText", (object?)chunk.SnippetText ?? DBNull.Value);
-                chunkCmd.Parameters.AddWithValue("@PreviewImagePath", (object?)chunk.PreviewImagePath ?? DBNull.Value);
-                chunkCmd.Parameters.AddWithValue("@Embedding", embeddingBytes);
-                await chunkCmd.ExecuteNonQueryAsync(cancellationToken);
+                var conn = await EnsureWriteConnectionAsync(cancellationToken);
+                // VecTriggerSql drops and re-creates both vec triggers, so the suspended insert trigger comes back here.
+                await using var triggers = new SqliteCommand(VecTriggerSql, conn);
+                await triggers.ExecuteNonQueryAsync(cancellationToken);
+            }
+            finally
+            {
+                _writeGate.Release();
             }
 
-            if (!string.IsNullOrWhiteSpace(chunk.SnippetText))
-            {
-                await using var ftsCmd = new SqliteCommand(insertFtsSql, conn, tx);
-                ftsCmd.Parameters.AddWithValue("@ChunkId", chunk.Id.ToString());
-                ftsCmd.Parameters.AddWithValue("@FileName", asset.FileName);
-                ftsCmd.Parameters.AddWithValue("@SnippetText", chunk.SnippetText);
-                await ftsCmd.ExecuteNonQueryAsync(cancellationToken);
-            }
+            await EnsureVecBackfillAsync(cancellationToken);
         }
 
-        await tx.CommitAsync(cancellationToken);
-        Interlocked.Increment(ref _dataVersion);
+        // Exactly one ANALYZE per bulk ingest, after every write has landed: it refreshes sqlite_stat1 so the planner
+        // cost model reflects the new row counts. It is never run per asset (that would dominate the ingest).
+        await AnalyzeAsync(cancellationToken);
+
+        // The ingest has finished and the connection is quiescent, so fold the WAL back into the database and truncate
+        // it to journal_size_limit. A PASSIVE checkpoint is the only form allowed while an ingest is still running.
+        await CheckpointWalAsync(truncate: true, cancellationToken);
+    }
+
+    /// <summary>
+    /// Refreshes the query planner statistics with a single <c>ANALYZE</c>. Called once after a bulk ingest
+    /// (<see cref="EndBulkIngestAsync"/>), never per asset.
+    /// </summary>
+    private async Task AnalyzeAsync(CancellationToken cancellationToken)
+    {
+        await _writeGate.WaitAsync(cancellationToken);
+        try
+        {
+            var conn = await EnsureWriteConnectionAsync(cancellationToken);
+            await using var cmd = new SqliteCommand("ANALYZE;", conn);
+            await cmd.ExecuteNonQueryAsync(cancellationToken);
+        }
+        finally
+        {
+            _writeGate.Release();
+        }
+    }
+
+    // --- P3 maintenance policy ---
+    // The database is a rebuildable cache of the source files, so the file needs cheap, bounded upkeep, not rewrites:
+    //   * WAL + synchronous=NORMAL are the steady state (never OFF); journal_size_limit (64 MB) caps the -wal file.
+    //   * CheckpointWalAsync folds the WAL back and truncates it. TRUNCATE at idle/ingest-complete; PASSIVE during an
+    //     ingest (it never blocks writers and never truncates).
+    //   * ANALYZE runs once per bulk ingest (see AnalyzeAsync), not per asset.
+    //   * VACUUM is NEVER automated anywhere. To decide whether a manual VACUUM is worthwhile, inspect the freelist:
+    //         PRAGMA freelist_count;   -- pages currently free (reclaimable)
+    //         PRAGMA page_count;       -- total pages in the file
+    //     A freelist_count/page_count ratio well above ~10% after a large Clear/Delete is the signal to VACUUM by hand
+    //     with the app closed; VACUUM rewrites the whole file and needs up to ~2x its size in free disk space.
+
+    /// <summary>
+    /// Runs a WAL checkpoint on the writer connection. With <paramref name="truncate"/> (the default) it is
+    /// <c>wal_checkpoint(TRUNCATE)</c>: the WAL is folded back into the database and the -wal file is truncated to
+    /// <see cref="JournalSizeLimitBytes"/>. Call it when an ingest has finished or the app is otherwise idle. While a
+    /// bulk ingest is still running only a PASSIVE checkpoint is safe (it never blocks writers and never truncates), so
+    /// pass <paramref name="truncate"/> = <c>false</c> there.
+    /// <para>Never runs VACUUM: see the maintenance policy note above.</para>
+    /// </summary>
+    public async Task CheckpointWalAsync(bool truncate = true, CancellationToken cancellationToken = default)
+    {
+        string mode = truncate ? "TRUNCATE" : "PASSIVE";
+        await _writeGate.WaitAsync(cancellationToken);
+        try
+        {
+            var conn = await EnsureWriteConnectionAsync(cancellationToken);
+            await using var cmd = new SqliteCommand($"PRAGMA wal_checkpoint({mode});", conn);
+            await cmd.ExecuteNonQueryAsync(cancellationToken);
+        }
+        finally
+        {
+            _writeGate.Release();
+        }
     }
 
     public async Task DeleteAssetAsync(Guid assetId, CancellationToken cancellationToken = default)
     {
-        await using var conn = await OpenConnectionAsync(cancellationToken);
-        await using var tx = conn.BeginTransaction();
-
-        const string sql = """
-            DELETE FROM MediaChunksFts WHERE ChunkId IN (SELECT Id FROM MediaChunks WHERE AssetId = @assetId);
-            DELETE FROM MediaChunks WHERE AssetId = @assetId;
-            DELETE FROM MediaAssets WHERE Id = @assetId;
-        """;
-        await using var cmd = new SqliteCommand(sql, conn, tx);
-        cmd.Parameters.AddWithValue("@assetId", assetId.ToString());
-        await cmd.ExecuteNonQueryAsync(cancellationToken);
-
-        await tx.CommitAsync(cancellationToken);
-        Interlocked.Increment(ref _dataVersion);
+        await _writeGate.WaitAsync(cancellationToken);
+        try
+        {
+            var conn = await EnsureWriteConnectionAsync(cancellationToken);
+            try
+            {
+                var tx = conn.BeginTransaction();
+                try
+                {
+                    _deleteAssetCmd!.Parameters["@assetId"].Value = assetId.ToString();
+                    await RunAsync(_deleteAssetCmd, tx, cancellationToken);
+                    await tx.CommitAsync(cancellationToken);
+                }
+                finally
+                {
+                    await tx.DisposeAsync();
+                }
+            }
+            catch
+            {
+                ResetWriteConnection();
+                throw;
+            }
+            Interlocked.Increment(ref _dataVersion);
+        }
+        finally
+        {
+            _writeGate.Release();
+        }
     }
 
     public async Task DeleteAssetsAsync(IEnumerable<Guid> assetIds, CancellationToken cancellationToken = default)
@@ -740,50 +1283,88 @@ public class SqliteMediaRepository : IMediaRepository
         var ids = assetIds.ToList();
         if (ids.Count == 0) return;
 
-        await using var conn = await OpenConnectionAsync(cancellationToken);
-        await using var tx = conn.BeginTransaction();
-
-        // Delete in batches of up to 500 to stay well within SQLite parameter limits
-        const int batchSize = 500;
-        for (int i = 0; i < ids.Count; i += batchSize)
+        await _writeGate.WaitAsync(cancellationToken);
+        try
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            var chunk = ids.Skip(i).Take(batchSize).ToList();
-            var placeholders = string.Join(",", chunk.Select((_, idx) => $"@id{idx}"));
-
-            string sql = $"""
-                DELETE FROM MediaChunksFts WHERE ChunkId IN (SELECT Id FROM MediaChunks WHERE AssetId IN ({placeholders}));
-                DELETE FROM MediaChunks WHERE AssetId IN ({placeholders});
-                DELETE FROM MediaAssets WHERE Id IN ({placeholders});
-            """;
-
-            await using var cmd = new SqliteCommand(sql, conn, tx);
-            for (int idx = 0; idx < chunk.Count; idx++)
+            var conn = await EnsureWriteConnectionAsync(cancellationToken);
+            try
             {
-                cmd.Parameters.AddWithValue($"@id{idx}", chunk[idx].ToString());
-            }
-            await cmd.ExecuteNonQueryAsync(cancellationToken);
-        }
+                var tx = conn.BeginTransaction();
+                try
+                {
+                    // Delete in batches of up to 500 to stay well within SQLite parameter limits. The placeholder count
+                    // varies, so this command is not cached.
+                    const int batchSize = 500;
+                    for (int i = 0; i < ids.Count; i += batchSize)
+                    {
+                        cancellationToken.ThrowIfCancellationRequested();
+                        var chunk = ids.Skip(i).Take(batchSize).ToList();
+                        var placeholders = string.Join(",", chunk.Select((_, idx) => $"@id{idx}"));
 
-        await tx.CommitAsync(cancellationToken);
-        Interlocked.Increment(ref _dataVersion);
+                        // The AFTER DELETE trigger on MediaChunks removes the matching FTS entries automatically.
+                        string sql = $"""
+                            DELETE FROM MediaChunks WHERE AssetId IN ({placeholders});
+                            DELETE FROM MediaAssets WHERE Id IN ({placeholders});
+                        """;
+
+                        await using var cmd = new SqliteCommand(sql, conn, tx);
+                        for (int idx = 0; idx < chunk.Count; idx++)
+                        {
+                            cmd.Parameters.AddWithValue($"@id{idx}", chunk[idx].ToString());
+                        }
+                        await cmd.ExecuteNonQueryAsync(cancellationToken);
+                    }
+
+                    await tx.CommitAsync(cancellationToken);
+                }
+                finally
+                {
+                    await tx.DisposeAsync();
+                }
+            }
+            catch
+            {
+                ResetWriteConnection();
+                throw;
+            }
+            Interlocked.Increment(ref _dataVersion);
+        }
+        finally
+        {
+            _writeGate.Release();
+        }
     }
 
     public async Task ClearAllAsync(CancellationToken cancellationToken = default)
     {
-        await using var conn = await OpenConnectionAsync(cancellationToken);
-        await using var tx = conn.BeginTransaction();
-
-        const string sql = """
-            DELETE FROM MediaChunksFts;
-            DELETE FROM MediaChunks;
-            DELETE FROM MediaAssets;
-        """;
-        await using var cmd = new SqliteCommand(sql, conn, tx);
-        await cmd.ExecuteNonQueryAsync(cancellationToken);
-
-        await tx.CommitAsync(cancellationToken);
-        Interlocked.Increment(ref _dataVersion);
+        await _writeGate.WaitAsync(cancellationToken);
+        try
+        {
+            var conn = await EnsureWriteConnectionAsync(cancellationToken);
+            try
+            {
+                var tx = conn.BeginTransaction();
+                try
+                {
+                    await RunAsync(_clearCmd!, tx, cancellationToken);
+                    await tx.CommitAsync(cancellationToken);
+                }
+                finally
+                {
+                    await tx.DisposeAsync();
+                }
+            }
+            catch
+            {
+                ResetWriteConnection();
+                throw;
+            }
+            Interlocked.Increment(ref _dataVersion);
+        }
+        finally
+        {
+            _writeGate.Release();
+        }
     }
 
     public async Task<IReadOnlyList<MediaChunk>> GetAllChunksWithEmbeddingsAsync(MediaType? mediaTypeFilter = null, CancellationToken cancellationToken = default)
@@ -838,9 +1419,12 @@ public class SqliteMediaRepository : IMediaRepository
         string cleanKeyword = keyword.Replace("\"", "\"\"").Trim();
         if (string.IsNullOrEmpty(cleanKeyword)) return Array.Empty<(Guid, float)>();
 
+        // The content-sync index has no stored ChunkId: its rowid is the MediaChunks rowid, so the Guid is joined back
+        // from MediaChunks. bm25/MATCH read the inverted index only, so this stays a full-text lookup plus a rowid join.
         const string sql = """
-            SELECT ChunkId, bm25(MediaChunksFts) AS Rank
+            SELECT m.Id, bm25(MediaChunksFts) AS Rank
             FROM MediaChunksFts
+            JOIN MediaChunks m ON m.rowid = MediaChunksFts.rowid
             WHERE MediaChunksFts MATCH @query
             ORDER BY Rank
             LIMIT @limit;

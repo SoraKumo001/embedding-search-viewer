@@ -175,4 +175,38 @@ public sealed class LibraryStatsRefresherTests
         Assert.True(await WaitForAsync(() => calls == 2));
         Assert.True(refresher.IsRunning);
     }
+
+    [Fact]
+    public async Task Thinning_RefreshesAtMostOncePerMinimumInterval()
+    {
+        var repo = new VersionedRepository();
+        int calls = 0;
+        // A tick every 20 ms, but no refresh faster than once per 200 ms: ten changes over ~200 ms must not become ten refreshes.
+        using var refresher = new LibraryStatsRefresher(repo, () => { Interlocked.Increment(ref calls); return Task.CompletedTask; }, Tick, TimeSpan.FromMilliseconds(200));
+        refresher.Start();
+
+        for (int i = 0; i < 10; i++)
+        {
+            repo.Changed();
+            await Task.Delay(20);
+        }
+
+        Assert.True(calls <= 2, $"the refreshes were not thinned: {calls} calls");
+    }
+
+    [Fact]
+    public async Task Thinning_DoesNotDropAChangeThatArrivedBetweenRefreshes()
+    {
+        var repo = new VersionedRepository();
+        int calls = 0;
+        using var refresher = new LibraryStatsRefresher(repo, () => { Interlocked.Increment(ref calls); return Task.CompletedTask; }, Tick, TimeSpan.FromMilliseconds(120));
+        refresher.Start();
+
+        // The change is deferred by the thinning, but it still comes through once the interval has passed.
+        repo.Changed();
+        Assert.True(await WaitForAsync(() => calls == 1));
+
+        repo.Changed();
+        Assert.True(await WaitForAsync(() => calls == 2));
+    }
 }

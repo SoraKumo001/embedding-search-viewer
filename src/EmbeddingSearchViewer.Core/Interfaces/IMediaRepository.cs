@@ -43,6 +43,46 @@ public interface IMediaRepository
     }
 
     Task SaveAssetWithChunksAsync(MediaAsset asset, IEnumerable<MediaChunk> chunks, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Stores many assets (each with its chunks) with as few transactions as possible. A single failing asset must not
+    /// take its neighbours with it: an implementation isolates the per-asset work (a SAVEPOINT, or a lone retry) and
+    /// reports the failures instead of throwing, so "one bad asset = one rollback" is kept. The default implementation
+    /// stores one asset at a time through <see cref="SaveAssetWithChunksAsync"/>, which already guarantees that.
+    /// </summary>
+    async Task<IReadOnlyList<AssetSaveFailure>> SaveAssetsWithChunksAsync(
+        IReadOnlyList<AssetChunkBatch> items, CancellationToken cancellationToken = default)
+    {
+        var failures = new List<AssetSaveFailure>();
+        if (items is null) return failures;
+
+        foreach (var item in items)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            try
+            {
+                await SaveAssetWithChunksAsync(item.Asset, item.Chunks, cancellationToken);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                failures.Add(new AssetSaveFailure(item.Asset.Id, item.Asset.FilePath, ex.Message));
+            }
+        }
+        return failures;
+    }
+
+    /// <summary>
+    /// Announces a bulk ingest, so the repository can suspend derived-index maintenance that is far cheaper to do once
+    /// at the end than per row (the vec0 insert trigger). The full-text triggers stay in place. Default: nothing to do.
+    /// </summary>
+    Task BeginBulkIngestAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+    /// <summary>
+    /// Ends a bulk ingest started with <see cref="BeginBulkIngestAsync"/>: restores what was suspended and back-fills
+    /// the derived index in one pass (see <c>EnsureVecBackfillAsync</c>). Default: nothing to do.
+    /// </summary>
+    Task EndBulkIngestAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
+
     Task DeleteAssetAsync(Guid assetId, CancellationToken cancellationToken = default);
 
     async Task DeleteAssetsAsync(IEnumerable<Guid> assetIds, CancellationToken cancellationToken = default)
