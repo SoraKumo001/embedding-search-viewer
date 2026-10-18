@@ -11,6 +11,7 @@ using EmbeddingSearchViewer.Core.Interfaces;
 using EmbeddingSearchViewer.Core.Localization;
 using EmbeddingSearchViewer.Core.Models;
 using EmbeddingSearchViewer.Infrastructure.Library;
+using EmbeddingSearchViewer.Infrastructure.Onnx;
 
 namespace EmbeddingSearchViewer.Infrastructure.Ingestion;
 
@@ -31,6 +32,7 @@ public record IngestionProgress(
 public class IngestionPipelineWorker
 {
     private readonly IMediaRepository _repository;
+    private readonly IEmbeddingService _embeddingService;
     private readonly PdfMediaIngestor _pdfIngestor;
     private readonly OfficeMediaIngestor _officeIngestor;
     private readonly ImageMediaIngestor _imageIngestor;
@@ -44,6 +46,16 @@ public class IngestionPipelineWorker
     // Saves come from the queue loop and from videos running in parallel; they are written one at a time.
     private readonly SemaphoreSlim _saveLock = new(1, 1);
     private readonly Stopwatch _runWatch = new();
+
+    /// <summary>
+    /// Time since the first file that needed work started. Unlike <see cref="_runWatch"/> (the whole run:
+    /// folder enumeration, hash lookups and already-indexed checks included), this matches the
+    /// <see cref="IngestionEta"/> basis, which only counts files that needed work. Started lazily by
+    /// <see cref="EnsureWorkStarted"/>; never started when a run has nothing to do.
+    /// </summary>
+    private readonly Stopwatch _workWatch = new();
+    private readonly object _workLock = new();
+    private bool _workStarted;
 
     private readonly Func<int> _videoSegmentSeconds;
     private readonly ConcurrentDictionary<string, (int Done, int Total)> _videoProgress = new(StringComparer.OrdinalIgnoreCase);
@@ -95,6 +107,7 @@ public class IngestionPipelineWorker
     private int _skippedFiles;
     private int _excludedFiles;
     private int _quickFiles;
+    private int _imageBatchCount; // image batches seen this run, used to pace the diagnostics log line
     private readonly IndexExclusionStore? _exclusions;
     private bool _isRunning;
 
@@ -125,6 +138,7 @@ public class IngestionPipelineWorker
         _videoAutoSegment = videoAutoSegment ?? (() => false);
         _videoSegmentSeconds = videoSegmentSeconds ?? (() => DefaultVideoSegmentSeconds);
         _repository = repository;
+        _embeddingService = embeddingService;
         _pdfIngestor = new PdfMediaIngestor(embeddingService, pdfExtractor);
         _officeIngestor = new OfficeMediaIngestor(embeddingService);
         _imageIngestor = new ImageMediaIngestor(embeddingService);
@@ -157,9 +171,15 @@ public class IngestionPipelineWorker
         _skippedFiles = 0;
         _excludedFiles = 0;
         _quickFiles = 0;
+        _imageBatchCount = 0;
         VideoStats.Reset();
         _knownHashes = null; // what is in the index is read again for each run
         _runWatch.Restart();
+        lock (_workLock)
+        {
+            _workStarted = false;
+            _workWatch.Reset();
+        }
         _isRunning = true;
         _workerCts = new CancellationTokenSource();
         var token = _workerCts.Token;
@@ -374,7 +394,30 @@ public class IngestionPipelineWorker
                 _isRunning = false;
             }
         }
-        NotifyProgress(Loc.T("Ingest.AllDone"), summary: VideoStats.Summary(_runWatch.Elapsed.TotalSeconds));
+        NotifyProgress(Loc.T("Ingest.AllDone"), summary: VideoStats.Summary(WallSeconds, ActiveSeconds));
+    }
+
+    /// <summary>Whole run including enumeration and already-indexed checks (the 6th arg of Ingest.VideoStats, unchanged).</summary>
+    private double WallSeconds => _runWatch.Elapsed.TotalSeconds;
+
+    /// <summary>
+    /// Time since the first file that needed work started; 0 when nothing needed work.
+    /// Same basis as <see cref="IngestionEta"/> (files counted in QuickFiles excluded).
+    /// </summary>
+    private double ActiveSeconds
+    {
+        get { lock (_workLock) return _workStarted ? _workWatch.Elapsed.TotalSeconds : 0; }
+    }
+
+    /// <summary>Starts the real-work clock once, at the first file that is not skipped as already indexed.</summary>
+    private void EnsureWorkStarted()
+    {
+        lock (_workLock)
+        {
+            if (_workStarted) return;
+            _workStarted = true;
+            _workWatch.Restart();
+        }
     }
 
     /// <summary>Indexes one PDF or video and reports progress; a failure is reported, not thrown.</summary>
@@ -467,6 +510,8 @@ public class IngestionPipelineWorker
     {
         if (filePaths.Count == 0) return;
 
+        int batchNumber = Interlocked.Increment(ref _imageBatchCount);
+
         var toProcess = new List<string>();
         foreach (var p in filePaths)
         {
@@ -512,6 +557,7 @@ public class IngestionPipelineWorker
 
         if (toProcess.Count > 0)
         {
+            EnsureWorkStarted(); // first file that needs work: folder enumeration and skipped checks stay out of the active time
             string currentName = Path.GetFileName(toProcess.First());
             NotifyProgress(Loc.T("Ingest.Embedding", currentName));
 
@@ -554,6 +600,29 @@ public class IngestionPipelineWorker
         {
             NotifyProgress(Path.GetFileName(filePaths.Last()));
         }
+
+        if (batchNumber % EmbeddingStatsLogEveryBatches == 0)
+        {
+            LogEmbeddingStats(batchNumber);
+        }
+    }
+
+    /// <summary>Every this many image batches, one diagnostics line with the embedding stage timings is logged.</summary>
+    internal const int EmbeddingStatsLogEveryBatches = 10;
+
+    /// <summary>
+    /// Diagnostic only: prints where the time of image embedding goes. Reads the timings from the ONNX engine when it is
+    /// the active one, and does nothing otherwise (test doubles and the unavailable engine carry no stats).
+    /// </summary>
+    private void LogEmbeddingStats(int batchNumber)
+    {
+        string? line = _embeddingService switch
+        {
+            OnnxDirectMlEmbeddingService onnx => onnx.DescribeStats(),
+            EmbeddingServiceHost host => host.DescribeEmbeddingStats(),
+            _ => null
+        };
+        if (line != null) Console.WriteLine($"[EmbeddingStats] after image batch {batchNumber}: {line}");
     }
 
     /// <summary>Names the first few files that were left out (file names only, to keep the message short), then counts the rest.</summary>
@@ -604,6 +673,12 @@ public class IngestionPipelineWorker
         MediaAsset asset;
         List<MediaChunk> chunks;
 
+        if (!PdfExts.Contains(ext) && !OfficeExts.Contains(ext) && !VideoExts.Contains(ext))
+        {
+            return; // not a kind this worker handles: no work done, so the active clock stays stopped
+        }
+        EnsureWorkStarted(); // first non-skipped file: enumeration and QuickFiles checks stay out of the active time
+
         if (PdfExts.Contains(ext))
         {
             (asset, chunks) = await _pdfIngestor.IngestAsync(filePath, _cacheDirectory, cancellationToken: cancellationToken);
@@ -625,7 +700,7 @@ public class IngestionPipelineWorker
         }
         else
         {
-            return;
+            return; // unreachable: unknown kinds returned above, kept so a future kind cannot silently embed nothing
         }
 
         await SaveAsync(asset, chunks, cancellationToken);

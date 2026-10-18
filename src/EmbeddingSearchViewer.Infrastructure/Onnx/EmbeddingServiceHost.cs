@@ -34,6 +34,9 @@ public sealed class EmbeddingServiceHost : IEmbeddingService, IDisposable
     /// <summary>True when the engine could not be created because the model files are missing.</summary>
     public bool ModelFilesMissing => !IsAvailable && EmbeddingModelLocation.Find() == null;
 
+    /// <summary>Diagnostics line of the underlying ONNX engine, or null when another engine (or none) is active.</summary>
+    public string? DescribeEmbeddingStats() => (_inner as OnnxDirectMlEmbeddingService)?.DescribeStats();
+
     private static IEmbeddingService CreateDefault() => new OnnxDirectMlEmbeddingService(deviceId: 0);
 
     private IEmbeddingService SafeCreate()

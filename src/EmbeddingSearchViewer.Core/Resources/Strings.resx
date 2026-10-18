@@ -145,6 +145,9 @@
   <data name="Ingest.VideoStats" xml:space="preserve">
     <value>動画 {0} 本・{1} 場面（フレーム取り出し {2:F1} 秒、埋め込み {3:F1} 秒、動画ごとの所要 {4:F1} 秒、全体 {5:F1} 秒）</value>
   </data>
+  <data name="Ingest.VideoStats.Active" xml:space="preserve">
+    <value>（うち実処理 {0:F1} 秒）</value>
+  </data>
   <data name="Library.Blank.Checking" xml:space="preserve">
     <value>白紙(ほぼ一色)の画像を調べています...</value>
   </data>

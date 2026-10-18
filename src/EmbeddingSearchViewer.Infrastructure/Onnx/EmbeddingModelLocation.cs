@@ -26,7 +26,7 @@ public static class EmbeddingModelLocation
     public const string TokenizerFile = "tokenizer.json";
 
     /// <summary>Precision used when none is requested explicitly.</summary>
-    public const ModelPrecision DefaultPrecision = ModelPrecision.Fp32;
+    public const ModelPrecision DefaultPrecision = ModelPrecision.Fp16;
 
     public static string TextModelFile(ModelPrecision p) => p switch
     {

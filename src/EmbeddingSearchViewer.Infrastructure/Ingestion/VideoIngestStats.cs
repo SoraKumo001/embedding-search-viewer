@@ -51,4 +51,19 @@ public sealed class VideoIngestStats
         if (Videos == 0) return string.Empty;
         return Loc.T("Ingest.VideoStats", Videos, Segments, ExtractSeconds, EmbedSeconds, VideoSeconds, elapsedSeconds);
     }
+
+    /// <summary>
+    /// One line for the UI with the wall-clock total kept as-is and the real work time appended.
+    /// <paramref name="wallSeconds"/> is the whole run (enumeration and already-indexed checks included,
+    /// same meaning as <see cref="Summary(double)"/>); <paramref name="activeSeconds"/> is the time since
+    /// the first file that needed work started. When nothing needed work (or the two are effectively equal)
+    /// the output is identical to <see cref="Summary(double)"/>.
+    /// </summary>
+    public string Summary(double wallSeconds, double activeSeconds)
+    {
+        string baseLine = Summary(wallSeconds);
+        if (string.IsNullOrEmpty(baseLine)) return baseLine;
+        if (activeSeconds <= 0 || wallSeconds - activeSeconds < 0.5) return baseLine;
+        return baseLine + Loc.T("Ingest.VideoStats.Active", activeSeconds);
+    }
 }

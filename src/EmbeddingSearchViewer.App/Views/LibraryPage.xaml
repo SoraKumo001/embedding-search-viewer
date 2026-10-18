@@ -27,7 +27,7 @@
                     <TextBlock Text="{x:Bind ViewModel.EngineStatus, Mode=OneWay}"
                                Style="{ThemeResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                 </StackPanel>
-                <ProgressRing Grid.Column="2" IsActive="{x:Bind ViewModel.IsIndexing, Mode=OneWay}" Width="24" Height="24" />
+                <ProgressRing Grid.Column="2" IsActive="{x:Bind ViewModel.IsBusy, Mode=OneWay}" Width="24" Height="24" />
             </Grid>
 
             <!-- Library Statistics Section -->
@@ -46,7 +46,7 @@
                             </StackPanel>
                         </Button>
                         <Button loc:L.Uid="Library.Button02" Command="{x:Bind ViewModel.RemoveMissingFilesCommand}"
-                                IsEnabled="{x:Bind ViewModel.IsIndexing, Mode=OneWay, Converter={StaticResource InverseBoolConverter}}"
+                                IsEnabled="{x:Bind ViewModel.IsBusy, Mode=OneWay, Converter={StaticResource InverseBoolConverter}}"
                                 Padding="8,4" Background="Transparent" BorderThickness="0" AutomationProperties.Name="Remove Missing Files">
                             <StackPanel Orientation="Horizontal" Spacing="4">
                                 <FontIcon Glyph="&#xE74D;" FontSize="13" />
@@ -54,7 +54,7 @@
                             </StackPanel>
                         </Button>
                         <Button loc:L.Uid="Library.Button03" Command="{x:Bind ViewModel.RemoveBlankImagesCommand}"
-                                IsEnabled="{x:Bind ViewModel.IsIndexing, Mode=OneWay, Converter={StaticResource InverseBoolConverter}}"
+                                IsEnabled="{x:Bind ViewModel.IsBusy, Mode=OneWay, Converter={StaticResource InverseBoolConverter}}"
                                 Padding="8,4" Background="Transparent" BorderThickness="0" AutomationProperties.Name="Remove Blank Images">
                             <StackPanel Orientation="Horizontal" Spacing="4">
                                 <FontIcon Glyph="&#xE7B3;" FontSize="13" />
@@ -62,7 +62,7 @@
                             </StackPanel>
                         </Button>
                         <Button loc:L.Uid="Library.Button04" Click="ClearIndexButton_Click"
-                                IsEnabled="{x:Bind ViewModel.IsIndexing, Mode=OneWay, Converter={StaticResource InverseBoolConverter}}"
+                                IsEnabled="{x:Bind ViewModel.IsBusy, Mode=OneWay, Converter={StaticResource InverseBoolConverter}}"
                                 Padding="8,4" Background="Transparent" BorderThickness="0" AutomationProperties.Name="Clear Index">
                             <StackPanel Orientation="Horizontal" Spacing="4">
                                 <FontIcon Glyph="&#xE894;" FontSize="13" Foreground="{ThemeResource SystemFillColorCriticalBrush}" />
@@ -223,7 +223,7 @@
                                    Style="{ThemeResource CaptionTextBlockStyle}" TextTrimming="CharacterEllipsis" />
                         <Button loc:L.Uid="Library.Button06" Grid.Column="1"
                                 Command="{x:Bind ViewModel.StartIndexingCommand}"
-                                IsEnabled="{x:Bind ViewModel.IsIndexing, Mode=OneWay, Converter={StaticResource InverseBoolConverter}}"
+                                IsEnabled="{x:Bind ViewModel.IsBusy, Mode=OneWay, Converter={StaticResource InverseBoolConverter}}"
                                 AutomationProperties.Name="Start Indexing" />
                         <Button loc:L.Uid="Library.Button07" Grid.Column="2"
                                 Command="{x:Bind ViewModel.StopIndexingCommand}"

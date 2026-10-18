@@ -145,6 +145,9 @@
   <data name="Ingest.VideoStats" xml:space="preserve">
     <value>{0} videos, {1} scenes (frame extraction {2:F1} s, embedding {3:F1} s, time per video {4:F1} s, total {5:F1} s)</value>
   </data>
+  <data name="Ingest.VideoStats.Active" xml:space="preserve">
+    <value> (of which active processing {0:F1} s)</value>
+  </data>
   <data name="Library.Blank.Checking" xml:space="preserve">
     <value>Looking for blank (almost single-colour) images...</value>
   </data>

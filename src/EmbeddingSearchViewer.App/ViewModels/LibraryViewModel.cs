@@ -34,8 +34,16 @@ public partial class LibraryViewModel : ObservableObject
     [ObservableProperty]
     private bool _isEngineReady = true;
 
-    [ObservableProperty]
+    [ObservableProperty, NotifyPropertyChangedFor(nameof(IsBusy))]
     private bool _isIndexing;
+
+    [ObservableProperty, NotifyPropertyChangedFor(nameof(IsBusy))]
+    private bool _isClearing;
+
+    /// <summary>True while indexing or clearing the index; the UI binds busy indicators to this.</summary>
+    public bool IsBusy => IsIndexing || IsClearing;
+
+    private CancellationTokenSource? _clearCts;
 
     [ObservableProperty]
     private int _totalFiles;
@@ -554,21 +562,55 @@ public partial class LibraryViewModel : ObservableObject
     }
 
     [RelayCommand]
-    public async Task ClearIndexAsync()
+    public async Task ClearIndexAsync(CancellationToken cancellationToken = default)
     {
-        if (IsIndexing) return;
+        if (IsIndexing || IsClearing) return;
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        _clearCts = cts;
+        IsClearing = true;
         try
         {
-            var assets = await _repository.GetAllAssetsAsync();
-            await _repository.ClearAllAsync();
+            ErrorMessage = null;
+            CurrentStatusMessage = Loc.T("Library.Scanning");
+            // COUNT only: GetAllAssetsAsync の全行実体化を避ける。重いDB処理はプールスレッドに逃がす。
+            int count = (await Task.Run(async () => await _repository.GetAssetStatsAsync(cts.Token), cts.Token)).Total;
+            cts.Token.ThrowIfCancellationRequested();
+            await Task.Run(async () => await _repository.ClearAllAsync(cts.Token), cts.Token);
 
-            CurrentStatusMessage = Loc.T("Library.Cleared", assets.Count);
+            CurrentStatusMessage = Loc.T("Library.Cleared", count);
             ProgressPercentage = 0;
-            await RefreshLibraryStatsAsync();
+            ApplyClearedStats();
+        }
+        catch (OperationCanceledException)
+        {
+            CurrentStatusMessage = Loc.T("Library.Status.Ready");
         }
         catch (Exception ex)
         {
             ErrorMessage = Loc.T("Library.Clear.Error", ex.Message);
         }
+        finally
+        {
+            IsClearing = false;
+            if (_clearCts == cts) _clearCts = null;
+        }
+    }
+
+    /// <summary>クリア直後の軽量リフレッシュ: 空表示を確定させるだけでDB走査・CountFilesを回さない。</summary>
+    private void ApplyClearedStats()
+    {
+        TotalIndexedAssets = 0;
+        IndexedImageCount = 0;
+        IndexedPdfCount = 0;
+        IndexedVideoCount = 0;
+        IndexedDocumentCount = 0;
+        HasIndexedAssets = false;
+        CheckIndexModel(0);
+
+        _indexedPaths = Array.Empty<string>();
+        _folderCounts = TargetFolders.Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(f => f, _ => 0, StringComparer.OrdinalIgnoreCase);
+        SyncFolderItems(recount: false);
+        HasFolders = TargetFolders.Count > 0;
     }
 }

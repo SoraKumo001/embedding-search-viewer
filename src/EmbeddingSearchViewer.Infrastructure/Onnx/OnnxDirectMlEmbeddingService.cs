@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Numerics.Tensors;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.ML.OnnxRuntime;
@@ -68,6 +69,13 @@ public class OnnxDirectMlEmbeddingService : IEmbeddingService, IDisposable
         _visionOnGpu = deviceId >= 0;
         _languageModelOnGpu = deviceId >= 0;
 
+        if (deviceId >= 0)
+        {
+            // The adapter list is DXGI order, which is what DirectML indexes devices by, so deviceId maps to a named GPU.
+            Console.WriteLine($"[DirectML] Adapters: {DirectMlAdapters.Summary()}");
+            Console.WriteLine($"[DirectML] deviceId {deviceId} -> {DirectMlAdapters.Describe(deviceId)}");
+        }
+
         lock (TokenizerLock)
         {
             _tokenizer = new Tokenizers.DotNet.Tokenizer(PathOf(EmbeddingModelLocation.TokenizerFile));
@@ -77,6 +85,50 @@ public class OnnxDirectMlEmbeddingService : IEmbeddingService, IDisposable
 
     /// <summary>Timing of the image-embedding stages, for finding the bottleneck.</summary>
     public EmbeddingStageStats Stats { get; } = new();
+
+    // ---- diagnostics (verification only; nothing below changes any inference shape, batch size or precision) ----
+
+    private const int PatchHistogramBinWidth = 100;
+    private readonly int[] _patchHistogram = new int[Gemma4ImagePreprocessor.MaxPatches / PatchHistogramBinWidth + 1];
+    private long _patchCount, _patchSum;
+
+    /// <summary>Records the patch count of one prepared image, so its distribution can be logged (diagnostics only).</summary>
+    private void RecordPatchCount(int numPatches)
+    {
+        Interlocked.Increment(ref _patchCount);
+        Interlocked.Add(ref _patchSum, numPatches);
+        int bin = Math.Min(numPatches / PatchHistogramBinWidth, _patchHistogram.Length - 1);
+        Interlocked.Increment(ref _patchHistogram[bin]);
+    }
+
+    /// <summary>
+    /// One console line with the image-embedding stage timings and the patch-count distribution so far, so that the
+    /// bottleneck (and whether fixed image shapes would help) can be judged from a real indexing run. Read-only.
+    /// </summary>
+    public string DescribeStats()
+    {
+        var s = Stats.Snapshot();
+        double total = s.PrepareMs + s.VisionWaitMs + s.VisionRunMs + s.LanguageModelMs;
+        var text = new StringBuilder();
+        text.Append($"images={s.Images} prepare={s.PrepareMs:F0}ms visionWait={s.VisionWaitMs:F0}ms visionRun={s.VisionRunMs:F0}ms languageModel={s.LanguageModelMs:F0}ms perImage={(s.Images == 0 ? 0 : total / s.Images):F1}ms");
+
+        long count = Interlocked.Read(ref _patchCount);
+        if (count > 0)
+        {
+            double avg = (double)Interlocked.Read(ref _patchSum) / count;
+            text.Append($"; patches avg={avg:F0} maxPatches={Gemma4ImagePreprocessor.MaxPatches} histogram=");
+            bool first = true;
+            for (int i = 0; i < _patchHistogram.Length; i++)
+            {
+                int bucket = Volatile.Read(ref _patchHistogram[i]);
+                if (bucket == 0) continue;
+                if (!first) text.Append(' ');
+                first = false;
+                text.Append($"{i * PatchHistogramBinWidth}-{i * PatchHistogramBinWidth + PatchHistogramBinWidth - 1}:{bucket}");
+            }
+        }
+        return text.ToString();
+    }
 
     /// <summary>
     /// How many images of a batch are processed at once. The GPU stage is serialised, so more than one image only
@@ -102,6 +154,7 @@ public class OnnxDirectMlEmbeddingService : IEmbeddingService, IDisposable
             options.EnableMemoryPattern = false;
             options.ExecutionMode = ExecutionMode.ORT_SEQUENTIAL;
             // The published graphs use operators DirectML cannot run (see OnnxModelPatches); use the equivalent patched copy.
+            Console.WriteLine($"[DirectML] Creating the GPU {what} session on deviceId {_deviceId} ({DirectMlAdapters.Describe(_deviceId)}).");
             return new InferenceSession(OnnxModelPatches.EnsureDirectMlCopy(modelPath), options);
         }
         catch (Exception ex) when (ex is OnnxRuntimeException or IOException or UnauthorizedAccessException)
@@ -384,6 +437,7 @@ public class OnnxDirectMlEmbeddingService : IEmbeddingService, IDisposable
         var prepared = Gemma4ImagePreprocessor.Prepare(imagePath, detectBlank: skipBlank);
         Stats.AddPrepare(Stopwatch.GetTimestamp() - t0);
         if (prepared.IsNearlyBlank) return Array.Empty<float>();
+        RecordPatchCount(prepared.NumPatches);
 
         var softTokens = RunVisionEncoder(prepared);
         int n = softTokens.Dimensions[0];
