@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
+using EmbeddingSearchViewer.Infrastructure.Onnx;
 using SkiaSharp;
 using Windows.Data.Pdf;
 using Windows.Storage;
@@ -109,8 +110,14 @@ public sealed class WindowsPdfPageExtractor : IPdfPageExtractor
         reader.ReadBytes(bytes);
         await File.WriteAllBytesAsync(imagePath, bytes);
 
-        using var codec = SKCodec.Create(new MemoryStream(bytes));
-        return (codec?.Info.Width ?? 0, (int)Math.Max(1, Math.Round(width)));
+        int actualWidth;
+        // NativeDecodeGate is a leaf: synchronous Skia only, no await, no other lock taken after it.
+        lock (NativeDecodeGate.Lock)
+        {
+            using var codec = SKCodec.Create(new MemoryStream(bytes));
+            actualWidth = codec?.Info.Width ?? 0;
+        }
+        return (actualWidth, (int)Math.Max(1, Math.Round(width)));
     }
 
     /// <summary>Opens the text layer reader; null when PdfPig cannot parse the file (pages are then indexed by image only).</summary>

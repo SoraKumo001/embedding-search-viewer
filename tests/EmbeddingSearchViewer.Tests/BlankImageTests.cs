@@ -187,8 +187,73 @@ public sealed class BlankImageTests : IDisposable
         Assert.Equal(2, last.SkippedFiles);
     }
 
-    // ---- cleaning an existing index ----
+    /// <summary>Records what was asked and returns no embedding for "blank*" files, like the real service.</summary>
+    private sealed class CountingBlankEmbedding : IEmbeddingService
+    {
+        private readonly object _lock = new();
+        public List<string> Asked { get; } = new();
 
+        public Task<bool> IsReadyAsync(CancellationToken cancellationToken = default) => Task.FromResult(true);
+        public Task<float[]> GenerateQueryEmbeddingAsync(string query, string modality = "text", int truncateDim = 768, CancellationToken cancellationToken = default) => Task.FromResult(new float[truncateDim]);
+
+        public Task<IReadOnlyList<float[]>> GenerateBatchEmbeddingsAsync(IEnumerable<EmbeddingItemInput> items, int truncateDim = 768, CancellationToken cancellationToken = default)
+        {
+            var names = items.Select(i => Path.GetFileName(i.Path ?? string.Empty)).ToList();
+            lock (_lock) Asked.AddRange(names);
+            return Task.FromResult<IReadOnlyList<float[]>>(names
+                .Select(n => n.StartsWith("blank") ? Array.Empty<float>() : Enumerable.Repeat(0.5f, truncateDim).ToArray())
+                .ToList());
+        }
+    }
+
+    private static async Task<IngestionProgress> RunAsync(SqliteMediaRepository repo, IEmbeddingService embedding, string cache, string media, int files)
+    {
+        var worker = new IngestionPipelineWorker(repo, embedding, cache);
+        IngestionProgress? last = null;
+        worker.ProgressChanged += p => last = p;
+        await worker.QueueDirectoryAsync(media);
+        for (int i = 0; i < 100 && (last == null || last.IsRunning || last.ProcessedFiles < files); i++) await Task.Delay(100);
+        return last!;
+    }
+
+    [Fact]
+    public async Task Worker_DoesNotEmbedAnUnchangedBlankFileAgain_ButDoesWhenItChanges()
+    {
+        var media = Path.Combine(_dir, "media2");
+        Directory.CreateDirectory(media);
+        File.Copy(White("a2.png"), Path.Combine(media, "a.png"));
+        var blankPath = Path.Combine(media, "blank_again.png");
+        File.Copy(White("blank_src.png"), blankPath);
+
+        var repo = new SqliteMediaRepository(Path.Combine(_dir, "t2.db"));
+        await repo.InitializeAsync();
+        string cache = Path.Combine(_dir, "cache2");
+
+        var first = new CountingBlankEmbedding();
+        var firstLast = await RunAsync(repo, first, cache, media, files: 2);
+
+        Assert.Contains(first.Asked, n => n.StartsWith("blank"));
+        Assert.Equal(1, firstLast.SkippedFiles);
+        Assert.DoesNotContain("blank_again.png", (await repo.GetAllAssetsAsync()).Select(a => a.FileName));
+
+        // A fresh worker with the same cache folder: like the next start of the app. The blank file is remembered.
+        var second = new CountingBlankEmbedding();
+        var secondLast = await RunAsync(repo, second, cache, media, files: 2);
+
+        Assert.DoesNotContain(second.Asked, n => n.StartsWith("blank"));
+        Assert.Equal(1, secondLast.SkippedFiles); // still reported as skipped, not as work
+
+        // The file changed (a later modification time): it must be embedded again.
+        File.Copy(White("blank_changed.png"), blankPath, overwrite: true);
+        File.SetLastWriteTimeUtc(blankPath, DateTime.UtcNow.AddMinutes(1));
+
+        var third = new CountingBlankEmbedding();
+        await RunAsync(repo, third, cache, media, files: 2);
+
+        Assert.Contains(third.Asked, n => n.StartsWith("blank"));
+    }
+
+    // ---- cleaning an existing index ----
     [Fact]
     public async Task Cleanup_FindsOnlyBlankImagesThatStillExist()
     {

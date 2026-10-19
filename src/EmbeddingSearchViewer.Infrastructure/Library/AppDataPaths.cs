@@ -17,5 +17,6 @@ public static class AppDataPaths
     public static string DefaultWindowPlacementPath => Path.Combine(RootDirectory, "window.json");
     public static string DefaultSearchHistoryPath => Path.Combine(RootDirectory, "search_history.json");
     public static string DefaultExclusionsPath => Path.Combine(RootDirectory, "excluded_files.json");
+    public static string DefaultEmptySkipsPath => Path.Combine(RootDirectory, "empty_embedding_skips.json");
     public static string DefaultProfilesPath => Path.Combine(RootDirectory, "profiles.json");
 }

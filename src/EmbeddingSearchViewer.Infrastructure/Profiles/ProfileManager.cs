@@ -25,6 +25,9 @@ public sealed class ProfileManager
     public const string DefaultId = "default";
     public const string DefaultName = "標準";
 
+    /// <summary>Name of the per-profile file that remembers files the embedding service returned nothing for.</summary>
+    public const string EmptySkipsFileName = "empty_embedding_skips.json";
+
     private readonly string _root;
     private readonly string _listPath;
     private readonly object _lock = new();
@@ -55,6 +58,7 @@ public sealed class ProfileManager
     public string LibraryPath => LibraryPathOf(Current.Id);
     public string HistoryPath => HistoryPathOf(Current.Id);
     public string ExclusionsPath => ExclusionsPathOf(Current.Id);
+    public string EmptySkipsPath => EmptySkipsPathOf(Current.Id);
     public string CacheDirectory => CacheDirectoryOf(Current.Id);
 
     /// <summary>The folder that holds profiles.json and the profiles folder (the root the manager was created with).</summary>
@@ -69,6 +73,7 @@ public sealed class ProfileManager
     public string LibraryPathOf(string id) => Path.Combine(DirectoryOf(id), "library.json");
     public string HistoryPathOf(string id) => Path.Combine(DirectoryOf(id), "search_history.json");
     public string ExclusionsPathOf(string id) => Path.Combine(DirectoryOf(id), "excluded_files.json");
+    public string EmptySkipsPathOf(string id) => Path.Combine(DirectoryOf(id), EmptySkipsFileName);
     public string CacheDirectoryOf(string id) => Path.Combine(DirectoryOf(id), "cache");
 
 

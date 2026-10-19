@@ -114,7 +114,13 @@ public class IngestionPipelineWorker
     private int _excludedFiles;
     private int _quickFiles;
     private int _imageBatchCount; // image batches seen this run, used to pace the diagnostics log line
+
     private readonly IndexExclusionStore? _exclusions;
+
+    // Files the embedding service returned nothing for (blank pages). Remembered so the next run does not re-embed
+    // them, without putting them in the search index or in the excluded-files list (they are not failures).
+    private readonly EmptyEmbeddingSkipStore _emptyEmbeddingSkips;
+
     private bool _isRunning;
 
     // Guards the "is the queue finished?" decision against producers that start concurrently.
@@ -137,7 +143,8 @@ public class IngestionPipelineWorker
         Func<int>? videoSegmentSeconds = null,
         IndexExclusionStore? exclusions = null,
         Func<bool>? videoAutoSegment = null,
-        Func<MediaTypeSelection>? mediaTypes = null)
+        Func<MediaTypeSelection>? mediaTypes = null,
+        EmptyEmbeddingSkipStore? emptyEmbeddingSkipsStore = null)
     {
         _mediaTypes = mediaTypes ?? (() => MediaTypeSelection.All);
         _exclusions = exclusions;
@@ -157,8 +164,21 @@ public class IngestionPipelineWorker
             "cache"
         );
         _cacheDirectoryProvider = cacheDirectoryProvider ?? (() => fixedCacheDirectory);
+        _emptyEmbeddingSkips = emptyEmbeddingSkipsStore ?? new EmptyEmbeddingSkipStore(DefaultEmptyEmbeddingSkipPath);
         Directory.CreateDirectory(_cacheDirectory);
         _channel = Channel.CreateUnbounded<string>(new UnboundedChannelOptions { SingleReader = true });
+    }
+
+    /// <summary>
+    /// Fallback for callers that do not supply a store (tests, or a worker built outside the app's service provider).
+    /// The skip memory lives next to the cache directory (which is per profile), not inside it: clearing the cache must
+    /// not make the next run embed every blank image again.
+    /// </summary>
+    private string DefaultEmptyEmbeddingSkipPath()
+    {
+        string? directory = Path.GetDirectoryName(_cacheDirectoryProvider());
+        if (string.IsNullOrEmpty(directory)) directory = AppDataPaths.RootDirectory;
+        return Path.Combine(directory, "empty_embedding_skips.json");
     }
 
     public void Start()
@@ -304,8 +324,9 @@ public class IngestionPipelineWorker
     /// One walk over the folder tree, queueing every selected file that <paramref name="enqueue"/> accepts.
     /// Accepted new files are recorded in <paramref name="queuedNew"/> when it is not null.
     /// </summary>
-    private void EnqueuePass(string directoryPath, EnumerationOptions options, MediaTypeSelection selection,
-        CancellationToken cancellationToken, Func<string, bool> enqueue, HashSet<string>? queuedNew)
+    private void EnqueuePass(string directoryPath, EnumerationOptions options,
+        MediaTypeSelection selection, CancellationToken cancellationToken, Func<string, bool> enqueue,
+        HashSet<string>? queuedNew)
     {
         foreach (var file in Directory.EnumerateFiles(directoryPath, "*.*", options))
         {
@@ -605,7 +626,7 @@ public class IngestionPipelineWorker
         {
             if (_knownHashes is { IsFaulted: true } or { IsCanceled: true }) _knownHashes = null; // try again
             return _knownHashes ??= Task.Run(async () =>
-                new ConcurrentDictionary<string, string>(await _repository.GetAssetHashesAsync(), StringComparer.Ordinal));
+                new ConcurrentDictionary<string, string>(await _repository.GetAssetHashesAsync(), StringComparer.OrdinalIgnoreCase));
         }
     }
 
@@ -653,7 +674,21 @@ public class IngestionPipelineWorker
                 continue;
             }
 
-            if (!await IsUnchangedAsync(p, fileHash, cancellationToken))
+            // A blank image the embedding service returned nothing for last time (and that has not changed since) is
+            // not embedded again. It was never written to the index, so without this memory it would be re-embedded on
+            // every run (CPU only, no GPU work): the cause of the "[StageStats] embed ... (0 assets)" repeats.
+            if (_emptyEmbeddingSkips.IsSkipped(p, fi.Length, fi.LastWriteTimeUtc.Ticks))
+            {
+                Interlocked.Increment(ref _processedFiles);
+                Interlocked.Increment(ref _skippedFiles);
+                Interlocked.Increment(ref _quickFiles);
+                NotifyProgress(Path.GetFileName(p));
+                continue;
+            }
+            _emptyEmbeddingSkips.Remove(p); // changed since it was remembered: forget the stale entry and embed it again
+
+            bool unchanged = await IsUnchangedAsync(p, fileHash, cancellationToken);
+            if (!unchanged)
             {
                 toProcess.Add(p);
             }
@@ -675,7 +710,8 @@ public class IngestionPipelineWorker
             {
                 long embedStart = Stopwatch.GetTimestamp();
                 var batch = await _imageIngestor.IngestBatchWithSkipsAsync(toProcess, _cacheDirectory, cancellationToken: cancellationToken);
-                StageStats.AddEmbed(Stopwatch.GetTimestamp() - embedStart, batch.Items.Count);
+                long embedElapsed = Stopwatch.GetTimestamp() - embedStart;
+                StageStats.AddEmbed(embedElapsed, batch.Items.Count);
 
                 // Save the whole batch in as few transactions as possible; one failing asset is isolated by the
                 // repository, so its neighbours still land.
@@ -704,11 +740,14 @@ public class IngestionPipelineWorker
                     NotifyProgress(currentName, DescribeFailures(batch.FailedFiles, willExclude: _exclusions != null));
                 }
 
-                // Skipped files (blank pages) are done as far as progress is concerned, but are not stored.
+                // Skipped files (blank pages) are done as far as progress is concerned, but are not stored in the index.
+                // Remember them (with their current size and modification time) so the next run skips them instead of
+                // embedding them again; a changed file no longer matches and is retried.
                 if (batch.SkippedWithoutEmbedding.Count > 0)
                 {
                     Interlocked.Add(ref _processedFiles, batch.SkippedWithoutEmbedding.Count);
                     Interlocked.Add(ref _skippedFiles, batch.SkippedWithoutEmbedding.Count);
+                    RememberSkippedWithoutEmbedding(batch.SkippedWithoutEmbedding);
                     NotifyProgress(Path.GetFileName(batch.SkippedWithoutEmbedding[^1]));
                 }
             }
@@ -780,6 +819,25 @@ public class IngestionPipelineWorker
         }
     }
 
+    private void RememberSkippedWithoutEmbedding(IReadOnlyList<string> paths)
+    {
+        var entries = new List<SkippedEmbeddingFile>(paths.Count);
+        foreach (var path in paths)
+        {
+            try
+            {
+                var info = new FileInfo(path);
+                if (!info.Exists) continue;
+                entries.Add(new SkippedEmbeddingFile(path, info.Length, info.LastWriteTimeUtc.Ticks, DateTime.UtcNow));
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                // Not being able to look at the file again is no reason to fail the run.
+            }
+        }
+        if (entries.Count > 0) _emptyEmbeddingSkips.AddRange(entries);
+    }
+
     private async Task ProcessSingleNonImageFileAsync(string filePath, CancellationToken cancellationToken)
     {
         if (!File.Exists(filePath)) return;
@@ -787,7 +845,8 @@ public class IngestionPipelineWorker
         var fi = new FileInfo(filePath);
         string fileHash = MediaAsset.ComputeFileHash(fi);
 
-        if (await IsUnchangedAsync(filePath, fileHash, cancellationToken))
+        bool unchanged = await IsUnchangedAsync(filePath, fileHash, cancellationToken);
+        if (unchanged)
         {
             Interlocked.Increment(ref _quickFiles);
             return;

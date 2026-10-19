@@ -76,7 +76,8 @@ public partial class App : Application
                     var s = sp.GetRequiredService<LibrarySettingsStore>().Load();
                     return new MediaTypeSelection(s.IndexImages, s.IndexPdfs, s.IndexVideos, s.IndexDocuments);
                 },
-                exclusions: sp.GetRequiredService<IndexExclusionStore>());
+                exclusions: sp.GetRequiredService<IndexExclusionStore>(),
+                emptyEmbeddingSkipsStore: sp.GetRequiredService<EmptyEmbeddingSkipStore>());
         });
 
         services.AddSingleton<LibrarySettingsStore>(sp =>
@@ -88,6 +89,11 @@ public partial class App : Application
         {
             var profiles = sp.GetRequiredService<ProfileManager>();
             return new IndexExclusionStore(() => profiles.ExclusionsPath);
+        });
+        services.AddSingleton<EmptyEmbeddingSkipStore>(sp =>
+        {
+            var profiles = sp.GetRequiredService<ProfileManager>();
+            return new EmptyEmbeddingSkipStore(() => profiles.EmptySkipsPath);
         });
         services.AddSingleton<SearchHistoryStore>(sp =>
         {

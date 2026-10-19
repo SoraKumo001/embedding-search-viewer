@@ -34,11 +34,12 @@ public sealed class ProfileBackupService
     private const string LibraryFileName = "library.json";
     private const string HistoryFileName = "search_history.json";
     private const string ExclusionsFileName = "excluded_files.json";
+    private const string EmptySkipsFileName = "empty_embedding_skips.json";
     private const string CacheFolderName = "cache";
     private const string ProfilesJsonFileName = "profiles.json";
     private const string SingleManifestFileName = "manifest.json";
 
-    private static readonly string[] ProfileJsonFiles = { LibraryFileName, HistoryFileName, ExclusionsFileName };
+    private static readonly string[] ProfileJsonFiles = { LibraryFileName, HistoryFileName, ExclusionsFileName, EmptySkipsFileName };
 
     private static readonly JsonSerializerOptions ManifestJsonOptions = new() { WriteIndented = true };
 

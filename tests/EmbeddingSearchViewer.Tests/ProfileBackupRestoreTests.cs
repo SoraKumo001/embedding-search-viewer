@@ -4,6 +4,7 @@ using System.IO;
 using System.IO.Compression;
 using System.Text;
 using System.Threading.Tasks;
+using EmbeddingSearchViewer.Infrastructure.Ingestion;
 using EmbeddingSearchViewer.Infrastructure.Library;
 using EmbeddingSearchViewer.Infrastructure.Profiles;
 using Microsoft.Data.Sqlite;
@@ -57,6 +58,32 @@ public sealed class ProfileBackupRestoreTests : IDisposable
         Assert.True(preview.TotalBytes > 0);
         Assert.False(preview.CacheIncluded);
         Assert.NotEmpty(preview.Warnings); // the backup's model is not the one the app uses now
+    }
+
+    [Fact]
+    public async Task SingleBackup_IncludesTheEmptyEmbeddingSkipMemory()
+    {
+        var manager = NewManager();
+        var profile = manager.Current;
+        WriteProfileFiles(manager, profile.Id, "history-1");
+
+        // The memory of blank pages is per profile; a backup must carry it so a restore does not re-embed them.
+        var skips = new EmptyEmbeddingSkipStore(() => manager.EmptySkipsPathOf(profile.Id));
+        skips.AddRange(new[]
+        {
+            new SkippedEmbeddingFile(Path.Combine(_root, "blank.png"), 1234, 5678, DateTime.UtcNow)
+        });
+
+        string zip = Path.Combine(_root, "skips.zip");
+        await new ProfileBackupService(manager).BackupSingleAsync(profile.Id, zip, includeCache: false);
+
+        using (var archive = ZipFile.OpenRead(zip))
+        {
+            Assert.NotNull(archive.GetEntry("empty_embedding_skips.json"));
+        }
+
+        var preview = await new ProfileRestoreService(manager).PreviewAsync(zip);
+        Assert.Equal(3, preview.FileCount); // library.json + search_history.json + empty_embedding_skips.json
     }
 
     [Fact]
