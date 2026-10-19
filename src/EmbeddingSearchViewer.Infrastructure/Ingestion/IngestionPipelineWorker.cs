@@ -245,12 +245,24 @@ public class IngestionPipelineWorker
             {
                 try
                 {
-                    foreach (var file in Directory.EnumerateFiles(directoryPath, "*.*", options))
+                    // Files that are not in the index yet go first: on a big library the re-check of every known file
+                    // (even though each check is fast) would otherwise delay the files the user is waiting for.
+                    // The first pass streams the unknown files straight into the queue; the second pass re-checks the
+                    // rest. Only the new files of this call are remembered (a handful), never the whole tree.
+                    var known = TryLoadKnownPaths(cancellationToken);
+                    var queuedNew = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                    if (known != null)
                     {
-                        if (cancellationToken.IsCancellationRequested) break;
-                        if (!SupportedMediaTypes.IsSelected(file, selection)) continue;
-                        Interlocked.Increment(ref _totalFiles);
-                        _channel.Writer.TryWrite(file); // unbounded: always succeeds
+                        EnqueuePass(directoryPath, options, selection, cancellationToken,
+                            f => !known.ContainsKey(f), queuedNew);
+                        if (cancellationToken.IsCancellationRequested) return null;
+                        EnqueuePass(directoryPath, options, selection, cancellationToken,
+                            f => known.ContainsKey(f) || !queuedNew.Contains(f), null);
+                    }
+                    else
+                    {
+                        // The index could not be read: fall back to the old single pass (everything is re-checked).
+                        EnqueuePass(directoryPath, options, selection, cancellationToken, _ => true, null);
                     }
                     return null;
                 }
@@ -268,6 +280,41 @@ public class IngestionPipelineWorker
         finally
         {
             EndProduce();
+        }
+    }
+
+    /// <summary>
+    /// The paths already in the index at the start of this run, or null when the index could not be read
+    /// (the caller then queues everything). Cancellation is reported by returning null as well: the run is
+    /// stopping anyway, so there is nothing to prioritize.
+    /// </summary>
+    private ConcurrentDictionary<string, string>? TryLoadKnownPaths(CancellationToken cancellationToken)
+    {
+        try
+        {
+            return KnownHashesAsync().WaitAsync(cancellationToken).GetAwaiter().GetResult();
+        }
+        catch (Exception ex) when (ex is OperationCanceledException or IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException or InvalidOperationException or System.Data.Common.DbException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// One walk over the folder tree, queueing every selected file that <paramref name="enqueue"/> accepts.
+    /// Accepted new files are recorded in <paramref name="queuedNew"/> when it is not null.
+    /// </summary>
+    private void EnqueuePass(string directoryPath, EnumerationOptions options, MediaTypeSelection selection,
+        CancellationToken cancellationToken, Func<string, bool> enqueue, HashSet<string>? queuedNew)
+    {
+        foreach (var file in Directory.EnumerateFiles(directoryPath, "*.*", options))
+        {
+            if (cancellationToken.IsCancellationRequested) break;
+            if (!SupportedMediaTypes.IsSelected(file, selection)) continue;
+            if (!enqueue(file)) continue;
+            queuedNew?.Add(file);
+            Interlocked.Increment(ref _totalFiles);
+            _channel.Writer.TryWrite(file); // unbounded: always succeeds
         }
     }
 

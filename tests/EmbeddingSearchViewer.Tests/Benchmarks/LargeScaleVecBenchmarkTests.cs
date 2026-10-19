@@ -327,6 +327,9 @@ public sealed class LargeScaleVecBenchmarkTests : IDisposable
         public Task SaveAssetWithChunksAsync(MediaAsset asset, IEnumerable<MediaChunk> chunks, CancellationToken cancellationToken = default) => _inner.SaveAssetWithChunksAsync(asset, chunks, cancellationToken);
         public Task DeleteAssetAsync(Guid assetId, CancellationToken cancellationToken = default) => _inner.DeleteAssetAsync(assetId, cancellationToken);
         public Task<IReadOnlyList<MediaChunk>> GetAllChunksWithEmbeddingsAsync(MediaType? mediaTypeFilter = null, CancellationToken cancellationToken = default) => _inner.GetAllChunksWithEmbeddingsAsync(mediaTypeFilter, cancellationToken);
+        public Task<IReadOnlyList<MediaChunk>> GetAllChunksMetadataAsync(MediaType? mediaTypeFilter = null, CancellationToken cancellationToken = default) => _inner.GetAllChunksMetadataAsync(mediaTypeFilter, cancellationToken);
+        public Task<IReadOnlyDictionary<Guid, float[]>> GetEmbeddingsByChunkIdsAsync(IReadOnlyList<Guid> chunkIds, CancellationToken cancellationToken = default) => _inner.GetEmbeddingsByChunkIdsAsync(chunkIds, cancellationToken);
+        public Task<IReadOnlyList<MediaChunk>> GetChunksByAssetIdAsync(Guid assetId, CancellationToken cancellationToken = default) => _inner.GetChunksByAssetIdAsync(assetId, cancellationToken);
         public Task<IReadOnlyList<(Guid ChunkId, float FtsRank)>> SearchFtsAsync(string keyword, int limit = 50, CancellationToken cancellationToken = default) => _inner.SearchFtsAsync(keyword, limit, cancellationToken);
 
         public Task<IReadOnlyList<(Guid ChunkId, float Distance)>> SearchVecAsync(float[] query, int k, CancellationToken cancellationToken = default)

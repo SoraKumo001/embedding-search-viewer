@@ -106,6 +106,15 @@ public sealed class ProfileScopedRepository : IMediaRepository, IDisposable
     public Task<IReadOnlyList<MediaChunk>> GetAllChunksWithEmbeddingsAsync(MediaType? mediaTypeFilter = null, CancellationToken cancellationToken = default)
         => Current().GetAllChunksWithEmbeddingsAsync(mediaTypeFilter, cancellationToken);
 
+    public Task<IReadOnlyList<MediaChunk>> GetAllChunksMetadataAsync(MediaType? mediaTypeFilter = null, CancellationToken cancellationToken = default)
+        => Current().GetAllChunksMetadataAsync(mediaTypeFilter, cancellationToken);
+
+    public Task<IReadOnlyDictionary<Guid, float[]>> GetEmbeddingsByChunkIdsAsync(IReadOnlyList<Guid> chunkIds, CancellationToken cancellationToken = default)
+        => Current().GetEmbeddingsByChunkIdsAsync(chunkIds, cancellationToken);
+
+    public Task<IReadOnlyList<MediaChunk>> GetChunksByAssetIdAsync(Guid assetId, CancellationToken cancellationToken = default)
+        => Current().GetChunksByAssetIdAsync(assetId, cancellationToken);
+
     public Task<IReadOnlyList<(Guid ChunkId, float FtsRank)>> SearchFtsAsync(string keyword, int limit = 50, CancellationToken cancellationToken = default)
         => Current().SearchFtsAsync(keyword, limit, cancellationToken);
 

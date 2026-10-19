@@ -61,6 +61,57 @@
   <data name="App.Title" xml:space="preserve">
     <value>EmbeddingGemma 2 マルチモーダル検索＆ビューア</value>
   </data>
+  <data name="Backup.Busy" xml:space="preserve">
+    <value>インデックス作成中はバックアップできません。完了するか、中断してから実行してください。</value>
+  </data>
+  <data name="Backup.Confirm.AllBody" xml:space="preserve">
+    <value>すべてのプロファイルのインデックス、フォルダ設定、検索履歴を1つのファイルにまとめて保存します。</value>
+  </data>
+  <data name="Backup.Confirm.CurrentBody" xml:space="preserve">
+    <value>現在のプロファイル（{0}）のインデックス、フォルダ設定、検索履歴を1つのファイルに保存します。</value>
+  </data>
+  <data name="Backup.Confirm.Primary" xml:space="preserve">
+    <value>バックアップ</value>
+  </data>
+  <data name="Backup.Confirm.Title" xml:space="preserve">
+    <value>バックアップを作成</value>
+  </data>
+  <data name="Backup.Done.Body" xml:space="preserve">
+    <value>バックアップを保存しました: {0}</value>
+  </data>
+  <data name="Backup.Done.Title" xml:space="preserve">
+    <value>バックアップが完了しました</value>
+  </data>
+  <data name="Backup.Failed" xml:space="preserve">
+    <value>バックアップできませんでした: {0}</value>
+  </data>
+  <data name="Backup.Failed.Title" xml:space="preserve">
+    <value>バックアップに失敗しました</value>
+  </data>
+  <data name="Backup.FileType" xml:space="preserve">
+    <value>バックアップファイル</value>
+  </data>
+  <data name="Backup.IncludeCache" xml:space="preserve">
+    <value>キャッシュ（サムネイルや変換結果）も含める</value>
+  </data>
+  <data name="Backup.Progress.Title" xml:space="preserve">
+    <value>バックアップしています...</value>
+  </data>
+  <data name="Backup.Stage.Staging" xml:space="preserve">
+    <value>ファイルを集めています...</value>
+  </data>
+  <data name="Backup.Stage.Start" xml:space="preserve">
+    <value>準備しています...</value>
+  </data>
+  <data name="Backup.Stage.Verify" xml:space="preserve">
+    <value>内容を確認しています...</value>
+  </data>
+  <data name="Backup.Stage.Working" xml:space="preserve">
+    <value>処理しています...</value>
+  </data>
+  <data name="Backup.Stage.Zip" xml:space="preserve">
+    <value>ファイルにまとめています...</value>
+  </data>
   <data name="Common.Cancel" xml:space="preserve">
     <value>キャンセル</value>
   </data>
@@ -565,6 +616,51 @@
   <data name="Profile.NotFound" xml:space="preserve">
     <value>プロファイルが見つかりません。</value>
   </data>
+  <data name="Restore.Confirm.Body" xml:space="preserve">
+    <value>バックアップの内容でプロファイル「{0}」を置き換えます。このプロファイルの現在のインデックス、フォルダ設定、検索履歴は失われます。元の画像・PDF・動画は削除されません。</value>
+  </data>
+  <data name="Restore.Confirm.Primary" xml:space="preserve">
+    <value>復元</value>
+  </data>
+  <data name="Restore.Confirm.Title" xml:space="preserve">
+    <value>復元の確認</value>
+  </data>
+  <data name="Restore.Done.Body" xml:space="preserve">
+    <value>プロファイル「{0}」を復元しました。</value>
+  </data>
+  <data name="Restore.Done.Title" xml:space="preserve">
+    <value>復元が完了しました</value>
+  </data>
+  <data name="Restore.Failed" xml:space="preserve">
+    <value>復元できませんでした: {0}</value>
+  </data>
+  <data name="Restore.Failed.Title" xml:space="preserve">
+    <value>復元に失敗しました</value>
+  </data>
+  <data name="Restore.IndexingBlocked" xml:space="preserve">
+    <value>インデックス作成中は復元できません。完了するか、中断してから実行してください。</value>
+  </data>
+  <data name="Restore.ModelWarning" xml:space="preserve">
+    <value>このバックアップはモデル「{0}」で作成されています。現在のアプリは「{1}」を使用しており、保存されている埋め込みは比較できない可能性があります。</value>
+  </data>
+  <data name="Restore.Preview.AppVersion" xml:space="preserve">
+    <value>アプリのバージョン: {0}</value>
+  </data>
+  <data name="Restore.Preview.Assets" xml:space="preserve">
+    <value>登録件数: {0:N0}</value>
+  </data>
+  <data name="Restore.Preview.Created" xml:space="preserve">
+    <value>作成日時: {0}</value>
+  </data>
+  <data name="Restore.Preview.Size" xml:space="preserve">
+    <value>バックアップのサイズ: {0}</value>
+  </data>
+  <data name="Restore.PreviewFailed" xml:space="preserve">
+    <value>バックアップを読み込めませんでした: {0}</value>
+  </data>
+  <data name="Restore.Progress.Title" xml:space="preserve">
+    <value>復元しています...</value>
+  </data>
   <data name="Result.Duplicates" xml:space="preserve">
     <value>同一画像 他{0}件</value>
   </data>
@@ -864,6 +960,24 @@
   </data>
   <data name="Shell.MenuFlyoutItem03.Text" xml:space="preserve">
     <value>削除...</value>
+  </data>
+  <data name="Shell.MenuFlyoutItem04.Text" xml:space="preserve">
+    <value>バックアップ</value>
+  </data>
+  <data name="Shell.MenuFlyoutItem05.Text" xml:space="preserve">
+    <value>現在のプロファイルをバックアップ...</value>
+  </data>
+  <data name="Shell.MenuFlyoutItem06.Text" xml:space="preserve">
+    <value>すべてのプロファイルをバックアップ...</value>
+  </data>
+  <data name="Shell.MenuFlyoutItem07.Text" xml:space="preserve">
+    <value>復元</value>
+  </data>
+  <data name="Shell.MenuFlyoutItem08.Text" xml:space="preserve">
+    <value>バックアップから復元...</value>
+  </data>
+  <data name="Shell.MenuFlyoutItem09.Text" xml:space="preserve">
+    <value>すべてのプロファイルを復元...</value>
   </data>
   <data name="Shell.NavigationViewItem01.Content" xml:space="preserve">
     <value>検索 &amp; ビューア</value>

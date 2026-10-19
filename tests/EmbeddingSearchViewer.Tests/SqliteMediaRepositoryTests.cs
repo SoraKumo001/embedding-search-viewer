@@ -103,6 +103,32 @@ public sealed class SqliteMediaRepositoryTests : IDisposable
     }
 
     [Fact]
+    public async Task GetChunksByAssetIdAsync_ReturnsOnlyThatAssetsChunks_WithEmbeddingsInChunkOrder()
+    {
+        var repo = new SqliteMediaRepository(_dbPath);
+        await repo.InitializeAsync();
+
+        var target = new MediaAsset { FileName = "v.mp4", FilePath = @"C:\v.mp4", MediaType = MediaType.Video, LastModifiedUtc = DateTime.UtcNow };
+        var other = new MediaAsset { FileName = "o.mp4", FilePath = @"C:\o.mp4", MediaType = MediaType.Video, LastModifiedUtc = DateTime.UtcNow };
+
+        await repo.SaveAssetWithChunksAsync(target, new[]
+        {
+            new MediaChunk { AssetId = target.Id, Modality = ModalityType.VideoSegment, ChunkIndex = 1, Embedding = new[] { 0f, 1f, 0f } },
+            new MediaChunk { AssetId = target.Id, Modality = ModalityType.VideoSegment, ChunkIndex = 0, Embedding = new[] { 1f, 0f, 0f } },
+        });
+        var otherChunk = new MediaChunk { AssetId = other.Id, Modality = ModalityType.VideoSegment, ChunkIndex = 0, Embedding = new[] { 0.5f, 0.5f, 0f } };
+        await repo.SaveAssetWithChunksAsync(other, new[] { otherChunk });
+
+        var chunks = await repo.GetChunksByAssetIdAsync(target.Id);
+
+        Assert.Equal(2, chunks.Count);
+        Assert.All(chunks, c => Assert.Equal(target.Id, c.AssetId));
+        Assert.Equal(new[] { 0, 1 }, chunks.Select(c => c.ChunkIndex)); // ChunkIndex order
+        Assert.Equal(new[] { 1f, 0f, 0f }, chunks[0].Embedding);        // embedding round-trips
+        Assert.DoesNotContain(chunks, c => c.Id == otherChunk.Id);      // the other asset is not read
+    }
+
+    [Fact]
     public async Task SearchFtsAsync_IsContentSync_FindsBySnippetAndFileName_AndTracksWrites()
     {
         var repo = new SqliteMediaRepository(_dbPath);

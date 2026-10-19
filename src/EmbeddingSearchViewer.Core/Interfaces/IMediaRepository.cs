@@ -101,6 +101,51 @@ public interface IMediaRepository
     }
 
     Task<IReadOnlyList<MediaChunk>> GetAllChunksWithEmbeddingsAsync(MediaType? mediaTypeFilter = null, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Every chunk's metadata (the same rows as <see cref="GetAllChunksWithEmbeddingsAsync"/>) but WITHOUT the
+    /// embedding blob, which is the expensive, memory-heavy part at scale. Search builds its snapshot from this and
+    /// then loads only the few embedding vectors it actually needs, see <see cref="GetEmbeddingsByChunkIdsAsync"/>.
+    /// The default implementation delegates to <see cref="GetAllChunksWithEmbeddingsAsync"/>, so existing
+    /// implementations stay correct (just without the optimisation).
+    /// </summary>
+    async Task<IReadOnlyList<MediaChunk>> GetAllChunksMetadataAsync(MediaType? mediaTypeFilter = null, CancellationToken cancellationToken = default)
+        => await GetAllChunksWithEmbeddingsAsync(mediaTypeFilter, cancellationToken).ConfigureAwait(false);
+
+    /// <summary>
+    /// The embeddings (only) of the given chunks, by id. Search calls this with its vector-index hits, so a cold
+    /// search never loads the whole embedding table. The default implementation reads every chunk through
+    /// <see cref="GetAllChunksWithEmbeddingsAsync"/> and filters, so non-optimised implementations stay correct.
+    /// </summary>
+    async Task<IReadOnlyDictionary<Guid, float[]>> GetEmbeddingsByChunkIdsAsync(IReadOnlyList<Guid> chunkIds, CancellationToken cancellationToken = default)
+    {
+        var result = new Dictionary<Guid, float[]>();
+        if (chunkIds is null || chunkIds.Count == 0) return result;
+
+        var wanted = new HashSet<Guid>(chunkIds);
+        foreach (var chunk in await GetAllChunksWithEmbeddingsAsync(null, cancellationToken).ConfigureAwait(false))
+        {
+            if (wanted.Contains(chunk.Id)) result[chunk.Id] = chunk.Embedding;
+        }
+        return result;
+    }
+
+    /// <summary>
+    /// Every chunk (metadata and embedding) of a single asset. A repository with an index on
+    /// <c>MediaChunks.AssetId</c> answers this from that asset's rows only, so a search restricted to one file never
+    /// scans the whole corpus. The default implementation filters <see cref="GetAllChunksWithEmbeddingsAsync"/>, so
+    /// existing implementations stay correct (just without the optimisation).
+    /// </summary>
+    async Task<IReadOnlyList<MediaChunk>> GetChunksByAssetIdAsync(Guid assetId, CancellationToken cancellationToken = default)
+    {
+        var result = new List<MediaChunk>();
+        foreach (var chunk in await GetAllChunksWithEmbeddingsAsync(null, cancellationToken).ConfigureAwait(false))
+        {
+            if (chunk.AssetId == assetId) result.Add(chunk);
+        }
+        return result;
+    }
+
     Task<IReadOnlyList<(Guid ChunkId, float FtsRank)>> SearchFtsAsync(string keyword, int limit = 50, CancellationToken cancellationToken = default);
 
     /// <summary>

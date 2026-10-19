@@ -1365,6 +1365,99 @@ public class SqliteMediaRepository : IMediaRepository, IDisposable
         }
     }
 
+    /// <summary>
+    /// Folds the WAL back into the database and truncates the -wal file, for a backup that copies only
+    /// <c>media_index.db</c> (no sidecars). Like <see cref="CheckpointWalAsync"/>, it runs on the writer connection under
+    /// <see cref="_writeGate"/>, so it cannot interleave with a write.
+    /// <para>
+    /// Unlike <see cref="CheckpointWalAsync"/> this <b>reports</b> the outcome instead of ignoring it: the first column
+    /// of <c>PRAGMA wal_checkpoint(TRUNCATE)</c> is a busy flag, 1 when another connection held the database and the
+    /// truncate could not complete. A backup must know that, because copying a database whose WAL is still populated
+    /// would silently drop the frames in it, so the caller refuses to back up when this returns <c>false</c>.
+    /// </para>
+    /// </summary>
+    /// <returns><c>true</c> when the checkpoint completed and the WAL was truncated; <c>false</c> when it was busy.</returns>
+    public async Task<bool> CheckpointForBackupAsync(CancellationToken cancellationToken = default)
+    {
+        await _writeGate.WaitAsync(cancellationToken);
+        try
+        {
+            var conn = await EnsureWriteConnectionAsync(cancellationToken);
+            await using var cmd = new SqliteCommand("PRAGMA wal_checkpoint(TRUNCATE);", conn);
+            await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
+            if (!await reader.ReadAsync(cancellationToken)) return false;
+
+            // (busy, log, checkpointed): the first column is 0 only when every frame was checkpointed and the WAL truncated.
+            long busy = reader.IsDBNull(0) ? 1L : Convert.ToInt64(reader.GetValue(0));
+            return busy == 0;
+        }
+        finally
+        {
+            _writeGate.Release();
+        }
+    }
+
+    /// <summary>
+    /// Reads back a freshly restored database and refuses it on any inconsistency: <c>PRAGMA integrity_check</c> over the
+    /// whole file, then the FTS5 <c>integrity-check</c> command over the full-text index (which verifies it against the
+    /// <c>MediaChunks</c> content table). It runs on the writer connection so the vec0 extension is loaded and the virtual
+    /// tables can be inspected: an unloaded vtab module makes <c>integrity_check</c> report spurious errors. It throws
+    /// instead of returning a status, because a restore that does not verify must roll back.
+    /// </summary>
+    public async Task VerifyRestoredDatabaseAsync(CancellationToken cancellationToken = default)
+    {
+        await _writeGate.WaitAsync(cancellationToken);
+        try
+        {
+            var conn = await EnsureWriteConnectionAsync(cancellationToken);
+
+            var problems = new List<string>();
+            await using (var integrity = new SqliteCommand("PRAGMA integrity_check;", conn))
+            await using (var reader = await integrity.ExecuteReaderAsync(cancellationToken))
+            {
+                while (await reader.ReadAsync(cancellationToken))
+                {
+                    string line = reader.IsDBNull(0) ? string.Empty : reader.GetString(0);
+                    if (line.Length > 0 && !string.Equals(line, "ok", StringComparison.OrdinalIgnoreCase))
+                    {
+                        problems.Add(line);
+                    }
+                }
+            }
+
+            // The full-text index is derived and content-sync, so its own command can compare it against MediaChunks.
+            bool hasFts;
+            await using (var probe = new SqliteCommand(
+                "SELECT count(*) FROM sqlite_master WHERE name = 'MediaChunksFts';", conn))
+            {
+                hasFts = Convert.ToInt64(await probe.ExecuteScalarAsync(cancellationToken) ?? 0L) > 0;
+            }
+            if (hasFts)
+            {
+                try
+                {
+                    await using var fts = new SqliteCommand(
+                        "INSERT INTO MediaChunksFts(MediaChunksFts) VALUES('integrity-check');", conn);
+                    await fts.ExecuteNonQueryAsync(cancellationToken);
+                }
+                catch (SqliteException ex)
+                {
+                    problems.Add("MediaChunksFts integrity-check failed: " + ex.Message);
+                }
+            }
+
+            if (problems.Count > 0)
+            {
+                throw new InvalidDataException(
+                    "The restored database failed its integrity checks: " + string.Join("; ", problems));
+            }
+        }
+        finally
+        {
+            _writeGate.Release();
+        }
+    }
+
     public async Task DeleteAssetAsync(Guid assetId, CancellationToken cancellationToken = default)
     {
         await _writeGate.WaitAsync(cancellationToken);
@@ -1506,6 +1599,140 @@ public class SqliteMediaRepository : IMediaRepository, IDisposable
             {
                 cmd.Parameters.AddWithValue("@mediaType", mediaTypeFilter.Value.ToString());
             }
+
+            await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
+            var list = new List<MediaChunk>();
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                byte[]? blob = reader.IsDBNull(9) ? null : (byte[])reader[9];
+                var embedding = blob != null ? ConvertBytesToFloatArray(blob) : Array.Empty<float>();
+
+                list.Add(new MediaChunk
+                {
+                    Id = Guid.Parse(reader.GetString(0)),
+                    AssetId = Guid.Parse(reader.GetString(1)),
+                    Modality = Enum.Parse<ModalityType>(reader.GetString(2)),
+                    ChunkIndex = reader.GetInt32(3),
+                    PageNumber = reader.IsDBNull(4) ? null : reader.GetInt32(4),
+                    StartTimeMs = reader.IsDBNull(5) ? null : reader.GetInt32(5),
+                    EndTimeMs = reader.IsDBNull(6) ? null : reader.GetInt32(6),
+                    SnippetText = reader.IsDBNull(7) ? null : reader.GetString(7),
+                    PreviewImagePath = reader.IsDBNull(8) ? null : reader.GetString(8),
+                    Embedding = embedding
+                });
+            }
+            return list;
+        }, cancellationToken);
+    }
+
+    /// <summary>
+    /// Every chunk's metadata without the embedding blob: the same rows, the same order, but the 768-float column is
+    /// never read or decoded. That keeps a cold search's load to the metadata only (tens of MB at hundreds of thousands
+    /// of chunks) instead of the whole embedding table (~1.8 GB at 600k x 768). Vectors are fetched per hit instead,
+    /// see <see cref="GetEmbeddingsByChunkIdsAsync"/>.
+    /// </summary>
+    public Task<IReadOnlyList<MediaChunk>> GetAllChunksMetadataAsync(MediaType? mediaTypeFilter = null, CancellationToken cancellationToken = default)
+    {
+        return ExecuteReadWithRetryAsync<IReadOnlyList<MediaChunk>>(async conn =>
+        {
+            string sql = """
+                SELECT c.Id, c.AssetId, c.Modality, c.ChunkIndex, c.PageNumber, c.StartTimeMs, c.EndTimeMs, c.SnippetText, c.PreviewImagePath
+                FROM MediaChunks c
+                INNER JOIN MediaAssets a ON c.AssetId = a.Id
+            """;
+            if (mediaTypeFilter.HasValue)
+            {
+                sql += " WHERE a.MediaType = @mediaType;";
+            }
+
+            await using var cmd = new SqliteCommand(sql, conn);
+            if (mediaTypeFilter.HasValue)
+            {
+                cmd.Parameters.AddWithValue("@mediaType", mediaTypeFilter.Value.ToString());
+            }
+
+            await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
+            var list = new List<MediaChunk>();
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                list.Add(new MediaChunk
+                {
+                    Id = Guid.Parse(reader.GetString(0)),
+                    AssetId = Guid.Parse(reader.GetString(1)),
+                    Modality = Enum.Parse<ModalityType>(reader.GetString(2)),
+                    ChunkIndex = reader.GetInt32(3),
+                    PageNumber = reader.IsDBNull(4) ? null : reader.GetInt32(4),
+                    StartTimeMs = reader.IsDBNull(5) ? null : reader.GetInt32(5),
+                    EndTimeMs = reader.IsDBNull(6) ? null : reader.GetInt32(6),
+                    SnippetText = reader.IsDBNull(7) ? null : reader.GetString(7),
+                    PreviewImagePath = reader.IsDBNull(8) ? null : reader.GetString(8),
+                    Embedding = Array.Empty<float>()
+                });
+            }
+            return list;
+        }, cancellationToken);
+    }
+
+    /// <summary>
+    /// The embeddings of the given chunks, by id. <c>Id</c> is the primary key (a TEXT unique index), so each id is a
+    /// rowid lookup; ids are read in batches to stay within SQLite's parameter limit. Only the requested column is
+    /// read, so the cost is proportional to <paramref name="chunkIds"/> (the vector-index hits), never the whole table.
+    /// </summary>
+    public async Task<IReadOnlyDictionary<Guid, float[]>> GetEmbeddingsByChunkIdsAsync(IReadOnlyList<Guid> chunkIds, CancellationToken cancellationToken = default)
+    {
+        var result = new Dictionary<Guid, float[]>();
+        if (chunkIds is null || chunkIds.Count == 0) return result;
+
+        const int batchSize = 500;
+        for (int start = 0; start < chunkIds.Count; start += batchSize)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            int offset = start;
+            int count = Math.Min(batchSize, chunkIds.Count - offset);
+
+            // The delegate reads into `result` (a retry re-reads the same rows, so it only overwrites).
+            await ExecuteReadWithRetryAsync<object?>(async conn =>
+            {
+                var placeholders = string.Join(",", Enumerable.Range(0, count).Select(idx => $"@id{idx}"));
+                var sql = $"SELECT Id, Embedding FROM MediaChunks WHERE Id IN ({placeholders});";
+                await using var cmd = new SqliteCommand(sql, conn);
+                for (int idx = 0; idx < count; idx++)
+                {
+                    cmd.Parameters.AddWithValue($"@id{idx}", chunkIds[offset + idx].ToString());
+                }
+
+                await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
+                while (await reader.ReadAsync(cancellationToken))
+                {
+                    var id = Guid.Parse(reader.GetString(0));
+                    byte[]? blob = reader.IsDBNull(1) ? null : (byte[])reader[1];
+                    result[id] = blob != null ? ConvertBytesToFloatArray(blob) : Array.Empty<float>();
+                }
+                return null;
+            }, cancellationToken).ConfigureAwait(false);
+        }
+        return result;
+    }
+
+    /// <summary>
+    /// Every chunk (with its embedding) of one asset. <c>MediaChunks.AssetId</c> is indexed
+    /// (<c>IX_MediaChunks_AssetId</c>), so this reads only that asset's rows (a few thousand at most) instead of the
+    /// whole table, which is what makes a search restricted to a single file fast. Rows come in <c>ChunkIndex</c>
+    /// order so a video's scenes are returned in their natural order.
+    /// </summary>
+    public Task<IReadOnlyList<MediaChunk>> GetChunksByAssetIdAsync(Guid assetId, CancellationToken cancellationToken = default)
+    {
+        return ExecuteReadWithRetryAsync<IReadOnlyList<MediaChunk>>(async conn =>
+        {
+            const string sql = """
+                SELECT Id, AssetId, Modality, ChunkIndex, PageNumber, StartTimeMs, EndTimeMs, SnippetText, PreviewImagePath, Embedding
+                FROM MediaChunks
+                WHERE AssetId = @assetId
+                ORDER BY ChunkIndex;
+                """;
+
+            await using var cmd = new SqliteCommand(sql, conn);
+            cmd.Parameters.AddWithValue("@assetId", assetId.ToString());
 
             await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
             var list = new List<MediaChunk>();

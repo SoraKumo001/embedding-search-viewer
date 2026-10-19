@@ -6,6 +6,7 @@ using FFmpegInteropX;
 using SkiaSharp;
 using Windows.Storage.Streams;
 using EmbeddingSearchViewer.Infrastructure.Ingestion;
+using EmbeddingSearchViewer.Infrastructure.Onnx;
 
 namespace EmbeddingSearchViewer_App.Services;
 
@@ -68,13 +69,16 @@ public sealed class FFmpegFrameSource : IVideoFrameSource
             var bytes = new byte[stream.Size];
             reader.ReadBytes(bytes);
 
-            using var bitmap = SKBitmap.Decode(bytes);
-            if (bitmap == null) return false;
-
-            // Keep thumbnails small: the embedding model resizes anyway, and 4K frames are wasteful to store.
+            SKBitmap? bitmap = null;
             SKBitmap? resized = null;
-            try
+            SKData? jpeg = null;
+            // NativeDecodeGate is a leaf: synchronous Skia only, no await, no other lock taken after it.
+            lock (NativeDecodeGate.Lock)
             {
+                bitmap = SKBitmap.Decode(bytes);
+                if (bitmap == null) return false;
+
+                // Keep thumbnails small: the embedding model resizes anyway, and 4K frames are wasteful to store.
                 var source = bitmap;
                 if (bitmap.Width > MaxFrameWidth)
                 {
@@ -84,13 +88,19 @@ public sealed class FFmpegFrameSource : IVideoFrameSource
                 }
 
                 using var image = SKImage.FromBitmap(source);
-                using var jpeg = image.Encode(SKEncodedImageFormat.Jpeg, 90);
+                jpeg = image.Encode(SKEncodedImageFormat.Jpeg, 90);
+            }
+
+            try
+            {
                 await File.WriteAllBytesAsync(jpegPath, jpeg.ToArray(), cancellationToken);
                 return true;
             }
             finally
             {
+                jpeg?.Dispose();
                 resized?.Dispose();
+                bitmap?.Dispose();
             }
         }
 

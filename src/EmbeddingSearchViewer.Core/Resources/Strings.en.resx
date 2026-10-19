@@ -61,6 +61,57 @@
   <data name="App.Title" xml:space="preserve">
     <value>EmbeddingGemma 2 Multimodal Search &amp; Viewer</value>
   </data>
+  <data name="Backup.Busy" xml:space="preserve">
+    <value>A backup cannot be taken while the index is being built. Run it after indexing has finished or has been stopped.</value>
+  </data>
+  <data name="Backup.Confirm.AllBody" xml:space="preserve">
+    <value>Saves the index, folder settings and search history of all profiles together in a single file.</value>
+  </data>
+  <data name="Backup.Confirm.CurrentBody" xml:space="preserve">
+    <value>Saves the index, folder settings and search history of the current profile ({0}) in a single file.</value>
+  </data>
+  <data name="Backup.Confirm.Primary" xml:space="preserve">
+    <value>Back up</value>
+  </data>
+  <data name="Backup.Confirm.Title" xml:space="preserve">
+    <value>Create a backup</value>
+  </data>
+  <data name="Backup.Done.Body" xml:space="preserve">
+    <value>The backup was saved to {0}</value>
+  </data>
+  <data name="Backup.Done.Title" xml:space="preserve">
+    <value>Backup complete</value>
+  </data>
+  <data name="Backup.Failed" xml:space="preserve">
+    <value>The backup could not be completed: {0}</value>
+  </data>
+  <data name="Backup.Failed.Title" xml:space="preserve">
+    <value>The backup failed</value>
+  </data>
+  <data name="Backup.FileType" xml:space="preserve">
+    <value>Backup file</value>
+  </data>
+  <data name="Backup.IncludeCache" xml:space="preserve">
+    <value>Include the cache (thumbnails and converted results)</value>
+  </data>
+  <data name="Backup.Progress.Title" xml:space="preserve">
+    <value>Backing up...</value>
+  </data>
+  <data name="Backup.Stage.Staging" xml:space="preserve">
+    <value>Collecting files...</value>
+  </data>
+  <data name="Backup.Stage.Start" xml:space="preserve">
+    <value>Preparing...</value>
+  </data>
+  <data name="Backup.Stage.Verify" xml:space="preserve">
+    <value>Verifying the contents...</value>
+  </data>
+  <data name="Backup.Stage.Working" xml:space="preserve">
+    <value>Working...</value>
+  </data>
+  <data name="Backup.Stage.Zip" xml:space="preserve">
+    <value>Writing the archive...</value>
+  </data>
   <data name="Common.Cancel" xml:space="preserve">
     <value>Cancel</value>
   </data>
@@ -565,6 +616,51 @@
   <data name="Profile.NotFound" xml:space="preserve">
     <value>The profile was not found.</value>
   </data>
+  <data name="Restore.Confirm.Body" xml:space="preserve">
+    <value>This replaces the profile "{0}" with the contents of the backup. The current index, folder settings and search history of that profile are lost. Your original images, PDFs and videos are not deleted.</value>
+  </data>
+  <data name="Restore.Confirm.Primary" xml:space="preserve">
+    <value>Restore</value>
+  </data>
+  <data name="Restore.Confirm.Title" xml:space="preserve">
+    <value>Confirm the restore</value>
+  </data>
+  <data name="Restore.Done.Body" xml:space="preserve">
+    <value>Restored the profile "{0}".</value>
+  </data>
+  <data name="Restore.Done.Title" xml:space="preserve">
+    <value>Restore complete</value>
+  </data>
+  <data name="Restore.Failed" xml:space="preserve">
+    <value>The restore could not be completed: {0}</value>
+  </data>
+  <data name="Restore.Failed.Title" xml:space="preserve">
+    <value>The restore failed</value>
+  </data>
+  <data name="Restore.IndexingBlocked" xml:space="preserve">
+    <value>A profile cannot be restored while the index is being built. Run it after indexing has finished or has been stopped.</value>
+  </data>
+  <data name="Restore.ModelWarning" xml:space="preserve">
+    <value>This backup was created with the model "{0}"; the app now uses "{1}". The stored embeddings may not be comparable.</value>
+  </data>
+  <data name="Restore.Preview.AppVersion" xml:space="preserve">
+    <value>App version: {0}</value>
+  </data>
+  <data name="Restore.Preview.Assets" xml:space="preserve">
+    <value>Assets: {0:N0}</value>
+  </data>
+  <data name="Restore.Preview.Created" xml:space="preserve">
+    <value>Created: {0}</value>
+  </data>
+  <data name="Restore.Preview.Size" xml:space="preserve">
+    <value>Backup size: {0}</value>
+  </data>
+  <data name="Restore.PreviewFailed" xml:space="preserve">
+    <value>The backup could not be read: {0}</value>
+  </data>
+  <data name="Restore.Progress.Title" xml:space="preserve">
+    <value>Restoring...</value>
+  </data>
   <data name="Result.Duplicates" xml:space="preserve">
     <value>Same image: {0} more</value>
   </data>
@@ -864,6 +960,24 @@
   </data>
   <data name="Shell.MenuFlyoutItem03.Text" xml:space="preserve">
     <value>Delete...</value>
+  </data>
+  <data name="Shell.MenuFlyoutItem04.Text" xml:space="preserve">
+    <value>Backup</value>
+  </data>
+  <data name="Shell.MenuFlyoutItem05.Text" xml:space="preserve">
+    <value>Back up the current profile...</value>
+  </data>
+  <data name="Shell.MenuFlyoutItem06.Text" xml:space="preserve">
+    <value>Back up all profiles...</value>
+  </data>
+  <data name="Shell.MenuFlyoutItem07.Text" xml:space="preserve">
+    <value>Restore</value>
+  </data>
+  <data name="Shell.MenuFlyoutItem08.Text" xml:space="preserve">
+    <value>Restore from a backup...</value>
+  </data>
+  <data name="Shell.MenuFlyoutItem09.Text" xml:space="preserve">
+    <value>Restore all profiles...</value>
   </data>
   <data name="Shell.NavigationViewItem01.Content" xml:space="preserve">
     <value>Search &amp; viewer</value>

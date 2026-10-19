@@ -51,6 +51,7 @@ public class HybridSearchEngineTests
         public List<(Guid ChunkId, float FtsRank)> FtsResults { get; } = new();
         public long DataVersion { get; set; } = -1;
         public int ChunkLoadCount { get; private set; }
+        public int AssetChunkLoadCount { get; private set; }
 
         public Task InitializeAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
         public Task<MediaAsset?> GetAssetByPathAsync(string filePath, CancellationToken cancellationToken = default) =>
@@ -68,6 +69,11 @@ public class HybridSearchEngineTests
                 return Task.FromResult<IReadOnlyList<MediaChunk>>(Chunks.Where(c => assetIds.Contains(c.AssetId)).ToList());
             }
             return Task.FromResult<IReadOnlyList<MediaChunk>>(Chunks);
+        }
+        public Task<IReadOnlyList<MediaChunk>> GetChunksByAssetIdAsync(Guid assetId, CancellationToken cancellationToken = default)
+        {
+            AssetChunkLoadCount++;
+            return Task.FromResult<IReadOnlyList<MediaChunk>>(Chunks.Where(c => c.AssetId == assetId).ToList());
         }
         public Task<IReadOnlyList<(Guid ChunkId, float FtsRank)>> SearchFtsAsync(string keyword, int limit = 50, CancellationToken cancellationToken = default) =>
             Task.FromResult<IReadOnlyList<(Guid ChunkId, float FtsRank)>>(FtsResults);
@@ -262,5 +268,66 @@ public class HybridSearchEngineTests
         Assert.Equal(2, results.Count);
         Assert.Equal(chunk1.Id, results[0].Chunk.Id);
         Assert.True(results[0].SimilarityScore > results[1].SimilarityScore);
+    }
+
+    [Fact]
+    public async Task SearchAsync_WithAssetFilter_UsesOnlyThatAsset_WithoutLoadingTheWholeCorpus()
+    {
+        // Arrange: two videos; the other one holds a better match that must be ignored.
+        var repo = new MockMediaRepository { DataVersion = 5 };
+        var engine = new HybridSearchEngine(repo, new MockEmbeddingService());
+
+        var target = new MediaAsset { Id = Guid.NewGuid(), FileName = "v.mp4", FilePath = "C:\\test\\v.mp4", MediaType = MediaType.Video };
+        var other = new MediaAsset { Id = Guid.NewGuid(), FileName = "o.mp4", FilePath = "C:\\test\\o.mp4", MediaType = MediaType.Video };
+        repo.Assets.Add(target);
+        repo.Assets.Add(other);
+
+        float[] perfect = new float[768];
+        perfect[0] = 1.0f;
+        float[] lower = new float[768];
+        lower[0] = 0.5f;
+        lower[1] = MathF.Sqrt(0.75f);
+
+        var targetBest = new MediaChunk { Id = Guid.NewGuid(), AssetId = target.Id, Modality = ModalityType.VideoSegment, Embedding = perfect };
+        var targetWorse = new MediaChunk { Id = Guid.NewGuid(), AssetId = target.Id, Modality = ModalityType.VideoSegment, Embedding = lower };
+        var otherBest = new MediaChunk { Id = Guid.NewGuid(), AssetId = other.Id, Modality = ModalityType.VideoSegment, Embedding = perfect };
+        repo.Chunks.Add(targetBest);
+        repo.Chunks.Add(targetWorse);
+        repo.Chunks.Add(otherBest);
+
+        var query = new SearchQuery { QueryText = "x", EnableFts = false, MinSimilarity = 0f, TopK = 10, AssetIdFilter = target.Id };
+
+        // Act
+        var results = await engine.SearchAsync(query);
+
+        // Assert: only the target video's chunks, ranked exactly, and the full-corpus load never happened.
+        Assert.Equal(2, results.Count);
+        Assert.All(results, r => Assert.Equal(target.Id, r.Asset.Id));
+        Assert.Equal(targetBest.Id, results[0].Chunk.Id);
+        Assert.Equal(0, repo.ChunkLoadCount);       // GetAllChunksWithEmbeddingsAsync (whole corpus) never called
+        Assert.Equal(1, repo.AssetChunkLoadCount);  // only the asset's chunks were loaded
+    }
+
+    [Fact]
+    public async Task SearchAsync_AssetScoped_ReusesCacheUntilDataVersionChanges()
+    {
+        var repo = new MockMediaRepository { DataVersion = 3 };
+        var engine = new HybridSearchEngine(repo, new MockEmbeddingService());
+
+        var asset = new MediaAsset { Id = Guid.NewGuid(), FileName = "v.mp4", FilePath = "C:\\test\\v.mp4", MediaType = MediaType.Video };
+        repo.Assets.Add(asset);
+        float[] v = new float[768];
+        v[0] = 1.0f;
+        repo.Chunks.Add(new MediaChunk { Id = Guid.NewGuid(), AssetId = asset.Id, Modality = ModalityType.VideoSegment, Embedding = v });
+
+        var query = new SearchQuery { QueryText = "x", EnableFts = false, MinSimilarity = 0f, TopK = 10, AssetIdFilter = asset.Id };
+
+        await engine.SearchAsync(query);
+        await engine.SearchAsync(query);
+        Assert.Equal(1, repo.AssetChunkLoadCount);
+
+        repo.DataVersion = 4;
+        await engine.SearchAsync(query);
+        Assert.Equal(2, repo.AssetChunkLoadCount);
     }
 }

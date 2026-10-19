@@ -60,6 +60,15 @@
                                 <MenuFlyoutItem loc:L.Uid="Shell.MenuFlyoutItem01" Click="NewProfile_Click" />
                                 <MenuFlyoutItem loc:L.Uid="Shell.MenuFlyoutItem02" Click="RenameProfile_Click" />
                                 <MenuFlyoutItem loc:L.Uid="Shell.MenuFlyoutItem03" Click="DeleteProfile_Click" />
+                                <MenuFlyoutSeparator />
+                                <MenuFlyoutSubItem loc:L.Uid="Shell.MenuFlyoutItem04">
+                                    <MenuFlyoutItem loc:L.Uid="Shell.MenuFlyoutItem05" Click="BackupCurrentProfile_Click" />
+                                    <MenuFlyoutItem loc:L.Uid="Shell.MenuFlyoutItem06" Click="BackupAllProfiles_Click" />
+                                </MenuFlyoutSubItem>
+                                <MenuFlyoutSubItem loc:L.Uid="Shell.MenuFlyoutItem07">
+                                    <MenuFlyoutItem loc:L.Uid="Shell.MenuFlyoutItem08" Click="RestoreProfile_Click" />
+                                    <MenuFlyoutItem loc:L.Uid="Shell.MenuFlyoutItem09" Click="RestoreAllProfiles_Click" />
+                                </MenuFlyoutSubItem>
                             </MenuFlyout>
                         </Button.Flyout>
                     </Button>

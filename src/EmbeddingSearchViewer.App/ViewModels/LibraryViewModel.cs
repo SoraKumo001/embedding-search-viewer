@@ -181,6 +181,8 @@ public partial class LibraryViewModel : ObservableObject
     /// <summary>Re-reads the list of excluded files (they are added by the indexing worker, on its own thread).</summary>
     public void RefreshExcluded()
     {
+        // A file deleted after it failed must not stay in the list as an error: drop it (and persist).
+        _exclusions.PruneMissing();
         var items = _exclusions.List();
         ExcludedFiles.Clear();
         foreach (var item in items) ExcludedFiles.Add(item);

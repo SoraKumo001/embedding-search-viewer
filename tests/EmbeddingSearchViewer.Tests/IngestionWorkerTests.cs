@@ -173,6 +173,51 @@ public sealed class IngestionWorkerTests : IDisposable
     }
 
     [Fact]
+    public async Task Worker_EmbedsNewFilesBeforeRecheckedOnes()
+    {
+        var asked = new List<string>();
+        var askedLock = new object();
+        var recording = new RecordingEmbeddingService(asked, askedLock);
+        var worker = new IngestionPipelineWorker(_repo, recording, Path.Combine(_root, "cache"));
+        int running = 1;
+        worker.ProgressChanged += p => Volatile.Write(ref running, p.IsRunning ? 1 : 0);
+
+        CreateImage("a_old.jpg");
+        await worker.QueueDirectoryAsync(_media);
+        Assert.True(await WaitUntilAsync(async () => (await _repo.GetAllAssetsAsync()).Count == 1 && Volatile.Read(ref running) == 0, 10000));
+
+        // Second run: a_old.jpg changed (needs re-embedding), z_new.jpg is new. Whatever order the file
+        // system enumerates them in, the new file must be embedded first.
+        File.WriteAllBytes(Path.Combine(_media, "a_old.jpg"), new byte[] { 7, 7, 7, 7, 7, 7, 7 });
+        CreateImage("z_new.jpg");
+        lock (askedLock) asked.Clear();
+        Volatile.Write(ref running, 1);
+        await worker.QueueDirectoryAsync(_media);
+        Assert.True(await WaitUntilAsync(() => Task.FromResult(Volatile.Read(ref running) == 0), 10000));
+
+        List<string> names;
+        lock (askedLock) names = asked.Select(Path.GetFileName).ToList()!;
+        Assert.Contains("z_new.jpg", names);
+        Assert.Contains("a_old.jpg", names);
+        Assert.True(names.IndexOf("z_new.jpg") < names.IndexOf("a_old.jpg"),
+            $"new files must be embedded before re-checked ones (asked order: {string.Join(", ", names)})");
+    }
+
+    private sealed class RecordingEmbeddingService(List<string> asked, object askedLock) : IEmbeddingService
+    {
+        public Task<bool> IsReadyAsync(CancellationToken cancellationToken = default) => Task.FromResult(true);
+
+        public Task<float[]> GenerateQueryEmbeddingAsync(string query, string modality = "text", int truncateDim = 768, CancellationToken cancellationToken = default)
+            => Task.FromResult(new float[truncateDim]);
+
+        public Task<IReadOnlyList<float[]>> GenerateBatchEmbeddingsAsync(IEnumerable<EmbeddingItemInput> items, int truncateDim = 768, CancellationToken cancellationToken = default)
+        {
+            lock (askedLock) asked.AddRange(items.Select(i => i.Path ?? string.Empty));
+            return Task.FromResult<IReadOnlyList<float[]>>(items.Select(_ => new float[truncateDim]).ToList());
+        }
+    }
+
+    [Fact]
     public async Task Worker_WithNoSupportedFiles_ReportsFinished()
     {
         File.WriteAllText(Path.Combine(_media, "notes.txt"), "x");

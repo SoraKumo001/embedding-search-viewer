@@ -221,7 +221,7 @@ public static class Gemma4ImagePreprocessor
     {
         var info = new SKImageInfo(codec.Info.Width, codec.Info.Height, SKColorType.Rgba8888, SKAlphaType.Unpremul);
         using var decoded = new SKBitmap(info);
-        if (codec.GetPixels(info, decoded.GetPixels()) != SKCodecResult.Success && decoded.IsNull)
+        if (codec.GetPixels(info, decoded.GetPixels()) != SKCodecResult.Success || decoded.IsNull)
         {
             throw new InvalidDataException($"Could not decode image: {imagePath}");
         }
@@ -245,41 +245,45 @@ public static class Gemma4ImagePreprocessor
     /// <summary>Decodes, drops alpha, applies the EXIF orientation, and resizes (aspect ratio kept) to at most <paramref name="maxPatches"/> patches. Returns packed RGB.</summary>
     internal static (byte[] Rgb, int Height, int Width) LoadResizedRgb(string imagePath, int maxPatches)
     {
-        using var data = SKData.Create(imagePath) ?? throw new FileNotFoundException("Image file not found.", imagePath);
-
-        // Skia first; formats it cannot read (TIFF, ...) go through the Windows imaging codecs.
-        using var codec = SKCodec.Create(data);
-        var opaque = codec != null ? DecodeWithSkia(codec, imagePath) : WicImageDecoder.Decode(imagePath);
-        bool ownsOpaque = true;
-
-        var (targetH, targetW) = GetTargetSize(opaque.Height, opaque.Width, maxPatches: maxPatches);
-
-        SKBitmap resized = opaque;
-        bool ownsResized = false;
-        if (targetH != opaque.Height || targetW != opaque.Width)
+        // NativeDecodeGate is a leaf: synchronous Skia/WIC only, no await, no other lock taken after it.
+        lock (NativeDecodeGate.Lock)
         {
-            var target = new SKImageInfo(targetW, targetH, SKColorType.Rgba8888, SKAlphaType.Opaque);
-            resized = opaque.Resize(target, new SKSamplingOptions(SKCubicResampler.CatmullRom))
-                      ?? throw new InvalidOperationException("Image resize failed.");
-            ownsResized = true;
-        }
+            using var data = SKData.Create(imagePath) ?? throw new FileNotFoundException("Image file not found.", imagePath);
 
-        try
-        {
-            var px = resized.GetPixelSpan();
-            var rgb = new byte[targetH * targetW * Channels];
-            for (int i = 0, j = 0; i < px.Length; i += 4, j += 3)
+            // Skia first; formats it cannot read (TIFF, ...) go through the Windows imaging codecs.
+            using var codec = SKCodec.Create(data);
+            var opaque = codec != null ? DecodeWithSkia(codec, imagePath) : WicImageDecoder.Decode(imagePath);
+            bool ownsOpaque = true;
+
+            var (targetH, targetW) = GetTargetSize(opaque.Height, opaque.Width, maxPatches: maxPatches);
+
+            SKBitmap resized = opaque;
+            bool ownsResized = false;
+            if (targetH != opaque.Height || targetW != opaque.Width)
             {
-                rgb[j] = px[i];
-                rgb[j + 1] = px[i + 1];
-                rgb[j + 2] = px[i + 2];
+                var target = new SKImageInfo(targetW, targetH, SKColorType.Rgba8888, SKAlphaType.Opaque);
+                resized = opaque.Resize(target, new SKSamplingOptions(SKCubicResampler.CatmullRom))
+                          ?? throw new InvalidOperationException("Image resize failed.");
+                ownsResized = true;
             }
-            return (rgb, targetH, targetW);
-        }
-        finally
-        {
-            if (ownsResized) resized.Dispose();
-            if (ownsOpaque) opaque.Dispose();
+
+            try
+            {
+                var px = resized.GetPixelSpan();
+                var rgb = new byte[targetH * targetW * Channels];
+                for (int i = 0, j = 0; i < px.Length; i += 4, j += 3)
+                {
+                    rgb[j] = px[i];
+                    rgb[j + 1] = px[i + 1];
+                    rgb[j + 2] = px[i + 2];
+                }
+                return (rgb, targetH, targetW);
+            }
+            finally
+            {
+                if (ownsResized) resized.Dispose();
+                if (ownsOpaque) opaque.Dispose();
+            }
         }
     }
 }

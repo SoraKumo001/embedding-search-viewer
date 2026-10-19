@@ -106,6 +106,23 @@ public sealed class IndexExclusionStore
         }
     }
 
+    /// <summary>
+    /// Drops entries whose file no longer exists (deleted after it failed). Returns how many were removed.
+    /// Without this, deleted files stay in "files left out of the index" forever.
+    /// </summary>
+    public int PruneMissing()
+    {
+        lock (_lock)
+        {
+            EnsureLoaded();
+            var missing = _items.Values.Where(i => !File.Exists(i.Path)).Select(i => i.Path).ToList();
+            if (missing.Count == 0) return 0;
+            foreach (var path in missing) _items.Remove(path);
+            Save();
+            return missing.Count;
+        }
+    }
+
     private void EnsureLoaded()
     {
         string path = _pathProvider();

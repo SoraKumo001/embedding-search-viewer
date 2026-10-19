@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
+using EmbeddingSearchViewer.Infrastructure.Onnx;
 using SkiaSharp;
 using Windows.Media.Editing;
 using Windows.Storage;
@@ -66,13 +67,26 @@ public sealed class MediaFoundationFrameSource : IVideoFrameSource
             using var buffer = new MemoryStream();
             await input.CopyToAsync(buffer, cancellationToken);
 
-            using var bitmap = SKBitmap.Decode(buffer.ToArray());
-            if (bitmap == null) return false;
+            SKData? jpeg;
+            // NativeDecodeGate is a leaf: synchronous Skia only, no await, no other lock taken after it.
+            lock (NativeDecodeGate.Lock)
+            {
+                using var bitmap = SKBitmap.Decode(buffer.ToArray());
+                if (bitmap == null) return false;
 
-            using var image = SKImage.FromBitmap(bitmap);
-            using var jpeg = image.Encode(SKEncodedImageFormat.Jpeg, 90);
-            await File.WriteAllBytesAsync(jpegPath, jpeg.ToArray(), cancellationToken);
-            return true;
+                using var image = SKImage.FromBitmap(bitmap);
+                jpeg = image.Encode(SKEncodedImageFormat.Jpeg, 90);
+            }
+
+            try
+            {
+                await File.WriteAllBytesAsync(jpegPath, jpeg.ToArray(), cancellationToken);
+                return true;
+            }
+            finally
+            {
+                jpeg?.Dispose();
+            }
         }
 
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;

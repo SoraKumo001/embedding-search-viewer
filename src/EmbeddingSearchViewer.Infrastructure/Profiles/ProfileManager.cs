@@ -51,16 +51,30 @@ public sealed class ProfileManager
     }
 
     public string CurrentDirectory => DirectoryOf(Current.Id);
-    public string DatabasePath => Path.Combine(CurrentDirectory, "media_index.db");
-    public string LibraryPath => Path.Combine(CurrentDirectory, "library.json");
-    public string HistoryPath => Path.Combine(CurrentDirectory, "search_history.json");
-    public string ExclusionsPath => Path.Combine(CurrentDirectory, "excluded_files.json");
-    public string CacheDirectory => Path.Combine(CurrentDirectory, "cache");
+    public string DatabasePath => DatabasePathOf(Current.Id);
+    public string LibraryPath => LibraryPathOf(Current.Id);
+    public string HistoryPath => HistoryPathOf(Current.Id);
+    public string ExclusionsPath => ExclusionsPathOf(Current.Id);
+    public string CacheDirectory => CacheDirectoryOf(Current.Id);
 
-    private string DirectoryOf(string id) => Path.Combine(_root, "profiles", id);
+    /// <summary>The folder that holds profiles.json and the profiles folder (the root the manager was created with).</summary>
+    public string RootDirectory => _root;
+
+    /// <summary>The folder of the given profile, current or not.</summary>
+    public string DirectoryOf(string id) => Path.Combine(_root, "profiles", id);
+
+    // Per-profile paths, so a backup can address a profile other than the current one. The current-profile properties
+    // above are just these applied to <see cref="Current"/>.
+    public string DatabasePathOf(string id) => Path.Combine(DirectoryOf(id), "media_index.db");
+    public string LibraryPathOf(string id) => Path.Combine(DirectoryOf(id), "library.json");
+    public string HistoryPathOf(string id) => Path.Combine(DirectoryOf(id), "search_history.json");
+    public string ExclusionsPathOf(string id) => Path.Combine(DirectoryOf(id), "excluded_files.json");
+    public string CacheDirectoryOf(string id) => Path.Combine(DirectoryOf(id), "cache");
+
 
     private void Load()
     {
+        DetectInterruptedRestore();
         lock (_lock)
         {
             try
@@ -88,6 +102,48 @@ public sealed class ProfileManager
 
             Directory.CreateDirectory(CurrentDirectory);
             Save();
+        }
+    }
+
+    /// <summary>
+    /// Detects an all-profiles restore (PR3) that did not finish. Such a restore writes <c>profiles/restore.in-progress</c>
+    /// before it moves the current data aside, so a marker left behind means the data may be half swapped and the previous
+    /// state is still under a <c>profiles.bak-*</c> folder next to <c>profiles/</c>.
+    /// <para>
+    /// TODO(PR3 follow-up): implement the recovery — when the marker is found, delete the partial <c>profiles/</c> (and a
+    /// partially placed <c>profiles.json</c>), rename <c>profiles.bak-*</c> back over <c>profiles/</c> (and
+    /// <c>profiles.json.bak-*</c> over <c>profiles.json</c>), then remove the marker — instead of starting on partial
+    /// data. For now this only records that it happened.
+    /// </para>
+    /// </summary>
+    private void DetectInterruptedRestore()
+    {
+        try
+        {
+            string marker = Path.Combine(_root, "profiles", ProfileRestoreService.RestoreInProgressMarkerFileName);
+            string? found = File.Exists(marker) ? marker : null;
+
+            if (found is null)
+            {
+                // A crash between the move-aside and the re-create leaves no live profiles folder; the marker then sits
+                // inside the backup folder instead.
+                foreach (string dir in Directory.EnumerateDirectories(_root, "profiles.bak-*"))
+                {
+                    string candidate = Path.Combine(dir, ProfileRestoreService.RestoreInProgressMarkerFileName);
+                    if (File.Exists(candidate)) { found = candidate; break; }
+                }
+            }
+
+            if (found is not null)
+            {
+                System.Diagnostics.Debug.WriteLine(
+                    $"[Restore] An interrupted all-profiles restore was detected ({found}). " +
+                    "The previous data is still under profiles.bak-*; automatic recovery is not implemented yet.");
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // Detection only: failing to look at the marker must never block startup.
         }
     }
 
