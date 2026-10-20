@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Security.Cryptography;
 using System.Text;
+using EmbeddingSearchViewer.Infrastructure.Core;
 
 namespace EmbeddingSearchViewer.Infrastructure.Ingestion;
 
@@ -66,7 +67,9 @@ internal sealed class VideoCheckpoint
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or EndOfStreamException)
         {
-            // An unreadable checkpoint only costs the work it would have saved.
+            // An unreadable checkpoint only costs the work it would have saved, but it is worth a warning: a recurring
+            // failure here silently re-decodes whole videos after every interruption.
+            IngestTrace.Write($"checkpoint:load-failed path={_path}", ex);
         }
         return result;
     }
@@ -94,6 +97,7 @@ internal sealed class VideoCheckpoint
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             // Resuming is a convenience; failing to save it must not fail the video.
+            IngestTrace.Write($"checkpoint:append-failed path={_path}", ex);
         }
     }
 

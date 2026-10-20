@@ -8,6 +8,7 @@ using System.Threading.Channels;
 using System.Threading.Tasks;
 using EmbeddingSearchViewer.Core.Interfaces;
 using EmbeddingSearchViewer.Core.Models;
+using EmbeddingSearchViewer.Infrastructure.Core;
 
 namespace EmbeddingSearchViewer.Infrastructure.Ingestion;
 
@@ -95,6 +96,8 @@ public class VideoMediaIngestor
         checkpoint.Delete();
 
         // No decoder could read the file (or every frame was blank): keep it findable by its name.
+        IngestTrace.Video("video-name-only", asset.FilePath, null, ElapsedMs(videoStart),
+            detail: $"segments={segments.Count} frames={withFrames.Count} chunks={chunks.Count}; storing a name-only chunk");
         return (asset, new List<MediaChunk> { await NameOnlyChunkAsync(asset, fi.Name, truncateDim, cancellationToken) });
     }
 
@@ -118,6 +121,10 @@ public class VideoMediaIngestor
             }
         }
         var alreadyDone = embeddings.Keys.ToHashSet();
+        long streamingStart = Stopwatch.GetTimestamp();
+        IngestTrace.Video("ingest-begin", asset.FilePath, null, 0,
+            detail: $"key={Path.GetFileName(videoCacheDir)} checkpoints={embeddings.Count} alreadyDone={alreadyDone.Count} " +
+                    $"segmentSeconds={segmentDurationSec} overlapSeconds={overlapSec} maxSegments={maxSegments}");
 
         var ready = Channel.CreateUnbounded<VideoSegmentContent>(new UnboundedChannelOptions { SingleReader = true, SingleWriter = true });
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -132,6 +139,7 @@ public class VideoMediaIngestor
             }
             catch (Exception ex)
             {
+                if (ex is not OperationCanceledException) IngestTrace.Video("extract-threw", asset.FilePath, null, ElapsedMs(t0), ex: ex);
                 ready.Writer.TryComplete(ex);
                 throw;
             }
@@ -163,8 +171,13 @@ public class VideoMediaIngestor
                 group.Clear();
             }
         }
-        catch
+        catch (Exception ex)
         {
+            if (ex is not OperationCanceledException)
+            {
+                IngestTrace.Video("consumer-failed", asset.FilePath, null, ElapsedMs(streamingStart),
+                    detail: $"embeddings={embeddings.Count}", ex: ex);
+            }
             cts.Cancel(); // stop decoding for a video whose embedding failed (or that was cancelled)
             try { await extraction; } catch { }
             throw;
@@ -173,6 +186,8 @@ public class VideoMediaIngestor
         var segments = await extraction;
         var ordered = segments.Where(s => s.ThumbnailPath != null && embeddings.ContainsKey(s.Index)).ToList();
         var chunks = BuildChunks(asset, fileName, ordered, ordered.Select(s => embeddings[s.Index]).ToList());
+        IngestTrace.Video("ingest-done", asset.FilePath, null, ElapsedMs(streamingStart),
+            detail: $"segments={segments.Count} frames={segments.Count(s => s.ThumbnailPath != null)} chunks={chunks.Count} checkpoints={embeddings.Count}");
         return (segments, chunks);
     }
 
@@ -219,6 +234,8 @@ public class VideoMediaIngestor
     private async Task<List<MediaChunk>> EmbedSegmentsAsync(
         MediaAsset asset, string fileName, IReadOnlyList<VideoSegmentContent> segments, int truncateDim, CancellationToken cancellationToken)
         => BuildChunks(asset, fileName, segments, await EmbedFramesAsync(asset, segments, truncateDim, cancellationToken));
+
+    private static long ElapsedMs(long startTicks) => (long)((Stopwatch.GetTimestamp() - startTicks) * 1000.0 / Stopwatch.Frequency);
 
     private async Task<MediaChunk> NameOnlyChunkAsync(MediaAsset asset, string fileName, int truncateDim, CancellationToken cancellationToken)
     {

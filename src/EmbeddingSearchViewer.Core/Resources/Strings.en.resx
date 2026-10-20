@@ -295,6 +295,9 @@
   <data name="Library.CheckBox01.Content" xml:space="preserve">
     <value>Widen the scene interval automatically for long videos (at most 400 scenes per video)</value>
   </data>
+  <data name="Library.CheckBox06.Content" xml:space="preserve">
+    <value>Use FFmpeg to decode videos (off uses the Windows media stack only; applies to videos indexed from now on)</value>
+  </data>
   <data name="Library.ComboBox01.Header" xml:space="preserve">
     <value>Video scene length (one frame per scene is searched)</value>
   </data>

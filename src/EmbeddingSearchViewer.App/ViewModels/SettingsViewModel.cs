@@ -1,5 +1,6 @@
 using System;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -15,6 +16,9 @@ public partial class SettingsViewModel : ObservableObject
     private readonly IEmbeddingService _embeddingService;
     private readonly AppSettingsStore _appSettings;
     private readonly string _startupLanguage;
+
+    /// <summary>The context of the UI thread, so the state can be shown from the background thread that creates the engine.</summary>
+    private readonly SynchronizationContext? _uiContext = SynchronizationContext.Current;
 
     /// <summary>Search options shared with the search page (dimension, similarity threshold, FTS).</summary>
     public SearchViewModel Search { get; }
@@ -68,6 +72,26 @@ public partial class SettingsViewModel : ObservableObject
         _startupLanguage = startupLanguage ?? _appSettings.Load().Language;
         _languageIndex = Math.Max(0, Array.IndexOf(LanguageSettings, _appSettings.Load().Language));
         _restartRequired = LanguageSettings[_languageIndex] != _startupLanguage;
+
+        // The engine is created in the background, so the health line is refreshed when it is there (or when it was
+        // reloaded after a download).
+        if (_embeddingService is EmbeddingServiceHost host)
+        {
+            host.Changed += OnEngineChanged;
+        }
+    }
+
+    /// <summary>The engine was replaced: the health is checked again (on the UI thread).</summary>
+    private void OnEngineChanged()
+    {
+        var context = _uiContext;
+        if (context is null)
+        {
+            _ = CheckHealthAsync();
+            return;
+        }
+
+        context.Post(_ => _ = CheckHealthAsync(), null);
     }
 
     [RelayCommand]
@@ -76,6 +100,8 @@ public partial class SettingsViewModel : ObservableObject
         HealthDetails = Loc.T("Settings.Health.Checking");
         try
         {
+            // The engine is created in the background: this waits for it, so the line says "ready" as soon as the
+            // engine is there (and the reason when it could not be created).
             IsEngineReady = await _embeddingService.IsReadyAsync();
             HealthDetails = IsEngineReady
                 ? Loc.T("Settings.Health.Ready")

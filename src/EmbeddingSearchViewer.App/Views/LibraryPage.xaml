@@ -7,7 +7,8 @@
     xmlns:lib="using:EmbeddingSearchViewer.Infrastructure.Library"
     xmlns:loc="using:EmbeddingSearchViewer_App.Localization"
     xmlns:vm="using:EmbeddingSearchViewer_App.ViewModels"
-    mc:Ignorable="d">
+    mc:Ignorable="d"
+    NavigationCacheMode="Required">
 
     <ScrollViewer Padding="24">
         <StackPanel MaxWidth="800" HorizontalAlignment="Left" Spacing="20">
@@ -218,6 +219,9 @@
                     <TextBlock loc:L.Uid="Library.TextBlock17"
                                Style="{ThemeResource CaptionTextBlockStyle}" TextWrapping="Wrap"
                                Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                    <CheckBox loc:L.Uid="Library.CheckBox06"
+                              IsChecked="{x:Bind ViewModel.UseFfmpegDecoder, Mode=TwoWay}"
+                              AutomationProperties.Name="Use FFmpeg for Video Decoding" />
                     <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
                         <TextBlock Text="{x:Bind ViewModel.CurrentStatusMessage, Mode=OneWay}" VerticalAlignment="Center"
                                    Style="{ThemeResource CaptionTextBlockStyle}" TextTrimming="CharacterEllipsis" />

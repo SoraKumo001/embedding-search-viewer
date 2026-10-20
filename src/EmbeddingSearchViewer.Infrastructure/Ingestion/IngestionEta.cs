@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using EmbeddingSearchViewer.Core.Localization;
 
 namespace EmbeddingSearchViewer.Infrastructure.Ingestion;
@@ -33,6 +34,11 @@ public sealed class IngestionEta
     private double _previousDone;
     private double _previousHandled;
 
+    // One video can need hundreds of scenes while it counts as a single file, so the file speed alone makes the tail
+    // of a run (where videos finish while the queue is already empty) look much shorter than it is. The scene speed is
+    // measured separately, the same way.
+    private readonly SceneSpeed _sceneSpeed = new();
+
     /// <summary>The time left in coarse, readable steps (the estimate is rough anyway), in the current language.</summary>
     public static string Format(TimeSpan left)
     {
@@ -47,19 +53,31 @@ public sealed class IngestionEta
     {
         _samples.Clear();
         _started = false;
+        _sceneSpeed.Reset();
     }
 
     /// <summary>
-    /// The time left for an indexing run. Only the files that needed work set the speed: files that are already indexed
-    /// are checked far faster, so counting them would make the rest look quicker than it is. How much work the files
-    /// still to come will need is taken from the last minute and, right after a run resumes behind a batch of already
-    /// indexed files, from the whole run too; the more pessimistic of the two is used so the estimate is not too short.
+    /// The time left for an indexing run. Only the files that needed work set the file speed: files that are already
+    /// indexed are checked far faster, so counting them would make the rest look quicker than it is. How much work the
+    /// files still to come will need is taken from the last minute and, right after a run resumes behind a batch of
+    /// already indexed files, from the whole run too; the more pessimistic of the two is used so the estimate is not
+    /// too short. The scenes left in the videos being processed give a second estimate, and the larger one is returned:
+    /// a video tail is far slower than the file count alone suggests.
     /// </summary>
     public TimeSpan? Update(DateTime now, IngestionProgress progress)
     {
         double handled = progress.ProcessedFiles + progress.InFlightFiles;
         double worked = Math.Max(0, handled - progress.QuickFiles);
-        return Update(now, worked, handled, progress.TotalFiles);
+        var files = Update(now, worked, handled, progress.TotalFiles);
+
+        // Fed even with no video left, so the history is there when the next video starts; a flat count costs nothing.
+        double? sceneRate = _sceneSpeed.Add(now, progress.VideoDoneScenes);
+        if (progress.VideoRemainingScenes <= 0 || sceneRate is not > 0) return files;
+
+        var videos = FromSeconds(progress.VideoRemainingScenes / sceneRate.Value);
+        if (videos is not { } videoTime) return files;
+        if (files is not { } fileTime) return videoTime;
+        return videoTime > fileTime ? videoTime : fileTime;
     }
 
     /// <summary>
@@ -119,7 +137,7 @@ public sealed class IngestionEta
 
         double remaining = Math.Max(0, total - handled);
         double seconds = remaining * Share(done, handled) / rate;
-        return seconds > TimeSpan.MaxValue.TotalSeconds / 2 ? null : TimeSpan.FromSeconds(seconds);
+        return FromSeconds(seconds);
     }
 
     /// <summary>
@@ -127,26 +145,49 @@ public sealed class IngestionEta
     /// count towards the time, so a run that stalled (nothing to report for a while) is not made to look slow.
     /// </summary>
     private double Rate(DateTime now, double done)
+        => Speed(_samples.Select(s => (s.Time, s.Done)), _start, _startDone, now, done);
+
+    /// <summary>
+    /// Work per second: the active stretches of the window first, and while there are too few of them the average over
+    /// the whole run.
+    /// </summary>
+    private static double Speed(IEnumerable<(DateTime Time, double Done)> samples,
+        DateTime start, double startDone, DateTime now, double done)
+    {
+        double rate = ActiveRate(samples);
+        if (rate > 0) return rate;
+
+        double elapsed = (now - start).TotalSeconds;
+        return elapsed > 0 ? (done - startDone) / elapsed : 0;
+    }
+
+    /// <summary>
+    /// Work per second over the samples, counting only the stretches in which work advanced (0 when there is too
+    /// little to tell). A stall therefore does not make the speed look slow.
+    /// </summary>
+    private static double ActiveRate(IEnumerable<(DateTime Time, double Done)> samples)
     {
         double activeSeconds = 0;
         double activeWork = 0;
-        var previous = _samples.Peek();
-        foreach (var sample in _samples)
+        bool first = true;
+        DateTime previousTime = default;
+        double previousDone = 0;
+        foreach (var sample in samples)
         {
-            double step = sample.Done - previous.Done;
-            if (step > 0)
+            if (!first)
             {
-                activeSeconds += (sample.Time - previous.Time).TotalSeconds;
-                activeWork += step;
+                double step = sample.Done - previousDone;
+                if (step > 0)
+                {
+                    activeSeconds += (sample.Time - previousTime).TotalSeconds;
+                    activeWork += step;
+                }
             }
-            previous = sample;
+            first = false;
+            (previousTime, previousDone) = (sample.Time, sample.Done);
         }
 
-        if (activeSeconds >= WarmUpSeconds && activeWork > 0) return activeWork / activeSeconds;
-
-        // Too little work in the window to say anything: fall back to the average over the whole run.
-        double elapsed = (now - _start).TotalSeconds;
-        return elapsed > 0 ? (done - _startDone) / elapsed : 0;
+        return activeSeconds >= WarmUpSeconds && activeWork > 0 ? activeWork / activeSeconds : 0;
     }
 
     /// <summary>
@@ -167,5 +208,74 @@ public sealed class IngestionEta
         return windowShare ?? globalShare ?? 1.0;
     }
 
+    private static TimeSpan? FromSeconds(double seconds)
+        => seconds > TimeSpan.MaxValue.TotalSeconds / 2 ? null : TimeSpan.FromSeconds(seconds);
+
     private static double Clamp01(double value) => value < 0 ? 0 : value > 1 ? 1 : value;
+
+    /// <summary>
+    /// Scenes per second of work, measured like the file speed: last minute first, whole run as the fallback, and only
+    /// the stretches in which scenes advanced count. The first seconds are ignored, so a video that has just started
+    /// does not produce a wild guess.
+    /// </summary>
+    private sealed class SceneSpeed
+    {
+        private readonly Queue<(DateTime Time, double Done)> _samples = new();
+        private DateTime _start;
+        private DateTime _lastSample;
+        private double _startDone;
+        private bool _started;
+        private bool _progressing;
+        private DateTime _previousTime;
+        private double _previousDone;
+
+        public void Reset()
+        {
+            _samples.Clear();
+            _started = false;
+        }
+
+        /// <summary>Adds the current count and returns the scene speed, or null while it cannot be told.</summary>
+        public double? Add(DateTime now, double done)
+        {
+            if (!_started)
+            {
+                _started = true;
+                _progressing = false;
+                _start = now;
+                _startDone = done;
+                _lastSample = now;
+                (_previousTime, _previousDone) = (now, done);
+                _samples.Enqueue((now, done));
+                return null;
+            }
+
+            var (previousTime, previousDone) = (_previousTime, _previousDone);
+            (_previousTime, _previousDone) = (now, done);
+            if (!_progressing)
+            {
+                if (done <= _startDone) return null;
+
+                // Start at the last report without progress, so the stretch that led here is counted.
+                _progressing = true;
+                _start = previousTime;
+                _startDone = previousDone;
+                _lastSample = previousTime;
+                _samples.Clear();
+                _samples.Enqueue((previousTime, previousDone));
+            }
+
+            if ((now - _lastSample).TotalSeconds >= SampleSpacingSeconds)
+            {
+                _samples.Enqueue((now, done));
+                _lastSample = now;
+            }
+            while (_samples.Count > 1 && (now - _samples.Peek().Time).TotalSeconds > WindowSeconds) _samples.Dequeue();
+
+            if ((now - _start).TotalSeconds < WarmUpSeconds) return null;
+
+            double rate = Speed(_samples.Select(s => (s.Time, s.Done)), _start, _startDone, now, done);
+            return rate > 0 ? rate : null;
+        }
+    }
 }

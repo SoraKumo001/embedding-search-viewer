@@ -458,9 +458,12 @@ public sealed partial class ShellPage : Page
     private void NavView_Loaded(object sender, RoutedEventArgs e)
     {
         ContentFrame.Navigated += ContentFrame_Navigated;
-        // Without the model nothing can be searched or indexed, so start on the setup screen.
+        // Without the model nothing can be searched or indexed, so start on the setup screen. The check is a light look
+        // at the model folder: it does not wait for the engine (which is created in the background) and does not depend
+        // on a session being there.
         var host = App.Services.GetRequiredService<EmbeddingSearchViewer.Infrastructure.Onnx.EmbeddingServiceHost>();
-        Navigate(host.ModelFilesMissing ? "ModelSetupPage" : "SearchPage");
+        // --auto-index: open the library page so indexing starts without a button press.
+        Navigate(host.ModelFilesMissing ? "ModelSetupPage" : App.AutoStartIndexing ? "LibraryPage" : "SearchPage");
     }
 
     private void NavView_ItemInvoked(NavigationView sender, NavigationViewItemInvokedEventArgs args)

@@ -327,13 +327,15 @@ public class EmbeddingServiceHostTests
         var host = new EmbeddingServiceHost(() => modelPresent
             ? new FixedService()
             : throw new FileNotFoundException("missing model"));
-        int changed = 0;
-        host.Changed += () => Interlocked.Increment(ref changed);
 
+        // The engine is created in the background, so the reason is only known once that is done.
+        Assert.False(await host.IsReadyAsync());
         Assert.False(host.IsAvailable);
         Assert.Contains("models", host.UnavailableReason);
-        Assert.False(await host.IsReadyAsync());
         await Assert.ThrowsAsync<InvalidOperationException>(() => host.GenerateQueryEmbeddingAsync("q"));
+
+        int changed = 0;
+        host.Changed += () => Interlocked.Increment(ref changed);
 
         modelPresent = true;
         await host.ReloadAsync();

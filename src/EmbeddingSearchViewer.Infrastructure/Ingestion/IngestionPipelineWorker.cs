@@ -10,6 +10,7 @@ using System.Threading.Tasks;
 using EmbeddingSearchViewer.Core.Interfaces;
 using EmbeddingSearchViewer.Core.Localization;
 using EmbeddingSearchViewer.Core.Models;
+using EmbeddingSearchViewer.Infrastructure.Core;
 using EmbeddingSearchViewer.Infrastructure.Library;
 using EmbeddingSearchViewer.Infrastructure.Onnx;
 
@@ -26,7 +27,9 @@ public record IngestionProgress(
     string? Detail = null,
     int ExcludedFiles = 0,
     double InFlightFiles = 0, // how many files' worth of work the videos being processed have already done (for the time estimate)
-    int QuickFiles = 0 // of the processed files, those that needed no work (already indexed, or left out): they say nothing about the speed
+    int QuickFiles = 0, // of the processed files, those that needed no work (already indexed, or left out): they say nothing about the speed
+    double VideoDoneScenes = 0, // scenes of this run's videos that are done (finished videos included): for the time estimate
+    double VideoRemainingScenes = 0 // scenes still to embed in the videos being processed: for the time estimate
 );
 
 public class IngestionPipelineWorker
@@ -59,6 +62,17 @@ public class IngestionPipelineWorker
 
     private readonly Func<int> _videoSegmentSeconds;
     private readonly ConcurrentDictionary<string, (int Done, int Total)> _videoProgress = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Scenes of videos that are finished, summed over the run. A finished video leaves <see cref="_videoProgress"/>,
+    /// so its scenes are added here (once) to keep <see cref="IngestionProgress.VideoDoneScenes"/> monotonic.
+    /// </summary>
+    private long _videoScenesCompleted;
+
+    // Keeps "move the finished video's scenes to the completed total" and the snapshot taken for a progress report
+    // from interleaving: otherwise a report could miss the video in both counts and the scene count would dip.
+    private readonly object _videoCountLock = new();
+
     private long _lastVideoNotifyTicks;
 
     /// <summary>Seconds between two notifications that only report how far a video has come.</summary>
@@ -198,6 +212,8 @@ public class IngestionPipelineWorker
         _excludedFiles = 0;
         _quickFiles = 0;
         _imageBatchCount = 0;
+        Interlocked.Exchange(ref _videoScenesCompleted, 0);
+        lock (_videoCountLock) _videoProgress.Clear();
         VideoStats.Reset();
         StageStats.Reset();
         _knownHashes = null; // what is in the index is read again for each run
@@ -211,6 +227,19 @@ public class IngestionPipelineWorker
         _workerCts = new CancellationTokenSource();
         var token = _workerCts.Token;
         _processingTask = Task.Run(() => ProcessQueueAsync(token));
+
+        // If the queue loop itself faults, the run must not stay "running" forever (which would block profile switches
+        // and future starts); the full exception is written to the trace log because nothing else observes this task.
+        var processing = _processingTask;
+        _ = processing.ContinueWith(t =>
+        {
+            if (t.Exception?.InnerException is OperationCanceledException) return;
+            IngestTrace.Write("worker:queue-faulted", t.Exception);
+            lock (_stateLock)
+            {
+                if (ReferenceEquals(_processingTask, processing)) _isRunning = false;
+            }
+        }, CancellationToken.None, TaskContinuationOptions.OnlyOnFaulted, TaskScheduler.Default);
     }
 
     public async Task StopAsync()
@@ -445,6 +474,16 @@ public class IngestionPipelineWorker
                         inFlightVideos.Add(Task.Run(async () =>
                         {
                             try { await ProcessNonImageItemAsync(videoPath, cancellationToken); }
+                            catch (OperationCanceledException)
+                            {
+                                // A stopped run cancels the videos in flight; that is not a failure.
+                            }
+                            catch (Exception ex)
+                            {
+                                // ProcessNonImageItemAsync reports failures itself; this only keeps an unexpected one
+                                // (and the slot release) from escaping the task unnoticed.
+                                IngestTrace.Video("worker-video-task-failed", videoPath, null, 0, ex: ex);
+                            }
                             finally { _videoSlots.Release(); }
                         }, CancellationToken.None));
                     }
@@ -531,11 +570,20 @@ public class IngestionPipelineWorker
         }
         catch (Exception ex)
         {
+            // The full exception (with the native stack) is what identifies a crash; the UI only gets the message.
+            // A stopped run cancels the file in flight: that is expected, so it does not go to the error log.
+            if (ex is not OperationCanceledException) IngestTrace.Video("worker-item-failed", filePath, null, 0, ex: ex);
             NotifyProgress(fileName, $"Error processing {fileName}: {ex.Message}");
         }
         finally
         {
-            _videoProgress.TryRemove(filePath, out _);
+            // The video leaves the in-flight map here; its scenes move to the completed total so the sum stays
+            // monotonic for the scene speed. Only the run that actually removes the entry adds them (no double count).
+            lock (_videoCountLock)
+            {
+                if (_videoProgress.TryRemove(filePath, out var finishedVideo))
+                    Interlocked.Add(ref _videoScenesCompleted, finishedVideo.Done);
+            }
             Interlocked.Increment(ref _processedFiles);
             NotifyProgress(fileName);
         }
@@ -753,6 +801,7 @@ public class IngestionPipelineWorker
             }
             catch (Exception ex)
             {
+                IngestTrace.Write($"worker:image-batch-failed files={toProcess.Count} first={toProcess.FirstOrDefault()}", ex);
                 NotifyProgress(currentName, $"Batch error: {ex.Message}");
                 // Fallback: increment processed counter
                 Interlocked.Add(ref _processedFiles, toProcess.Count);
@@ -908,6 +957,16 @@ public class IngestionPipelineWorker
             if (Interlocked.CompareExchange(ref _lastProgressTicks, now, last) != last) return;
         }
 
+        double inFlightFiles;
+        double videoDoneScenes;
+        double videoRemainingScenes;
+        lock (_videoCountLock)
+        {
+            inFlightFiles = _videoProgress.Values.Sum(p => p.Total > 0 ? Math.Min(1.0, (double)p.Done / p.Total) : 0);
+            videoDoneScenes = Volatile.Read(ref _videoScenesCompleted) + _videoProgress.Values.Sum(p => (double)p.Done);
+            videoRemainingScenes = _videoProgress.Values.Sum(p => (double)Math.Max(0, p.Total - p.Done));
+        }
+
         ProgressChanged?.Invoke(new IngestionProgress(
             TotalFiles: _totalFiles,
             ProcessedFiles: _processedFiles,
@@ -919,7 +978,9 @@ public class IngestionPipelineWorker
             Detail: BuildVideoDetail(),
             ExcludedFiles: _excludedFiles,
             QuickFiles: Volatile.Read(ref _quickFiles),
-            InFlightFiles: _videoProgress.Values.Sum(p => p.Total > 0 ? Math.Min(1.0, (double)p.Done / p.Total) : 0)
+            InFlightFiles: inFlightFiles,
+            VideoDoneScenes: videoDoneScenes,
+            VideoRemainingScenes: videoRemainingScenes
         ));
     }
 }

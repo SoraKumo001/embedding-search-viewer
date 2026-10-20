@@ -54,8 +54,10 @@ public class IngestionEtaTests
         Assert.Equal(TimeSpan.Zero, eta.Update(T0.AddSeconds(40), 100, 100));
     }
 
-    private static IngestionProgress Progress(int total, int processed, int quick)
-        => new(total, processed, "f", true, QuickFiles: quick);
+    private static IngestionProgress Progress(int total, int processed, int quick,
+        double videoDone = 0, double videoRemaining = 0)
+        => new(total, processed, "f", true, QuickFiles: quick,
+            VideoDoneScenes: videoDone, VideoRemainingScenes: videoRemaining);
 
     [Fact]
     public void FilesThatNeededNoWork_DoNotMakeTheEstimateShorter()
@@ -123,6 +125,55 @@ public class IngestionEtaTests
         eta.Reset();
 
         Assert.Null(eta.Update(T0.AddSeconds(30), 0, 10)); // first report of the new run
+    }
+
+    [Fact]
+    public void ScenesLeftInVideos_CanOutlastTheFileEstimate()
+    {
+        var eta = new IngestionEta();
+        eta.Update(T0, Progress(1000, 890, 0));
+
+        // Files at 1 per second, 50 left at the end (about 50 s), while the videos still need 200 scenes at 2 per second
+        // (about 100 s). The video side must win: a video counts as one file however many scenes it needs.
+        TimeSpan? left = null;
+        for (int s = 1; s <= 60; s++)
+            left = eta.Update(T0.AddSeconds(s), Progress(1000, 890 + s, 0, videoDone: s * 2, videoRemaining: 200));
+
+        Assert.NotNull(left);
+        Assert.InRange(left!.Value.TotalSeconds, 90, 115);
+    }
+
+    [Fact]
+    public void NoScenesLeftInVideos_KeepsTheFileEstimate()
+    {
+        var eta = new IngestionEta();
+        eta.Update(T0, Progress(1000, 890, 0));
+
+        TimeSpan? left = null;
+        for (int s = 1; s <= 60; s++)
+            left = eta.Update(T0.AddSeconds(s), Progress(1000, 890 + s, 0, videoDone: s * 2, videoRemaining: 0));
+
+        Assert.NotNull(left);
+        // 50 files at 1 per second; the scene speed (2 per second) must not be used when nothing is left.
+        Assert.InRange(left!.Value.TotalSeconds, 40, 60);
+    }
+
+    [Fact]
+    public void AJustStartedVideo_DoesNotProduceAWildSceneEstimate()
+    {
+        var eta = new IngestionEta();
+        eta.Update(T0, Progress(1000, 890, 0));
+
+        // Files at 1 per second, 30 left. Then a video starts and reports 10000 scenes left during its first 5 s only:
+        // with no scene speed measured yet the file estimate must be kept (10000 scenes would otherwise be hours).
+        TimeSpan? left = null;
+        for (int s = 1; s <= 20; s++)
+            left = eta.Update(T0.AddSeconds(s), Progress(940, 890 + s, 0, videoDone: 0, videoRemaining: 0));
+        for (int s = 21; s <= 25; s++)
+            left = eta.Update(T0.AddSeconds(s), Progress(940, 890 + s, 0, videoDone: (s - 20) * 2, videoRemaining: 10000));
+
+        Assert.NotNull(left);
+        Assert.InRange(left!.Value.TotalSeconds, 20, 35);
     }
 
     [Fact]

@@ -59,6 +59,11 @@ public class OnnxDirectMlEmbeddingService : IEmbeddingService, IDisposable
     /// <param name="modelsDir">Directory laid out like the Hugging Face repository; located automatically when null.</param>
     /// <param name="deviceId">DirectML adapter index for the vision encoder, or a negative value to use the CPU only.</param>
     /// <param name="precision">Which weight files to use.</param>
+    /// <remarks>
+    /// Creating the engine reads the model files and builds the inference sessions, which takes a moment. The engine is
+    /// therefore created in the background (see <see cref="EmbeddingServiceHost"/>), so the app starts right away and
+    /// waits for the engine only when it is actually used.
+    /// </remarks>
     public OnnxDirectMlEmbeddingService(string? modelsDir = null, int deviceId = 0, ModelPrecision precision = EmbeddingModelLocation.DefaultPrecision)
     {
         _precision = precision;
@@ -204,7 +209,15 @@ public class OnnxDirectMlEmbeddingService : IEmbeddingService, IDisposable
         }
     }
 
-    public Task<bool> IsReadyAsync(CancellationToken cancellationToken = default) => Task.FromResult(!_disposed);
+    /// <summary>
+    /// The engine is ready as soon as it exists: the text session is built in the constructor and the vision session
+    /// is built when the first image is embedded (which does not change the readiness of the engine).
+    /// </summary>
+    public Task<bool> IsReadyAsync(CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.FromResult(!_disposed);
+    }
 
     public Task<float[]> GenerateQueryEmbeddingAsync(
         string query,

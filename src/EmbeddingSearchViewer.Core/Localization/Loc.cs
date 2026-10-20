@@ -1,5 +1,6 @@
 using System.Collections;
 using System.Collections.Concurrent;
+using System.Collections.ObjectModel;
 using System.Globalization;
 using System.Resources;
 
@@ -25,7 +26,27 @@ public static class Loc
     private static readonly ResourceManager Manager =
         new("EmbeddingSearchViewer.Core.Resources.Strings", typeof(Loc).Assembly);
 
-    private static readonly ConcurrentDictionary<string, IReadOnlyDictionary<string, string>> Tables = new();
+    /// <summary>The texts of a language: the keys, and the properties of every uid.</summary>
+    private sealed class LanguageTable
+    {
+        public LanguageTable(
+            IReadOnlyDictionary<string, string> texts,
+            IReadOnlyDictionary<string, IReadOnlyList<(string Property, string Value)>> uids)
+        {
+            Texts = texts;
+            Uids = uids;
+        }
+
+        /// <summary>All the keys of the language, with the Japanese text where that language has none.</summary>
+        public IReadOnlyDictionary<string, string> Texts { get; }
+
+        /// <summary>
+        /// The properties of every uid, so that the texts of one element are found without going through all the keys.
+        /// </summary>
+        public IReadOnlyDictionary<string, IReadOnlyList<(string Property, string Value)>> Uids { get; }
+    }
+
+    private static readonly ConcurrentDictionary<string, LanguageTable> Tables = new();
 
     private static CultureInfo _culture = CultureInfo.GetCultureInfo(Japanese);
 
@@ -83,30 +104,56 @@ public static class Loc
     /// </summary>
     public static IReadOnlyList<(string Property, string Value)> ForUid(string uid)
     {
-        string prefix = uid + ".";
-        var result = new List<(string, string)>();
-        foreach (var (key, value) in Table(Culture))
-        {
-            if (key.StartsWith(prefix, StringComparison.Ordinal) && key.IndexOf('.', prefix.Length) < 0)
-            {
-                result.Add((key.Substring(prefix.Length), value));
-            }
-        }
-        return result;
+        if (uid.Length == 0) return Array.Empty<(string, string)>();
+
+        var uids = Get(Culture).Uids;
+        return uids.TryGetValue(uid, out var properties) ? properties : Array.Empty<(string, string)>();
     }
 
     /// <summary>All the keys of a language, with the Japanese text where that language has none.</summary>
-    public static IReadOnlyDictionary<string, string> Table(CultureInfo culture) =>
-        Tables.GetOrAdd(culture.Name, _ =>
+    public static IReadOnlyDictionary<string, string> Table(CultureInfo culture) => Get(culture).Texts;
+
+    /// <summary>
+    /// The texts of a language, built once and kept: the language is set when the app starts and does not change while
+    /// it runs, so the tables are built once per language. The key is the name of the culture, so that the language of
+    /// <see cref="UseLanguage"/> (the tests) has a table of its own.
+    /// </summary>
+    private static LanguageTable Get(CultureInfo culture) =>
+        Tables.GetOrAdd(culture.Name, _ => Build(culture));
+
+    private static LanguageTable Build(CultureInfo culture)
+    {
+        var merged = new Dictionary<string, string>(StringComparer.Ordinal);
+        AddAll(merged, Manager.GetResourceSet(CultureInfo.InvariantCulture, createIfNotExists: true, tryParents: false));
+        if (culture.TwoLetterISOLanguageName != Japanese)
         {
-            var merged = new Dictionary<string, string>(StringComparer.Ordinal);
-            AddAll(merged, Manager.GetResourceSet(CultureInfo.InvariantCulture, createIfNotExists: true, tryParents: false));
-            if (culture.TwoLetterISOLanguageName != Japanese)
+            AddAll(merged, Manager.GetResourceSet(culture, createIfNotExists: true, tryParents: false));
+        }
+
+        // The keys of every uid, so that the texts of one element are found by looking them up. A key "A.B.C" belongs
+        // to the uid "A.B" and gives the property "C"; a key without a dot has no uid.
+        var byUid = new Dictionary<string, List<(string Property, string Value)>>(StringComparer.Ordinal);
+        foreach (var (key, value) in merged)
+        {
+            int dot = key.LastIndexOf('.');
+            if (dot < 1) continue;
+            string uid = key[..dot];
+            if (!byUid.TryGetValue(uid, out var properties))
             {
-                AddAll(merged, Manager.GetResourceSet(culture, createIfNotExists: true, tryParents: false));
+                properties = new List<(string Property, string Value)>();
+                byUid[uid] = properties;
             }
-            return merged;
-        });
+            properties.Add((key[(dot + 1)..], value));
+        }
+
+        var uids = new Dictionary<string, IReadOnlyList<(string Property, string Value)>>(StringComparer.Ordinal);
+        foreach (var (uid, properties) in byUid)
+        {
+            uids[uid] = new ReadOnlyCollection<(string Property, string Value)>(properties);
+        }
+
+        return new LanguageTable(merged, uids);
+    }
 
     private static void AddAll(Dictionary<string, string> into, ResourceSet? set)
     {

@@ -22,6 +22,12 @@ public class LibrarySettings
     /// <summary>Lengthens the segments of long videos so that none needs more than <see cref="Ingestion.IngestionPipelineWorker.AutoMaxVideoSegments"/> segments.</summary>
     public bool VideoAutoSegment { get; set; } = true;
 
+    /// <summary>
+    /// Videos are decoded with FFmpeg first (the Windows media stack as the fallback) when true, or with the Windows media
+    /// stack alone when false. Applies to videos indexed from now on; a missing key keeps the previous behaviour (true).
+    /// </summary>
+    public bool UseFfmpegDecoder { get; set; } = true;
+
     /// <summary>How the folder list is ordered on screen (<see cref="FolderSortMode"/>); the saved order of <see cref="Folders"/> is not changed.</summary>
     public int FolderSortIndex { get; set; }
 
@@ -73,8 +79,18 @@ public class LibrarySettingsStore
     /// <returns>True if compatible or adopted; false if mismatched with existing indexed assets.</returns>
     public bool CheckIndexModelCompatibility(string expectedModelTag, int assetCount, out bool wasAdopted)
     {
+        return CheckIndexModelCompatibility(expectedModelTag, assetCount, Load(), out wasAdopted);
+    }
+
+    /// <summary>
+    /// The same check, but with settings that were already read: the file is not read a second time.
+    /// If the index is empty, the expected model tag is adopted and saved (only when it differs, so an empty index
+    /// writes the file once).
+    /// </summary>
+    /// <returns>True if compatible or adopted; false if mismatched with existing indexed assets.</returns>
+    public bool CheckIndexModelCompatibility(string expectedModelTag, int assetCount, LibrarySettings settings, out bool wasAdopted)
+    {
         wasAdopted = false;
-        var settings = Load();
         if (assetCount == 0)
         {
             if (settings.IndexModelTag != expectedModelTag)

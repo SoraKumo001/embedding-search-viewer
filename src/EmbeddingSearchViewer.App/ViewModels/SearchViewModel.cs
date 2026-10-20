@@ -19,6 +19,7 @@ public partial class SearchViewModel : ObservableObject
     private readonly SearchHistoryStore _historyStore;
 
     private readonly AppSettingsStore? _appSettings;
+    private readonly AppSettings? _settings;
     private bool _applyingHistory;
 
     /// <summary>Pinned searches first, then the recent ones.</summary>
@@ -38,10 +39,9 @@ public partial class SearchViewModel : ObservableObject
 
     partial void OnSaveOptionsInHistoryChanged(bool value)
     {
-        if (_appSettings == null) return;
-        var settings = _appSettings.Load();
-        settings.SaveSearchOptionsInHistory = value;
-        _appSettings.Save(settings);
+        if (_appSettings == null || _settings == null) return;
+        _settings.SaveSearchOptionsInHistory = value;
+        _appSettings.Save(_settings);
     }
 
     public const int MaxSuggestions = 8;
@@ -356,12 +356,17 @@ public partial class SearchViewModel : ObservableObject
     [ObservableProperty]
     private string _resultsHeaderText = Loc.T("Search.ResultsHeader", 0);
 
-    public SearchViewModel(HybridSearchEngine searchEngine, SearchHistoryStore historyStore, AppSettingsStore? appSettings = null)
+    /// <summary>
+    /// The settings are the ones that were read when the app started (<paramref name="settings"/>); they are not read
+    /// again here. The store is only needed to save them.
+    /// </summary>
+    public SearchViewModel(HybridSearchEngine searchEngine, SearchHistoryStore historyStore, AppSettingsStore? appSettings = null, AppSettings? settings = null)
     {
         _searchEngine = searchEngine;
         _historyStore = historyStore;
         _appSettings = appSettings;
-        if (appSettings != null) _saveOptionsInHistory = appSettings.Load().SaveSearchOptionsInHistory;
+        _settings = settings ?? appSettings?.Load();
+        _saveOptionsInHistory = _settings?.SaveSearchOptionsInHistory ?? true;
     }
 
     /// <summary>Clears the query and the results of the previous profile; they do not belong to the new index.</summary>

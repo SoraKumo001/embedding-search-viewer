@@ -19,12 +19,21 @@ public sealed class AppSettingsStore
 {
     private readonly string _path;
 
+    // The settings that were read last: the file is small, but reading it again and again (every view model asks for
+    // them) costs IO that the start does not need.
+    private AppSettings? _cached;
+
     public AppSettingsStore(string? path = null)
     {
         _path = path ?? AppDataPaths.DefaultSettingsPath;
     }
 
-    public AppSettings Load() => AtomicJsonFile.Load(_path, new AppSettings());
+    /// <summary>The settings; they are read from the file once and then kept in memory.</summary>
+    public AppSettings Load() => _cached ??= AtomicJsonFile.Load(_path, new AppSettings());
 
-    public void Save(AppSettings settings) => AtomicJsonFile.Save(_path, settings);
+    public void Save(AppSettings settings)
+    {
+        _cached = settings;
+        AtomicJsonFile.Save(_path, settings);
+    }
 }

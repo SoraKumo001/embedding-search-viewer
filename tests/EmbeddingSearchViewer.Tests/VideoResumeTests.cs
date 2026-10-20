@@ -305,4 +305,24 @@ public sealed class VideoResumeTests : IDisposable
 
         Assert.Equal(60, store.Load().VideoSegmentSeconds);
     }
+
+    [Fact]
+    public void Setting_DefaultsToFfmpeg_AndSurvivesAMissingKeyOrASave()
+    {
+        string path = Path.Combine(_dir, "library-ffmpeg.json");
+
+        // No file at all: FFmpeg on.
+        Assert.True(new LibrarySettingsStore(path).Load().UseFfmpegDecoder);
+
+        // A file written before the key existed keeps the previous behaviour.
+        File.WriteAllText(path, "{ \"VideoSegmentSeconds\": 15 }");
+        Assert.True(new LibrarySettingsStore(path).Load().UseFfmpegDecoder);
+
+        // It round-trips when switched off.
+        var store = new LibrarySettingsStore(path);
+        var settings = store.Load();
+        settings.UseFfmpegDecoder = false;
+        store.Save(settings);
+        Assert.False(new LibrarySettingsStore(path).Load().UseFfmpegDecoder);
+    }
 }

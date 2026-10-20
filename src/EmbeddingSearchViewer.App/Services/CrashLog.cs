@@ -38,7 +38,8 @@ public static class CrashLog
                 if (File.Exists(FilePath) && new FileInfo(FilePath).Length > MaxBytes) File.Delete(FilePath);
 
                 File.AppendAllText(FilePath,
-                    $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {where} (memory {Environment.WorkingSet / (1024 * 1024)} MB)\n{ex}\n\n");
+                    $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {where} (memory {Environment.WorkingSet / (1024 * 1024)} MB)\n"
+                    + (ex == null ? "" : ex + "\n") + "\n");
             }
         }
         catch (Exception)

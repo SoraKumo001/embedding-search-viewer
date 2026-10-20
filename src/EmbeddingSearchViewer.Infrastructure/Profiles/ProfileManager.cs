@@ -82,31 +82,47 @@ public sealed class ProfileManager
         DetectInterruptedRestore();
         lock (_lock)
         {
+            // The list is only written when this start really changes it; a start that finds everything in order
+            // leaves the file (and its time stamp) alone.
+            bool dirty = false;
+
             try
             {
                 if (File.Exists(_listPath))
                 {
                     _file = JsonSerializer.Deserialize<ProfileFile>(File.ReadAllText(_listPath)) ?? new ProfileFile();
                 }
+                else
+                {
+                    dirty = true; // the list is written for the first time
+                }
             }
             catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException)
             {
                 _file = new ProfileFile(); // a broken list falls back to the default profile; the data folders stay untouched
+                dirty = true; // the unusable file is replaced by a list that can be read
             }
 
-            _file.Profiles = _file.Profiles
+            var usable = _file.Profiles
                 .Where(p => !string.IsNullOrWhiteSpace(p.Id) && !string.IsNullOrWhiteSpace(p.Name))
                 .ToList();
+            if (usable.Count != _file.Profiles.Count) dirty = true;
+            _file.Profiles = usable;
 
             if (_file.Profiles.Count == 0)
             {
                 _file.Profiles.Add(new ProfileInfo(DefaultId, Loc.T("Profile.DefaultName")));
                 MigrateLegacyData();
+                dirty = true;
             }
-            if (_file.Profiles.All(p => p.Id != _file.CurrentId)) _file.CurrentId = _file.Profiles[0].Id;
+            if (_file.Profiles.All(p => p.Id != _file.CurrentId))
+            {
+                _file.CurrentId = _file.Profiles[0].Id;
+                dirty = true;
+            }
 
             Directory.CreateDirectory(CurrentDirectory);
-            Save();
+            if (dirty) SaveBestEffort();
         }
     }
 
@@ -220,6 +236,22 @@ public sealed class ProfileManager
         // The profile list is not a convenience setting: losing a change silently would leave the screen and the disk apart.
         if (!EmbeddingSearchViewer.Infrastructure.Library.AtomicJsonFile.Save(_listPath, _file))
             throw new IOException($"Could not save the profile list: {_listPath}");
+    }
+
+    /// <summary>
+    /// Writes the list without letting a failure stop the start: the list on disk then stays the one of the last
+    /// change, which is what the app already had when it started, so the app can go on with it.
+    /// </summary>
+    private void SaveBestEffort()
+    {
+        try
+        {
+            Save();
+        }
+        catch (IOException ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"[Profiles] The profile list could not be written ({_listPath}): {ex.Message}");
+        }
     }
 
     private static string NormalizeName(string name)

@@ -1,9 +1,11 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using EmbeddingSearchViewer.Infrastructure.Core;
 
 namespace EmbeddingSearchViewer.Infrastructure.Ingestion;
 
@@ -63,11 +65,20 @@ public interface IVideoFrameSource
 /// </summary>
 public sealed class VideoSegmentExtractor : IStreamingVideoSegmentExtractor
 {
-    private readonly IReadOnlyList<IVideoFrameSource> _sources;
+    private readonly Func<IReadOnlyList<IVideoFrameSource>> _sourcesProvider;
 
     public VideoSegmentExtractor(IEnumerable<IVideoFrameSource> sources)
+        : this(() => sources.ToList())
     {
-        _sources = sources.ToList();
+    }
+
+    /// <summary>
+    /// The decoders are asked for on every extraction, so a decoder switched by a setting while the app runs applies to
+    /// the videos indexed from then on (the sources are tried in order, see the class remarks).
+    /// </summary>
+    public VideoSegmentExtractor(Func<IReadOnlyList<IVideoFrameSource>> sourcesProvider)
+    {
+        _sourcesProvider = sourcesProvider;
     }
 
     /// <summary>
@@ -130,10 +141,21 @@ public sealed class VideoSegmentExtractor : IStreamingVideoSegmentExtractor
     {
         Directory.CreateDirectory(outputDirectory);
 
-        foreach (var source in _sources)
+        // Read once per extraction: a change to the decoder setting applies to the videos indexed from then on.
+        var sources = _sourcesProvider();
+
+        long videoStart = Stopwatch.GetTimestamp();
+        long fileSize = -1;
+        try { fileSize = new FileInfo(videoPath).Length; } catch (Exception ex) { IngestTrace.Write($"video:stat-failed video={videoPath}", ex); }
+        IngestTrace.Video("extract-begin", videoPath, null, 0,
+            detail: $"size={fileSize} segmentSeconds={segmentSeconds} overlapSeconds={overlapSeconds} maxSegments={maxSegments} " +
+                    $"decoders={string.Join(',', sources.Select(s => s.Name))}");
+
+        foreach (var source in sources)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
+            long openStart = Stopwatch.GetTimestamp();
             IVideoFrameSession? session;
             try
             {
@@ -141,19 +163,36 @@ public sealed class VideoSegmentExtractor : IStreamingVideoSegmentExtractor
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
+                IngestTrace.Video("open-threw", videoPath, source.Name, ElapsedMs(openStart), ex: ex);
                 continue; // this decoder cannot read the file; try the next one
             }
-            if (session == null) continue;
+            if (session == null)
+            {
+                IngestTrace.Video("open-unusable", videoPath, source.Name, ElapsedMs(openStart));
+                continue;
+            }
+
+            IngestTrace.Video("open-ok", videoPath, source.Name, ElapsedMs(openStart), detail: $"durationMs={(long)session.Duration.TotalMilliseconds}");
 
             await using (session)
             {
                 int effectiveSeconds = ResolveSegmentSeconds(session.Duration, segmentSeconds, maxSegments);
                 int effectiveOverlap = effectiveSeconds == segmentSeconds ? overlapSeconds : Math.Min(3, effectiveSeconds / 4);
                 var plan = PlanSegments(session.Duration, effectiveSeconds, effectiveOverlap);
-                if (plan.Count == 0) continue;
+                if (plan.Count == 0)
+                {
+                    IngestTrace.Video("plan-empty", videoPath, source.Name, ElapsedMs(videoStart),
+                        detail: $"durationMs={(long)session.Duration.TotalMilliseconds} effectiveSeconds={effectiveSeconds}");
+                    continue;
+                }
+
+                IngestTrace.Video("plan-ready", videoPath, source.Name, ElapsedMs(videoStart),
+                    detail: $"durationMs={(long)session.Duration.TotalMilliseconds} effectiveSeconds={effectiveSeconds} " +
+                            $"effectiveOverlap={effectiveOverlap} segments={plan.Count} alreadyDone={alreadyDone?.Count ?? 0}");
 
                 var segments = new List<VideoSegmentContent>(plan.Count);
                 int grabbed = 0;
+                int frameIssuesLogged = 0;
                 for (int i = 0; i < plan.Count; i++)
                 {
                     cancellationToken.ThrowIfCancellationRequested();
@@ -172,16 +211,34 @@ public sealed class VideoSegmentExtractor : IStreamingVideoSegmentExtractor
                     var middle = TimeSpan.FromMilliseconds((start + end) / 2.0);
 
                     bool ok;
+                    bool issueLogged = false;
+                    long frameStart = Stopwatch.GetTimestamp();
+                    IngestTrace.CurrentSegment.Value = i;
                     try
                     {
                         ok = await session.SaveFrameAsync(middle, path, cancellationToken);
                     }
                     catch (Exception ex) when (ex is not OperationCanceledException)
                     {
+                        if (frameIssuesLogged++ < 5)
+                        {
+                            IngestTrace.Video("frame-threw", videoPath, source.Name, ElapsedMs(frameStart), i,
+                                $"startMs={start} endMs={end}", ex);
+                            issueLogged = true;
+                        }
                         ok = false;
+                    }
+                    finally
+                    {
+                        IngestTrace.CurrentSegment.Value = null;
                     }
 
                     bool hasFrame = ok && File.Exists(path);
+                    if (!hasFrame && !issueLogged && frameIssuesLogged++ < 5)
+                    {
+                        IngestTrace.Video("frame-missing", videoPath, source.Name, ElapsedMs(frameStart), i,
+                            $"ok={ok} exists={File.Exists(path)} startMs={start} endMs={end}");
+                    }
                     var segment = new VideoSegmentContent(i, start, end, hasFrame ? path : null);
                     segments.Add(segment);
                     if (hasFrame)
@@ -192,11 +249,22 @@ public sealed class VideoSegmentExtractor : IStreamingVideoSegmentExtractor
                     onProgress?.Invoke(i + 1, plan.Count);
                 }
 
-                if (grabbed > 0) return segments;
+                if (grabbed > 0)
+                {
+                    IngestTrace.Video("extract-ok", videoPath, source.Name, ElapsedMs(videoStart),
+                        detail: $"segments={segments.Count} frames={grabbed}");
+                    return segments;
+                }
                 // opened, but not a single frame could be read: let the next decoder try
+                IngestTrace.Video("extract-no-frames", videoPath, source.Name, ElapsedMs(videoStart),
+                    detail: $"segments={segments.Count}; trying the next decoder");
             }
         }
 
+        IngestTrace.Video("extract-failed", videoPath, null, ElapsedMs(videoStart),
+            detail: $"decoders={sources.Count} size={fileSize}; no decoder produced a frame");
         return Array.Empty<VideoSegmentContent>();
     }
+
+    private static long ElapsedMs(long startTicks) => (long)((Stopwatch.GetTimestamp() - startTicks) * 1000.0 / Stopwatch.Frequency);
 }

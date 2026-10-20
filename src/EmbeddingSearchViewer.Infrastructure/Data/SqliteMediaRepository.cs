@@ -64,6 +64,59 @@ public class SqliteMediaRepository : IMediaRepository, IDisposable
 
     public long DataVersion => Interlocked.Read(ref _dataVersion);
 
+    // --- start-up: the fast part (the schema) and the slow part (the derived indexes) ---
+    // The start-up is split in two so the app is usable while the expensive work runs:
+    //   * the fast part opens the database, sets the pragmas and creates the tables, the indexes and the triggers.
+    //     It only touches the schema, so it is over in a few milliseconds.
+    //   * the slow part fills the derived indexes (the full-text rebuild, the vector backfill). It runs in the
+    //     background; while it runs the search uses the fallbacks (a LIKE scan for the text, the plain vector index
+    //     for the embeddings), and the data version is bumped when it is done, so the cached results are read again.
+    // The schema version in PRAGMA user_version makes both parts idempotent: what is already done is not repeated.
+
+    /// <summary>The schema version of the database file, kept in <c>PRAGMA user_version</c>.</summary>
+    private const int SchemaVersionBase = 1;
+
+    /// <summary>The full-text index is built and in sync (the rebuild is done).</summary>
+    private const int SchemaVersionFtsReady = 2;
+
+    /// <summary>The vector index is in its current shape (the coarse column is there).</summary>
+    private const int SchemaVersionCurrent = 3;
+
+    /// <summary>The rowid up to which the full-text index is rebuilt (the rows that predate the triggers).</summary>
+    private const string MetaFtsRebuildLimit = "fts_rebuild_limit";
+
+    /// <summary>The rowid up to which the full-text index has been rebuilt (the progress of the rebuild).</summary>
+    private const string MetaFtsRebuildCursor = "fts_rebuild_cursor";
+
+    /// <summary>Set once the file name of the older chunks has been filled in.</summary>
+    private const string MetaFileNameBackfilled = "filename_backfilled";
+
+    /// <summary>How many chunks one transaction of the full-text rebuild indexes.</summary>
+    private const int FtsRebuildBatchSize = 2000;
+
+    /// <summary>How many chunks one transaction of the file-name backfill updates.</summary>
+    private const int FileNameBackfillBatchSize = 5000;
+
+    private readonly object _initLock = new();
+    private readonly CancellationTokenSource _slowPhaseCts = new();
+    private Task? _slowPhaseTask;
+    private long _schemaVersion;
+
+    /// <summary>True while the full-text index may still be incomplete (the rebuild is running).</summary>
+    private volatile bool _ftsIndexReady;
+
+    /// <summary>True when the full-text index has to be rebuilt (the triggers do not exist while it is).</summary>
+    private volatile bool _ftsRebuildNeeded;
+
+    /// <summary>
+    /// True when a chunk delete ran while the full-text triggers were dropped: the index then keeps entries whose chunk
+    /// rows are gone and has to be rebuilt from the content table once the rebuild catches up.
+    /// </summary>
+    private volatile bool _ftsDeleteWhileRebuilding;
+
+    /// <summary>True when the vector index exists and can be queried.</summary>
+    private volatile bool _vecIndexReady;
+
     // --- single reusable writer connection ---
     // Every write goes through one connection, held open for the life of the repository, instead of opening a new
     // connection (and re-loading the vec0 extension) per statement. _writeGate serialises writers, mirroring SQLite's
@@ -202,8 +255,10 @@ public class SqliteMediaRepository : IMediaRepository, IDisposable
             "DELETE FROM MediaChunks WHERE AssetId = @assetId; DELETE FROM MediaAssets WHERE Id = @assetId;", conn);
         _deleteAssetCmd.Parameters.Add("@assetId", SqliteType.Text);
 
-        // MediaChunksFts is content-sync: the AFTER DELETE trigger clears its entries as the chunk rows go, so it must
-        // not be deleted from directly (a direct DELETE on an external-content table would wipe the whole index).
+        // MediaChunksFts is content-sync: the AFTER DELETE trigger normally clears its entries as the chunk rows go, so
+        // it must not be deleted from directly (a direct DELETE on an external-content table would wipe the whole
+        // index). ClearAllAsync wipes it explicitly, before the chunk rows go, only while the triggers are dropped for
+        // a rebuild.
         _clearCmd = new SqliteCommand("DELETE FROM MediaChunks; DELETE FROM MediaAssets;", conn);
 
         _savepointCmd = new SqliteCommand($"SAVEPOINT {SavepointName};", conn);
@@ -279,16 +334,50 @@ public class SqliteMediaRepository : IMediaRepository, IDisposable
     {
         if (_disposed) return;
         _disposed = true;
-        _writeGate.Wait();
-        try
+
+        // The slow part of the start-up stops with the repository: the database file must not be held any longer, so
+        // the folder of the profile can be deleted right after a profile switch. The batches check the cancellation,
+        // so it is observed quickly. It is not waited for here: Dispose runs on the profile-switch (UI) thread.
+        try { _slowPhaseCts.Cancel(); } catch (ObjectDisposedException) { }
+        Task? slowPhase = _slowPhaseTask;
+
+        // Dispose must not block the caller. The usual case has no writer in flight, so the writer connection (it is
+        // not pooled) is closed right away; when a write is running, the wait for it and the close are handed to the
+        // background instead of holding the UI thread for as long as the write takes.
+        if (_writeGate.Wait(0))
         {
-            ResetWriteConnection();
+            try
+            {
+                ResetWriteConnection();
+            }
+            finally
+            {
+                _writeGate.Release();
+                _writeGate.Dispose();
+            }
+            return;
         }
-        finally
+
+        _ = Task.Run(() =>
         {
-            _writeGate.Release();
-            _writeGate.Dispose();
-        }
+            if (slowPhase is not null)
+            {
+                try { slowPhase.Wait(); }
+                catch (AggregateException) { /* the slow part failed; it is reported in its own log */ }
+                catch (OperationCanceledException) { }
+            }
+
+            _writeGate.Wait();
+            try
+            {
+                ResetWriteConnection();
+            }
+            finally
+            {
+                _writeGate.Release();
+                _writeGate.Dispose();
+            }
+        });
     }
 
     /// <summary>
@@ -432,70 +521,409 @@ public class SqliteMediaRepository : IMediaRepository, IDisposable
         }
     }
 
+    /// <summary>
+    /// The full start-up: the fast part (the schema) and then the slow part (the derived indexes). The slow part runs
+    /// in the background, so this waits for it; the app itself uses <see cref="InitializeFastAsync"/> and goes on
+    /// while the slow part is still running.
+    /// </summary>
     public async Task InitializeAsync(CancellationToken cancellationToken = default)
+    {
+        await InitializeFastAsync(cancellationToken).ConfigureAwait(false);
+        await EnsureSlowPhaseAsync().WaitAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// The fast part of the start-up: the database is opened, the pragmas are set and the tables, the indexes and the
+    /// triggers are created. Nothing else is touched, so it is over in a few milliseconds. The slow part (the
+    /// full-text rebuild and the vector backfill) starts in the background and does not block the caller.
+    /// </summary>
+    public async Task InitializeFastAsync(CancellationToken cancellationToken = default)
+    {
+        await EnsureFastPhaseAsync(cancellationToken).ConfigureAwait(false);
+        StartSlowPhase();
+    }
+
+    /// <summary>
+    /// The schema: the tables, the indexes and the triggers. It is written so it can be run again at any time (every
+    /// statement is "IF NOT EXISTS" or a drop-and-create), which is what makes the start-up idempotent.
+    /// </summary>
+    private async Task EnsureFastPhaseAsync(CancellationToken cancellationToken)
     {
         await using var conn = await OpenConnectionAsync(cancellationToken);
 
-        var sql = """
-            -- P3 maintenance policy: WAL + synchronous=NORMAL are the steady state (never OFF). The WAL is bounded by
-            -- journal_size_limit (set per connection in OpenConnectionAsync) and folded back by an explicit checkpoint
-            -- at idle/ingest-complete time (CheckpointWalAsync). VACUUM is deliberately never automated (see below).
-            PRAGMA journal_mode = WAL;
-            PRAGMA synchronous = NORMAL;
-
-            CREATE TABLE IF NOT EXISTS MediaAssets (
-                Id TEXT PRIMARY KEY,
-                FilePath TEXT UNIQUE NOT NULL,
-                FileName TEXT NOT NULL,
-                MediaType TEXT NOT NULL,
-                FileSizeBytes INTEGER NOT NULL,
-                FileHash TEXT NOT NULL,
-                LastModifiedUtc TEXT NOT NULL,
-                ThumbnailPath TEXT,
-                DurationOrPages INTEGER,
-                IndexedAtUtc TEXT NOT NULL
-            );
-
-            CREATE TABLE IF NOT EXISTS MediaChunks (
-                Id TEXT PRIMARY KEY,
-                AssetId TEXT NOT NULL,
-                Modality TEXT NOT NULL,
-                ChunkIndex INTEGER NOT NULL,
-                PageNumber INTEGER,
-                StartTimeMs INTEGER,
-                EndTimeMs INTEGER,
-                SnippetText TEXT,
-                PreviewImagePath TEXT,
-                Embedding BLOB,
-                -- Denormalized copy of the owning asset's file name. It exists so the content-sync MediaChunksFts
-                -- (see EnsureFtsSchemaAsync) can read the indexed column back from its content table (on delete/update).
-                FileName TEXT,
-                FOREIGN KEY (AssetId) REFERENCES MediaAssets(Id) ON DELETE CASCADE
-            );
-
-            CREATE INDEX IF NOT EXISTS IX_MediaChunks_AssetId ON MediaChunks(AssetId);
-
-            CREATE INDEX IF NOT EXISTS IX_MediaAssets_MediaType ON MediaAssets(MediaType);
-        """;
-
-        await using (var cmd = new SqliteCommand(sql, conn))
+        // P3 maintenance policy: WAL + synchronous=NORMAL are the steady state (never OFF). The WAL is bounded by
+        // journal_size_limit (set per connection in OpenConnectionAsync) and folded back by an explicit checkpoint
+        // at idle/ingest-complete time (CheckpointWalAsync). VACUUM is deliberately never automated (see below).
+        // Setting the journal mode again on a database that is already in WAL costs a lock round trip, so the mode is
+        // read first and only changed when it is something else.
+        string? journalMode = await ScalarStringAsync(conn, "PRAGMA journal_mode;", cancellationToken);
+        if (!string.Equals(journalMode, "wal", StringComparison.OrdinalIgnoreCase))
         {
-            await cmd.ExecuteNonQueryAsync(cancellationToken);
+            await ExecuteAsync(conn, "PRAGMA journal_mode = WAL;", cancellationToken);
+        }
+        await ExecuteAsync(conn, "PRAGMA synchronous = NORMAL;", cancellationToken);
+
+        // The tables and the indexes (the source of truth).
+        await ExecuteAsync(conn, BaseSchemaSql, cancellationToken);
+
+        // The small table that remembers what the start-up has already done (the rebuild cursor, the backfill flag).
+        await ExecuteAsync(conn, MetaTableSql, cancellationToken);
+
+        // The full-text index reads MediaChunks.FileName back from its content table, so the column has to exist
+        // before the triggers are created. Adding a column is a metadata-only change in SQLite (no row is rewritten),
+        // so it belongs to the fast part; the values of the older chunks are filled in by the slow part.
+        if (!await HasColumnAsync(conn, "MediaChunks", "FileName", cancellationToken))
+        {
+            await ExecuteAsync(conn, "ALTER TABLE MediaChunks ADD COLUMN FileName TEXT;", cancellationToken);
+            // The file names have to be filled in again (the column was just added).
+            await DeleteMetaAsync(conn, MetaFileNameBackfilled, cancellationToken);
         }
 
-        // The full-text index is a derived, content-sync copy of MediaChunks (see EnsureFtsSchemaAsync); it is created
-        // and, on an older database, migrated to the trigger-maintained form before the vec work runs.
-        await EnsureFtsSchemaAsync(conn, cancellationToken);
+        _schemaVersion = await GetUserVersionAsync(conn, cancellationToken);
 
-        // The vector index is a derived copy of MediaChunks.Embedding (the source of truth); it is only created when the
-        // vec0 extension loaded. Chunk rows are keyed by MediaChunks.rowid, so a chunk_id can be joined back to its Guid.
+        // The full-text index: the old standalone shape is dropped (it is derived, so nothing is lost) and the
+        // content-sync table is created.
+        bool ftsExisted = await FtsTableExistsAsync(conn, cancellationToken);
+        if (ftsExisted && await IsLegacyFtsAsync(conn, cancellationToken))
+        {
+            await ExecuteAsync(conn, "DROP TABLE IF EXISTS MediaChunksFts;", cancellationToken);
+            ftsExisted = false;
+        }
+        await ExecuteAsync(conn, FtsTableSql, cancellationToken);
+
+        // The index is only complete when the rebuild has run. While it is not, the triggers must not exist: the FTS5
+        // 'delete' command (which the update and delete triggers use) fails with "database disk image is malformed" for
+        // a row that is not in the index yet. The slow part indexes the rows and creates the triggers afterwards.
+        _ftsRebuildNeeded = _schemaVersion < SchemaVersionFtsReady || !ftsExisted;
+        if (_ftsRebuildNeeded)
+        {
+            await ExecuteAsync(conn, FtsTriggerDropSql, cancellationToken);
+
+            // The rows that exist now are the ones the rebuild has to index; everything written from here on is indexed
+            // by the catch-up of the slow part. The limit is remembered, so a rebuild that was interrupted continues
+            // where it stopped.
+            string? limit = await GetMetaAsync(conn, MetaFtsRebuildLimit, cancellationToken);
+            if (limit is null)
+            {
+                long maxRowId = await ScalarLongAsync(conn, "SELECT coalesce(max(rowid), 0) FROM MediaChunks;", cancellationToken);
+                await SetMetaAsync(conn, MetaFtsRebuildLimit, maxRowId.ToString(), cancellationToken);
+            }
+        }
+        else
+        {
+            // The index is complete, so the triggers can be (re)created: they keep it in step from now on.
+            await ExecuteAsync(conn, FtsTriggerSql, cancellationToken);
+        }
+
+        // The vector index: the table and its triggers. The migration from the Phase-1 shape (the table without the
+        // coarse column) is part of it, because the triggers need that column; it is a schema change and therefore
+        // fast. The backfill of the older rows is the slow part.
         if (VecAvailable)
         {
             await EnsureVecSchemaAsync(conn, cancellationToken);
+        }
 
-            await EnsureVecBackfillAsync(cancellationToken);
+        // The schema is in place; the version remembers it, so the next start does not repeat the work.
+        if (_schemaVersion < SchemaVersionBase)
+        {
+            await SetUserVersionAsync(conn, SchemaVersionBase, cancellationToken);
+            _schemaVersion = SchemaVersionBase;
+        }
+
+        // The full-text index is usable when its rebuild is done (the version says so). The vector index is usable as
+        // soon as it exists: the backfill only adds the rows that predate it, and the data version is bumped when
+        // that is done.
+        _ftsIndexReady = !_ftsRebuildNeeded;
+        _vecIndexReady = VecAvailable;
+    }
+
+    /// <summary>Starts the slow part of the start-up in the background (once).</summary>
+    private void StartSlowPhase()
+    {
+        lock (_initLock)
+        {
+            _slowPhaseTask ??= RunSlowPhaseAsync(_slowPhaseCts.Token);
         }
     }
+
+    /// <summary>The slow part of the start-up, started if it is not running yet.</summary>
+    private Task EnsureSlowPhaseAsync()
+    {
+        StartSlowPhase();
+        return _slowPhaseTask!;
+    }
+
+    /// <summary>
+    /// The slow part of the start-up: the file names of the older chunks are filled in, the full-text index is
+    /// rebuilt and the vector index gets the rows that predate it. It runs in the background, in batches, so the app
+    /// stays usable while it works. When it is done the data version is bumped: the derived indexes changed, so the
+    /// cached search results have to be read again.
+    /// </summary>
+    private async Task RunSlowPhaseAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            // 1. The file name of the chunks that predate the column.
+            await BackfillFileNameAsync(cancellationToken).ConfigureAwait(false);
+
+            // 2. The full-text index: the rows that predate the triggers are indexed here, in batches, and the triggers
+            // are created afterwards (while the rebuild runs they must not exist, see EnsureFastPhaseAsync).
+            if (_ftsRebuildNeeded)
+            {
+                await RebuildFtsIndexAsync(cancellationToken).ConfigureAwait(false);
+            }
+
+            // 3. The vector index: the rows that predate it are added in one pass.
+            if (VecAvailable)
+            {
+                await EnsureVecBackfillAsync(cancellationToken).ConfigureAwait(false);
+            }
+            _vecIndexReady = VecAvailable;
+            _ftsIndexReady = true;
+
+            // 4. The version remembers that the work is done, so the next start does not repeat it.
+            int version = VecAvailable ? SchemaVersionCurrent : SchemaVersionFtsReady;
+            if (_schemaVersion < version)
+            {
+                await SetSchemaVersionAsync(version).ConfigureAwait(false);
+                _schemaVersion = version;
+            }
+
+            // The derived indexes changed, so the cached results are stale.
+            Interlocked.Increment(ref _dataVersion);
+        }
+        catch (OperationCanceledException)
+        {
+            // The repository was closed while the slow part was running.
+        }
+        catch (Exception ex)
+        {
+            // A failure here must never stop the app: the search falls back to the plain table scan and the next
+            // start tries again.
+            System.Diagnostics.Debug.WriteLine($"[SqliteMediaRepository] The slow start-up work failed: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Fills in the file name of the chunks that predate the column (the full-text index reads it back). It runs in
+    /// batches, so the database is not locked for the whole table.
+    /// </summary>
+    private async Task BackfillFileNameAsync(CancellationToken cancellationToken)
+    {
+        await using var conn = await OpenConnectionAsync(cancellationToken);
+        if (await GetMetaAsync(conn, MetaFileNameBackfilled, cancellationToken) is not null) return;
+
+        long cursor = 0;
+        while (true)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var ids = new List<long>();
+            await using (var readConn = await OpenConnectionAsync(cancellationToken))
+            {
+                await using var select = new SqliteCommand(
+                    "SELECT rowid FROM MediaChunks WHERE FileName IS NULL AND rowid > @cursor ORDER BY rowid LIMIT @batch;",
+                    readConn);
+                select.Parameters.AddWithValue("@cursor", cursor);
+                select.Parameters.AddWithValue("@batch", FileNameBackfillBatchSize);
+                await using var reader = await select.ExecuteReaderAsync(cancellationToken);
+                while (await reader.ReadAsync(cancellationToken))
+                {
+                    ids.Add(reader.GetInt64(0));
+                }
+            }
+
+            if (ids.Count == 0) break;
+
+            await using (var writeConn = await OpenConnectionAsync(cancellationToken))
+            {
+                await using var tx = writeConn.BeginTransaction();
+                var placeholders = string.Join(",", ids.Select((_, i) => $"@id{i}"));
+                await using var update = new SqliteCommand(
+                    "UPDATE MediaChunks SET FileName = (SELECT a.FileName FROM MediaAssets a WHERE a.Id = MediaChunks.AssetId) " +
+                    $"WHERE rowid IN ({placeholders}) AND FileName IS NULL;", writeConn, tx);
+                for (int i = 0; i < ids.Count; i++)
+                {
+                    update.Parameters.AddWithValue($"@id{i}", ids[i]);
+                }
+                await update.ExecuteNonQueryAsync(cancellationToken);
+                await tx.CommitAsync(cancellationToken);
+            }
+
+            cursor = ids[^1];
+        }
+
+        await SetMetaAsync(conn, MetaFileNameBackfilled, "1", cancellationToken);
+    }
+
+    /// <summary>
+    /// Indexes the rows that predate the full-text triggers in the full-text index, in batches: the content-sync index
+    /// holds no text of its own, so the rows that were written before the triggers existed have to be added once. The
+    /// progress is remembered, so an interrupted rebuild continues where it stopped instead of indexing a row twice.
+    /// <para>
+    /// The triggers do not exist while this runs (the index is not complete, and the FTS5 'delete' command needs the
+    /// row to be in the index). They are created at the end, together with the catch-up of the rows that were written
+    /// in the meantime: the rowid limit and the triggers are written in one transaction, so no write can slip in
+    /// between them.
+    /// </para>
+    /// </summary>
+    private async Task RebuildFtsIndexAsync(CancellationToken cancellationToken)
+    {
+        await using var conn = await OpenConnectionAsync(cancellationToken);
+
+        string? limitText = await GetMetaAsync(conn, MetaFtsRebuildLimit, cancellationToken);
+        long limit = 0;
+        if (limitText is not null && long.TryParse(limitText, out long parsed)) limit = parsed;
+
+        long cursor = 0;
+        if (await GetMetaAsync(conn, MetaFtsRebuildCursor, cancellationToken) is string cursorText &&
+            long.TryParse(cursorText, out long stored) && stored > 0)
+        {
+            cursor = stored;
+        }
+
+        // The read connection streams the chunks, the write connection fills the index: WAL lets the two run side by
+        // side, and every batch is a transaction of its own, so a write of the app is never blocked for long.
+        await using var writeConn = await OpenConnectionAsync(cancellationToken);
+        while (cursor < limit)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var batch = await ReadFtsBatchAsync(cursor, limit, cancellationToken);
+            if (batch.Count == 0) break;
+
+            await WriteFtsBatchAsync(writeConn, batch, cancellationToken);
+
+            cursor = batch[^1].RowId;
+            await SetMetaAsync(conn, MetaFtsRebuildCursor, cursor.ToString(), cancellationToken);
+        }
+
+        // The triggers are created now that the index holds the rows of the rebuild. The rowid limit is read in the
+        // same transaction, so a row that is written right now is indexed by the trigger and not by the catch-up.
+        long catchUpLimit;
+        await using (var tx = writeConn.BeginTransaction(deferred: false))
+        {
+            catchUpLimit = await ScalarLongAsync(writeConn, "SELECT coalesce(max(rowid), 0) FROM MediaChunks;", tx, cancellationToken);
+            await ExecuteAsync(writeConn, FtsTriggerSql, tx, cancellationToken);
+            await tx.CommitAsync(cancellationToken);
+        }
+
+        // The triggers are back: deletes and updates keep the index in step from now on, so the window in which a
+        // delete had to be cleaned up by hand is over.
+        _ftsRebuildNeeded = false;
+
+        // The catch-up: the rows that were written while the rebuild ran are not in the index yet (the triggers did
+        // not exist). They are added in batches, so a write of the app is not blocked for long.
+        cursor = limit;
+        while (cursor < catchUpLimit)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var batch = await ReadFtsBatchAsync(cursor, catchUpLimit, cancellationToken);
+            if (batch.Count == 0) break;
+
+            await WriteFtsBatchAsync(writeConn, batch, cancellationToken);
+            cursor = batch[^1].RowId;
+        }
+
+        // A delete that ran while the triggers were dropped removed the chunk rows but could not remove their index
+        // entries (there is no trigger to do it). FTS5 cannot drop such an entry afterwards either: it needs the
+        // indexed values for that, and they went with the rows. One rebuild from the content table is the cleanup; the
+        // normal case (no delete during the rebuild) skips it.
+        if (_ftsDeleteWhileRebuilding)
+        {
+            await ExecuteAsync(writeConn, "INSERT INTO MediaChunksFts(MediaChunksFts) VALUES('rebuild');", cancellationToken);
+            _ftsDeleteWhileRebuilding = false;
+        }
+    }
+
+    /// <summary>Reads the next batch of chunks that have to be put into the full-text index.</summary>
+    private async Task<List<(long RowId, string? FileName, string? SnippetText)>> ReadFtsBatchAsync(
+        long cursor, long limit, CancellationToken cancellationToken)
+    {
+        var batch = new List<(long RowId, string? FileName, string? SnippetText)>();
+        await using var readConn = await OpenConnectionAsync(cancellationToken);
+        await using var select = new SqliteCommand(
+            "SELECT rowid, FileName, SnippetText FROM MediaChunks WHERE rowid > @cursor AND rowid <= @limit ORDER BY rowid LIMIT @batch;",
+            readConn);
+        select.Parameters.AddWithValue("@cursor", cursor);
+        select.Parameters.AddWithValue("@limit", limit);
+        select.Parameters.AddWithValue("@batch", FtsRebuildBatchSize);
+        await using var reader = await select.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            batch.Add((
+                reader.GetInt64(0),
+                reader.IsDBNull(1) ? null : reader.GetString(1),
+                reader.IsDBNull(2) ? null : reader.GetString(2)));
+        }
+        return batch;
+    }
+
+    /// <summary>Puts one batch of chunks into the full-text index (one transaction).</summary>
+    private static async Task WriteFtsBatchAsync(
+        SqliteConnection writeConn,
+        List<(long RowId, string? FileName, string? SnippetText)> batch,
+        CancellationToken cancellationToken)
+    {
+        await using var tx = writeConn.BeginTransaction();
+        await using var insert = new SqliteCommand(
+            "INSERT INTO MediaChunksFts(rowid, FileName, SnippetText) VALUES (@rowid, @fileName, @snippetText);",
+            writeConn, tx);
+        var rowIdParam = insert.Parameters.Add("@rowid", SqliteType.Integer);
+        var fileNameParam = insert.Parameters.Add("@fileName", SqliteType.Text);
+        var snippetParam = insert.Parameters.Add("@snippetText", SqliteType.Text);
+        foreach (var (rowId, fileName, snippetText) in batch)
+        {
+            rowIdParam.Value = rowId;
+            fileNameParam.Value = (object?)fileName ?? DBNull.Value;
+            snippetParam.Value = (object?)snippetText ?? DBNull.Value;
+            await insert.ExecuteNonQueryAsync(cancellationToken);
+        }
+        await tx.CommitAsync(cancellationToken);
+    }
+
+    /// <summary>The tables, the indexes and the meta table of the schema.</summary>
+    private const string BaseSchemaSql = """
+        CREATE TABLE IF NOT EXISTS MediaAssets (
+            Id TEXT PRIMARY KEY,
+            FilePath TEXT UNIQUE NOT NULL,
+            FileName TEXT NOT NULL,
+            MediaType TEXT NOT NULL,
+            FileSizeBytes INTEGER NOT NULL,
+            FileHash TEXT NOT NULL,
+            LastModifiedUtc TEXT NOT NULL,
+            ThumbnailPath TEXT,
+            DurationOrPages INTEGER,
+            IndexedAtUtc TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS MediaChunks (
+            Id TEXT PRIMARY KEY,
+            AssetId TEXT NOT NULL,
+            Modality TEXT NOT NULL,
+            ChunkIndex INTEGER NOT NULL,
+            PageNumber INTEGER,
+            StartTimeMs INTEGER,
+            EndTimeMs INTEGER,
+            SnippetText TEXT,
+            PreviewImagePath TEXT,
+            Embedding BLOB,
+            -- Denormalized copy of the owning asset's file name. It exists so the content-sync MediaChunksFts
+            -- (see EnsureFtsSchemaAsync) can read the indexed column back from its content table (on delete/update).
+            FileName TEXT,
+            FOREIGN KEY (AssetId) REFERENCES MediaAssets(Id) ON DELETE CASCADE
+        );
+
+        CREATE INDEX IF NOT EXISTS IX_MediaChunks_AssetId ON MediaChunks(AssetId);
+
+        CREATE INDEX IF NOT EXISTS IX_MediaAssets_MediaType ON MediaAssets(MediaType);
+        """;
+
+    /// <summary>The small table that remembers what the start-up has already done.</summary>
+    private const string MetaTableSql = """
+        CREATE TABLE IF NOT EXISTS SchemaMeta (Key TEXT PRIMARY KEY, Value TEXT NOT NULL);
+        """;
 
     /// <summary>
     /// The vec0 index: an exact <c>float[768]</c> column (Phase 1) plus a binary-quantized <c>bit[768]</c> column
@@ -623,91 +1051,121 @@ public class SqliteMediaRepository : IMediaRepository, IDisposable
         """;
 
     /// <summary>
-    /// Ensures the content-sync FTS index and its triggers exist, migrating a database that still carries the old
-    /// standalone index (<c>ChunkId UNINDEXED, FileName, SnippetText</c>). The old shape is recognised from
-    /// <c>sqlite_master</c> (it has no <c>content='MediaChunks'</c> option); the derived table is dropped and rebuilt
-    /// from <c>MediaChunks</c>, which is the source of truth, so no re-import is needed.
-    /// <para>
-    /// The one-off rebuild is the expensive part: <c>INSERT INTO MediaChunksFts(MediaChunksFts) VALUES('rebuild')</c>
-    /// re-tokenizes every snippet, which can take several minutes for a ~150k-chunk library. It runs inside
-    /// <see cref="InitializeAsync"/> (which does not take a transaction here, so WAL keeps other readers usable).
-    /// No automatic backup is taken; the database is a rebuildable cache of the source files, and an operator wanting a
-    /// snapshot should close the app and copy <c>media_index.db</c> (with its <c>-wal</c>/<c>-shm</c> sidecars) before the
-    /// first P1b start.
-    /// </para>
+    /// Removes the full-text triggers without creating them again. They may only be missing while the index is being
+    /// rebuilt: the FTS5 'delete' command that the update and delete triggers use fails with "database disk image is
+    /// malformed" for a row that is not in the index yet.
     /// </summary>
-    private static async Task EnsureFtsSchemaAsync(SqliteConnection conn, CancellationToken cancellationToken)
+    private const string FtsTriggerDropSql = """
+        DROP TRIGGER IF EXISTS trg_chunks_fts_ai;
+        DROP TRIGGER IF EXISTS trg_chunks_fts_ad;
+        DROP TRIGGER IF EXISTS trg_chunks_fts_au;
+        """;
+
+    /// <summary>
+    /// True when the database still carries the old standalone full-text index (<c>ChunkId UNINDEXED, FileName,
+    /// SnippetText</c>). The old shape is recognised from <c>sqlite_master</c> (its stored SQL never mentions
+    /// <c>content='MediaChunks'</c>); it is derived data, so it is simply dropped and indexed again from
+    /// <c>MediaChunks</c>, which is the source of truth. No re-import is needed.
+    /// </summary>
+    private static async Task<bool> IsLegacyFtsAsync(SqliteConnection conn, CancellationToken cancellationToken)
     {
-        // MediaChunks.FileName is the denormalized column the external-content FTS reads back. Databases created before
-        // this change lack it, so add it and back-fill it from the owning asset before the index is (re)built.
-        bool hasFileNameColumn;
-        await using (var col = new SqliteCommand(
-            "SELECT count(*) FROM pragma_table_info('MediaChunks') WHERE name = 'FileName';", conn))
+        await using var meta = new SqliteCommand(
+            "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'MediaChunksFts';", conn);
+        if (await meta.ExecuteScalarAsync(cancellationToken) is not string createSql || string.IsNullOrEmpty(createSql))
         {
-            hasFileNameColumn = Convert.ToInt64(await col.ExecuteScalarAsync(cancellationToken) ?? 0L) > 0;
+            return false;
         }
 
-        if (!hasFileNameColumn)
-        {
-            await using (var addColumn = new SqliteCommand("ALTER TABLE MediaChunks ADD COLUMN FileName TEXT;", conn))
-            {
-                await addColumn.ExecuteNonQueryAsync(cancellationToken);
-            }
+        return !createSql.Contains("content='MediaChunks'", StringComparison.OrdinalIgnoreCase);
+    }
 
-            await using (var backfill = new SqliteCommand(
-                "UPDATE MediaChunks SET FileName = (SELECT a.FileName FROM MediaAssets a WHERE a.Id = MediaChunks.AssetId) " +
-                "WHERE FileName IS NULL;", conn))
-            {
-                await backfill.ExecuteNonQueryAsync(cancellationToken);
-            }
-        }
+    /// <summary>True when the full-text index exists.</summary>
+    private static async Task<bool> FtsTableExistsAsync(SqliteConnection conn, CancellationToken cancellationToken)
+    {
+        await using var probe = new SqliteCommand(
+            "SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = 'MediaChunksFts';", conn);
+        return Convert.ToInt64(await probe.ExecuteScalarAsync(cancellationToken) ?? 0L) > 0;
+    }
 
-        // Version check: a pre-P1b database has the old standalone FTS table, whose stored SQL never mentions
-        // content='MediaChunks'. Anything already carrying the content-sync definition is left as is.
-        bool ftsExistedBefore = false;
-        bool legacyFts = false;
-        await using (var meta = new SqliteCommand(
-            "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'MediaChunksFts';", conn))
-        {
-            if (await meta.ExecuteScalarAsync(cancellationToken) is string createSql && !string.IsNullOrEmpty(createSql))
-            {
-                ftsExistedBefore = true;
-                legacyFts = !createSql.Contains("content='MediaChunks'", StringComparison.OrdinalIgnoreCase);
-            }
-        }
+    // --- small helpers of the start-up ---
 
-        if (legacyFts)
-        {
-            // The index is derived, so dropping it (and its rows) loses nothing; it is rebuilt from MediaChunks below.
-            await using var drop = new SqliteCommand("DROP TABLE IF EXISTS MediaChunksFts;", conn);
-            await drop.ExecuteNonQueryAsync(cancellationToken);
-        }
+    /// <summary>Runs one statement that returns no rows.</summary>
+    private static Task ExecuteAsync(SqliteConnection conn, string sql, CancellationToken cancellationToken)
+        => ExecuteAsync(conn, sql, null, cancellationToken);
 
-        await using (var create = new SqliteCommand(FtsTableSql, conn))
-        {
-            await create.ExecuteNonQueryAsync(cancellationToken);
-        }
+    /// <summary>Runs one statement that returns no rows (in a transaction when there is one).</summary>
+    private static async Task ExecuteAsync(SqliteConnection conn, string sql, SqliteTransaction? tx, CancellationToken cancellationToken)
+    {
+        await using var cmd = new SqliteCommand(sql, conn, tx);
+        await cmd.ExecuteNonQueryAsync(cancellationToken);
+    }
 
-        await using (var triggers = new SqliteCommand(FtsTriggerSql, conn))
-        {
-            await triggers.ExecuteNonQueryAsync(cancellationToken);
-        }
+    /// <summary>Reads the first column of the first row as text (null when there is no row).</summary>
+    private static async Task<string?> ScalarStringAsync(SqliteConnection conn, string sql, CancellationToken cancellationToken)
+    {
+        await using var cmd = new SqliteCommand(sql, conn);
+        return await cmd.ExecuteScalarAsync(cancellationToken) as string;
+    }
 
-        // Rebuild when the index was the legacy form above, or when it did not exist at all on a database that already
-        // has chunks (a build predating FTS). The EXISTS probe is O(1), so a brand-new empty database stays a no-op.
-        bool needsRebuild = legacyFts;
-        if (!ftsExistedBefore)
-        {
-            await using var probe = new SqliteCommand("SELECT EXISTS (SELECT 1 FROM MediaChunks LIMIT 1);", conn);
-            needsRebuild = Convert.ToInt64(await probe.ExecuteScalarAsync(cancellationToken) ?? 0L) > 0;
-        }
+    /// <summary>Reads the first column of the first row as a number (0 when there is no row).</summary>
+    private static Task<long> ScalarLongAsync(SqliteConnection conn, string sql, CancellationToken cancellationToken)
+        => ScalarLongAsync(conn, sql, null, cancellationToken);
 
-        if (needsRebuild)
-        {
-            await using var rebuild = new SqliteCommand(
-                "INSERT INTO MediaChunksFts(MediaChunksFts) VALUES('rebuild');", conn);
-            await rebuild.ExecuteNonQueryAsync(cancellationToken);
-        }
+    /// <summary>Reads the first column of the first row as a number (in a transaction when there is one).</summary>
+    private static async Task<long> ScalarLongAsync(SqliteConnection conn, string sql, SqliteTransaction? tx, CancellationToken cancellationToken)
+    {
+        await using var cmd = new SqliteCommand(sql, conn, tx);
+        return Convert.ToInt64(await cmd.ExecuteScalarAsync(cancellationToken) ?? 0L);
+    }
+
+    /// <summary>True when the table has the column.</summary>
+    private static async Task<bool> HasColumnAsync(SqliteConnection conn, string table, string column, CancellationToken cancellationToken)
+    {
+        await using var cmd = new SqliteCommand(
+            $"SELECT count(*) FROM pragma_table_info('{table}') WHERE name = '{column}';", conn);
+        return Convert.ToInt64(await cmd.ExecuteScalarAsync(cancellationToken) ?? 0L) > 0;
+    }
+
+    /// <summary>Reads the schema version of the database file.</summary>
+    private static async Task<long> GetUserVersionAsync(SqliteConnection conn, CancellationToken cancellationToken)
+        => await ScalarLongAsync(conn, "PRAGMA user_version;", cancellationToken);
+
+    /// <summary>Writes the schema version of the database file.</summary>
+    private static async Task SetUserVersionAsync(SqliteConnection conn, int version, CancellationToken cancellationToken)
+        => await ExecuteAsync(conn, $"PRAGMA user_version = {version};", cancellationToken);
+
+    /// <summary>Writes the schema version of the database file (on its own connection).</summary>
+    private async Task SetSchemaVersionAsync(int version)
+    {
+        await using var conn = await OpenConnectionAsync(CancellationToken.None);
+        await SetUserVersionAsync(conn, version, CancellationToken.None);
+    }
+
+    /// <summary>Reads a value of the meta table, or null when the key is not there.</summary>
+    private static async Task<string?> GetMetaAsync(SqliteConnection conn, string key, CancellationToken cancellationToken)
+    {
+        await using var cmd = new SqliteCommand("SELECT Value FROM SchemaMeta WHERE Key = @key;", conn);
+        cmd.Parameters.AddWithValue("@key", key);
+        return await cmd.ExecuteScalarAsync(cancellationToken) as string;
+    }
+
+    /// <summary>Writes a value of the meta table.</summary>
+    private static async Task SetMetaAsync(SqliteConnection conn, string key, string value, CancellationToken cancellationToken)
+    {
+        await using var cmd = new SqliteCommand(
+            "INSERT INTO SchemaMeta (Key, Value) VALUES (@key, @value) ON CONFLICT(Key) DO UPDATE SET Value = excluded.Value;",
+            conn);
+        cmd.Parameters.AddWithValue("@key", key);
+        cmd.Parameters.AddWithValue("@value", value);
+        await cmd.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    /// <summary>Removes a value of the meta table.</summary>
+    private static async Task DeleteMetaAsync(SqliteConnection conn, string key, CancellationToken cancellationToken)
+    {
+        await using var cmd = new SqliteCommand("DELETE FROM SchemaMeta WHERE Key = @key;", conn);
+        cmd.Parameters.AddWithValue("@key", key);
+        await cmd.ExecuteNonQueryAsync(cancellationToken);
     }
 
     /// <summary>
@@ -807,7 +1265,7 @@ public class SqliteMediaRepository : IMediaRepository, IDisposable
         int k,
         CancellationToken cancellationToken = default)
     {
-        if (!VecAvailable || query is null || query.Length != EmbeddingDimensions || k <= 0)
+        if (!_vecIndexReady || !VecAvailable || query is null || query.Length != EmbeddingDimensions || k <= 0)
         {
             return Array.Empty<(Guid, float)>();
         }
@@ -871,7 +1329,7 @@ public class SqliteMediaRepository : IMediaRepository, IDisposable
         int oversample = DefaultVecOversample,
         CancellationToken cancellationToken = default)
     {
-        if (!VecAvailable || query is null || query.Length != EmbeddingDimensions || k <= 0)
+        if (!_vecIndexReady || !VecAvailable || query is null || query.Length != EmbeddingDimensions || k <= 0)
         {
             return Array.Empty<(Guid, float)>();
         }
@@ -1466,6 +1924,10 @@ public class SqliteMediaRepository : IMediaRepository, IDisposable
             var conn = await EnsureWriteConnectionAsync(cancellationToken);
             try
             {
+                // While the triggers are dropped the chunk rows go without their index entries. The slow phase rebuilds
+                // the index once after the catch-up to drop those entries (see RebuildFtsIndexAsync).
+                if (_ftsRebuildNeeded) _ftsDeleteWhileRebuilding = true;
+
                 var tx = conn.BeginTransaction();
                 try
                 {
@@ -1502,6 +1964,10 @@ public class SqliteMediaRepository : IMediaRepository, IDisposable
             var conn = await EnsureWriteConnectionAsync(cancellationToken);
             try
             {
+                // While the triggers are dropped the chunk rows go without their index entries. The slow phase rebuilds
+                // the index once after the catch-up to drop those entries (see RebuildFtsIndexAsync).
+                if (_ftsRebuildNeeded) _ftsDeleteWhileRebuilding = true;
+
                 var tx = conn.BeginTransaction();
                 try
                 {
@@ -1559,6 +2025,15 @@ public class SqliteMediaRepository : IMediaRepository, IDisposable
                 var tx = conn.BeginTransaction();
                 try
                 {
+                    // The delete triggers are dropped while the full-text index is rebuilt, so the chunk delete below
+                    // could not clear the index. The content rows still exist here, which is what lets FTS5 drop every
+                    // entry (a delete after the chunk rows are gone cannot find the values it has to remove).
+                    if (_ftsRebuildNeeded)
+                    {
+                        await using var clearFts = new SqliteCommand("DELETE FROM MediaChunksFts;", conn, tx);
+                        await clearFts.ExecuteNonQueryAsync(cancellationToken);
+                    }
+
                     await RunAsync(_clearCmd!, tx, cancellationToken);
                     await tx.CommitAsync(cancellationToken);
                 }
@@ -1765,6 +2240,10 @@ public class SqliteMediaRepository : IMediaRepository, IDisposable
         string cleanKeyword = keyword.Replace("\"", "\"\"").Trim();
         if (string.IsNullOrEmpty(cleanKeyword)) return Array.Empty<(Guid, float)>();
 
+        // While the index is being rebuilt it does not hold every row yet, so the search falls back to a plain scan of
+        // the chunk table. It is slower but complete, and it is only used until the rebuild is done.
+        if (!_ftsIndexReady) return await SearchFtsByScanAsync(cleanKeyword, limit, cancellationToken);
+
         for (int attempt = 1; ; attempt++)
         {
             await using var conn = await OpenConnectionAsync(cancellationToken);
@@ -1811,6 +2290,47 @@ public class SqliteMediaRepository : IMediaRepository, IDisposable
 
             return results;
         }
+    }
+
+    /// <summary>
+    /// The fallback of the full-text search while the index is being rebuilt: a plain scan of the chunk table with a
+    /// LIKE comparison. It is slower than the index (it reads every chunk row) but it is complete, so the search finds
+    /// the same documents before and after the rebuild. The scan stops as soon as <paramref name="limit"/> rows are
+    /// found, so a common keyword is quick.
+    /// </summary>
+    private async Task<IReadOnlyList<(Guid ChunkId, float FtsRank)>> SearchFtsByScanAsync(
+        string keyword, int limit, CancellationToken cancellationToken)
+    {
+        string pattern = "%" + keyword.Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_") + "%";
+
+        const string sql = """
+            SELECT Id FROM MediaChunks
+            WHERE SnippetText LIKE @pattern ESCAPE '\' OR FileName LIKE @pattern ESCAPE '\'
+            LIMIT @limit;
+            """;
+
+        await using var conn = await OpenConnectionAsync(cancellationToken);
+        await using var cmd = new SqliteCommand(sql, conn);
+        cmd.Parameters.AddWithValue("@pattern", pattern);
+        cmd.Parameters.AddWithValue("@limit", limit);
+
+        var results = new List<(Guid, float)>();
+        try
+        {
+            await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                // The scan has no ranking of its own; every hit gets the same score, so the fusion orders them by the
+                // vector score (and by the path, for equal scores).
+                results.Add((Guid.Parse(reader.GetString(0)), 1.0f));
+            }
+        }
+        catch (SqliteException)
+        {
+            // A database without the tables (not initialized yet) has nothing to search: the same as the index path.
+        }
+
+        return results;
     }
 
     private static MediaAsset ReadAsset(SqliteDataReader reader)

@@ -54,7 +54,11 @@ public sealed class FolderWatcher : IDisposable
             var settings = _store.Load();
             if (!settings.AutoIndex) return;
 
-            foreach (var folder in settings.Folders.Where(Directory.Exists))
+            // Whether the folders still exist can be slow on a network drive: it is checked on a worker thread.
+            // The watchers themselves do not care about the thread they are created on.
+            var folders = Task.Run(() => settings.Folders.Where(Directory.Exists).ToList()).GetAwaiter().GetResult();
+
+            foreach (var folder in folders)
             {
                 try
                 {

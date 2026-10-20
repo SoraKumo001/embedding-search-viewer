@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Collections.Specialized;
 using System.IO;
 using System.Linq;
 using System.Threading;
@@ -10,6 +11,7 @@ using CommunityToolkit.Mvvm.Input;
 using EmbeddingSearchViewer.Core.Interfaces;
 using EmbeddingSearchViewer.Core.Localization;
 using EmbeddingSearchViewer.Core.Models;
+using EmbeddingSearchViewer.Infrastructure.Core;
 using EmbeddingSearchViewer.Infrastructure.Ingestion;
 using EmbeddingSearchViewer.Infrastructure.Library;
 using EmbeddingSearchViewer.Infrastructure.Onnx;
@@ -101,6 +103,33 @@ public partial class LibraryViewModel : ObservableObject
     private IReadOnlyList<string> _indexedPaths = Array.Empty<string>();
     private Dictionary<string, int> _folderCounts = new();
 
+    /// <summary>The settings of the current profile; they are read once per transition and reused when saving.</summary>
+    private LibrarySettings? _settings;
+
+    /// <summary>True once the one-time work of the start-up (the folders and the heavy refresh) is done for this profile.</summary>
+    private bool _initialized;
+
+    /// <summary>The data version the numbers on screen come from; the same version means they are still right.</summary>
+    private long _statsVersion = -1;
+
+    /// <summary>The data version the cached paths and the files per folder come from.</summary>
+    private long _statsDataVersion = -1;
+
+    /// <summary>When the numbers on screen were read.</summary>
+    private DateTime _statsAt = DateTime.MinValue;
+
+    /// <summary>True while the folders are changed in bulk, so the files per folder are not recounted for every single one.</summary>
+    private bool _suspendSync;
+
+    /// <summary>Cancels the delayed heavy refresh when another one is scheduled.</summary>
+    private CancellationTokenSource? _deferredRefreshCts;
+
+    /// <summary>Counts the requests for the excluded files, so an older answer is dropped when a newer one is on the way.</summary>
+    private int _excludedRequestId;
+
+    /// <summary>The shortest time between two reads of the statistics; a read that just happened is not repeated.</summary>
+    private static readonly TimeSpan MinimumStatsInterval = TimeSpan.FromMilliseconds(250);
+
     /// <summary>
     /// Brings <see cref="FolderItems"/> in line with <see cref="TargetFolders"/>, the counts and the sort order.
     /// Items are updated and moved in place, so the list does not jump back to the top while counts are refreshed.
@@ -116,12 +145,48 @@ public partial class LibraryViewModel : ObservableObject
         foreach (var item in FolderItems) item.SetCount(counts.TryGetValue(item.Path, out int n) ? n : 0);
 
         var mode = Enum.IsDefined(typeof(FolderSortMode), FolderSortIndex) ? (FolderSortMode)FolderSortIndex : FolderSortMode.Added;
-        var order = FolderListing.Order(TargetFolders.ToList(), counts, mode);
+        var order = FolderListing.Order(TargetFolders, counts, mode);
         for (int i = 0; i < order.Count; i++)
         {
-            int from = FolderItems.ToList().FindIndex(x => x.Path == order[i]);
-            if (from != i) FolderItems.Move(from, i);
+            int from = IndexOfItem(order[i]);
+            if (from >= 0 && from != i) FolderItems.Move(from, i);
         }
+    }
+
+    /// <summary>The place of a folder in the list on screen, or -1 when it is not on it.</summary>
+    private int IndexOfItem(string path)
+    {
+        for (int i = 0; i < FolderItems.Count; i++)
+        {
+            if (FolderItems[i].Path == path) return i;
+        }
+        return -1;
+    }
+
+    /// <summary>
+    /// Adds several folders at once. The list on screen is brought in line once, at the end, so the files per folder
+    /// are not counted again for every single folder that is added.
+    /// </summary>
+    private void AddFolders(IEnumerable<string> folders)
+    {
+        _suspendSync = true;
+        try
+        {
+            foreach (var folder in folders) TargetFolders.Add(folder);
+        }
+        finally
+        {
+            _suspendSync = false;
+        }
+        SyncFolderItems(recount: false);
+    }
+
+    /// <summary>Keeps the list on screen in line with the folders to index.</summary>
+    private void OnTargetFoldersChanged(object? sender, NotifyCollectionChangedEventArgs e)
+    {
+        // The folders are added in bulk at the start: the list is brought in line once, at the end of the batch.
+        if (_suspendSync) return;
+        SyncFolderItems();
     }
 
     [ObservableProperty]
@@ -129,6 +194,9 @@ public partial class LibraryViewModel : ObservableObject
 
     /// <summary>The choices for the length of a video segment, in seconds; the first is the standard.</summary>
     public static IReadOnlyList<int> VideoSegmentChoices { get; } = new[] { 15, 30, 60, 120 };
+
+    /// <summary>The same choices as a list, so that a lookup does not build a new list every time.</summary>
+    private static readonly List<int> VideoSegmentChoiceList = VideoSegmentChoices.ToList();
 
     public static IReadOnlyList<string> VideoSegmentLabels { get; } =
         new[] { Loc.T("Library.SegmentLabel.Standard", 15), Loc.T("Library.SegmentLabel", 30), Loc.T("Library.SegmentLabel", 60), Loc.T("Library.SegmentLabel", 120) };
@@ -168,6 +236,15 @@ public partial class LibraryViewModel : ObservableObject
         if (!_loadingSettings) SaveSettings();
     }
 
+    /// <summary>When on, videos are decoded with FFmpeg first (the Windows media stack as the fallback); off uses the Windows media stack alone.</summary>
+    [ObservableProperty]
+    private bool _useFfmpegDecoder = true;
+
+    partial void OnUseFfmpegDecoderChanged(bool value)
+    {
+        if (!_loadingSettings) SaveSettings();
+    }
+
     // ---- files left out of the index because reading them failed repeatedly ----
 
     public ObservableCollection<ExcludedFile> ExcludedFiles { get; } = new();
@@ -181,13 +258,24 @@ public partial class LibraryViewModel : ObservableObject
     /// <summary>Re-reads the list of excluded files (they are added by the indexing worker, on its own thread).</summary>
     public void RefreshExcluded()
     {
-        // A file deleted after it failed must not stay in the list as an error: drop it (and persist).
-        _exclusions.PruneMissing();
-        var items = _exclusions.List();
-        ExcludedFiles.Clear();
-        foreach (var item in items) ExcludedFiles.Add(item);
-        HasExcluded = items.Count > 0;
-        ExcludedHeaderText = items.Count > 0 ? Loc.T("Library.ExcludedHeader", items.Count) : string.Empty;
+        // Checking whether the files still exist touches the disk, so it does not run on the UI thread.
+        int requestId = Interlocked.Increment(ref _excludedRequestId);
+        _ = Task.Run(() =>
+        {
+            // A file deleted after it failed must not stay in the list as an error: drop it (and persist).
+            _exclusions.PruneMissing();
+            var items = _exclusions.List();
+            _dispatcher.Enqueue(() =>
+            {
+                // A newer list is already on its way: this answer is dropped.
+                if (requestId != Volatile.Read(ref _excludedRequestId)) return;
+
+                ExcludedFiles.Clear();
+                foreach (var item in items) ExcludedFiles.Add(item);
+                HasExcluded = items.Count > 0;
+                ExcludedHeaderText = items.Count > 0 ? Loc.T("Library.ExcludedHeader", items.Count) : string.Empty;
+            });
+        });
     }
 
     /// <summary>Lets one file be tried again by the next indexing run.</summary>
@@ -217,7 +305,9 @@ public partial class LibraryViewModel : ObservableObject
 
     private void CheckIndexModel(int assetCount)
     {
-        bool compatible = _store.CheckIndexModelCompatibility(CurrentModelTag, assetCount, out _);
+        // The settings of this profile were already read: the file is not read again for this check.
+        var settings = _settings ??= _store.Load();
+        bool compatible = _store.CheckIndexModelCompatibility(CurrentModelTag, assetCount, settings, out _);
         IndexModelWarning = compatible ? string.Empty : Loc.T("Library.IndexModelMismatch");
     }
 
@@ -244,7 +334,13 @@ public partial class LibraryViewModel : ObservableObject
         _dispatcher = dispatcher ?? EmbeddingSearchViewer.Core.Services.ImmediateDispatcher.Instance;
 
         _worker.ProgressChanged += OnProgressChanged;
-        TargetFolders.CollectionChanged += (_, _) => SyncFolderItems();
+        TargetFolders.CollectionChanged += OnTargetFoldersChanged;
+
+        // The engine is created in the background, so the line on the screen is updated when it is there.
+        if (_embeddingService is EmbeddingServiceHost engineHost)
+        {
+            engineHost.Changed += OnEngineChanged;
+        }
 
         // While an index is being built, keep the statistics cards current (only when the data has changed). The refresh
         // is the light path, and it is thinned to at most once every five seconds, so the UI does not load every indexed
@@ -258,40 +354,141 @@ public partial class LibraryViewModel : ObservableObject
 
     public async Task InitializeAsync()
     {
-        bool ready = await _embeddingService.IsReadyAsync();
-        IsEngineReady = ready;
+        await InitializeCoreAsync();
+        ScheduleFullStatsRefresh();
+    }
+
+    /// <summary>
+    /// Fast part of startup: engine state, folders and the light statistics (counts query only, no per-file scan).
+    /// After this returns the run can start; the full refresh follows while indexing is already going.
+    /// </summary>
+    public async Task InitializeCoreAsync()
+    {
+        // The engine is created in the background (the app starts right away), so the screen says "initializing" at
+        // once and is updated when the engine is there. Nothing here waits for the engine.
+        IsEngineReady = false;
+        EngineStatus = Loc.T("Library.Engine.Initializing");
+        _ = UpdateEngineStateAsync();
 
         if (TargetFolders.Count == 0)
         {
+            // The settings of this profile are read once and kept: a later save reuses them.
+            var saved = _settings ??= _store.Load();
+
+            // Whether the folders still exist can be slow on a network drive: it does not block the UI.
+            var existing = await Task.Run(() => saved.Folders.Where(Directory.Exists).ToList());
+
             _loadingSettings = true;
-            var saved = _store.Load();
-            foreach (var folder in saved.Folders.Where(Directory.Exists))
+            try
             {
-                TargetFolders.Add(folder);
+                AddFolders(existing);
+                AutoIndex = saved.AutoIndex;
+                VideoSegmentIndex = Math.Max(0, VideoSegmentChoiceList.IndexOf(saved.VideoSegmentSeconds));
+                VideoAutoSegment = saved.VideoAutoSegment;
+                UseFfmpegDecoder = saved.UseFfmpegDecoder;
+                IndexImages = saved.IndexImages;
+                IndexPdfs = saved.IndexPdfs;
+                IndexVideos = saved.IndexVideos;
+                IndexDocuments = saved.IndexDocuments;
+                FolderSortIndex = saved.FolderSortIndex;
             }
-            AutoIndex = saved.AutoIndex;
-            VideoSegmentIndex = Math.Max(0, VideoSegmentChoices.ToList().IndexOf(saved.VideoSegmentSeconds));
-            VideoAutoSegment = saved.VideoAutoSegment;
-            IndexImages = saved.IndexImages;
-            IndexPdfs = saved.IndexPdfs;
-            IndexVideos = saved.IndexVideos;
-            IndexDocuments = saved.IndexDocuments;
-            FolderSortIndex = saved.FolderSortIndex;
-            _loadingSettings = false;
+            finally
+            {
+                _loadingSettings = false;
+            }
             HasFolders = TargetFolders.Count > 0;
         }
-        EngineStatus = ready
-            ? Loc.T("Library.Engine.Ready")
-            : UnavailableEmbeddingService.ReasonOf(_embeddingService) ?? Loc.T("Library.Engine.Initializing");
 
         RefreshExcluded();
-        await RefreshLibraryStatsAsync();
+        await RefreshLibraryStatsCoreAsync(full: false);
+    }
+
+    /// <summary>
+    /// Reads the state of the engine and shows it. It waits for the engine to be created (which happens in the
+    /// background), so the line on the screen changes from "initializing" to "ready" as soon as it is there.
+    /// </summary>
+    private async Task UpdateEngineStateAsync()
+    {
+        try
+        {
+            bool ready = await _embeddingService.IsReadyAsync().ConfigureAwait(false);
+            string status = ready
+                ? Loc.T("Library.Engine.Ready")
+                : UnavailableEmbeddingService.ReasonOf(_embeddingService) ?? Loc.T("Library.Engine.Initializing");
+
+            _dispatcher.Enqueue(() =>
+            {
+                IsEngineReady = ready;
+                EngineStatus = status;
+            });
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Error reading the engine state: {ex.Message}");
+        }
+    }
+
+    /// <summary>The engine was replaced (it is created in the background, or reloaded after a download).</summary>
+    private void OnEngineChanged()
+    {
+        _ = UpdateEngineStateAsync();
+    }
+
+    /// <summary>
+    /// Schedules the heavy part of the refresh (every indexed path, the files per folder, the folders of an index that
+    /// was built elsewhere) to run when the screen is idle. It runs once per profile: a later visit of the page only
+    /// refreshes the light numbers, which are on screen at once.
+    /// </summary>
+    public void ScheduleFullStatsRefresh()
+    {
+        if (_initialized) return; // the heavy work was already done for this profile
+        _initialized = true;
+
+        var cts = new CancellationTokenSource();
+        var previous = Interlocked.Exchange(ref _deferredRefreshCts, cts);
+        previous?.Cancel(); // not disposed: the refresh that uses it may still be running
+
+        var token = cts.Token;
+        var queue = _dispatcherQueue;
+        if (queue != null && queue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () => _ = RunDeferredFullRefreshAsync(token)))
+        {
+            return; // it waits for a moment when the screen is free
+        }
+
+        // Without a dispatcher queue there is no idle moment to wait for: the refresh runs right away.
+        _ = RunDeferredFullRefreshAsync(token);
+    }
+
+    /// <summary>The heavy refresh, in the background: it can be cancelled when another one is scheduled.</summary>
+    private async Task RunDeferredFullRefreshAsync(CancellationToken token)
+    {
+        try
+        {
+            await RefreshLibraryStatsCoreAsync(full: true, token);
+        }
+        catch (OperationCanceledException)
+        {
+            // Another refresh took over.
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Error refreshing library stats: {ex.Message}");
+        }
     }
 
     /// <summary>Drops everything shown for the previous profile and loads the folders and statistics of the new one.</summary>
     public async Task ReloadForProfileChangeAsync()
     {
-        TargetFolders.Clear();
+        _suspendSync = true;
+        try
+        {
+            TargetFolders.Clear();
+        }
+        finally
+        {
+            _suspendSync = false;
+        }
+        SyncFolderItems(recount: false);
         HasFolders = false;
         TotalFiles = 0;
         ProcessedFiles = 0;
@@ -299,6 +496,18 @@ public partial class LibraryViewModel : ObservableObject
         ErrorMessage = null;
         IndexModelWarning = string.Empty;
         CurrentStatusMessage = Loc.T("Library.Status.Ready");
+
+        // The new profile has its own settings, its own index and its own folders: everything that was cached is dropped.
+        _initialized = false;
+        _settings = null;
+        _statsVersion = -1;
+        _statsDataVersion = -1;
+        _statsAt = DateTime.MinValue;
+        _indexedPaths = Array.Empty<string>();
+        _folderCounts = new();
+        var pending = Interlocked.Exchange(ref _deferredRefreshCts, null);
+        pending?.Cancel(); // not disposed: the refresh that uses it may still be running
+
         await InitializeAsync();
     }
 
@@ -311,49 +520,79 @@ public partial class LibraryViewModel : ObservableObject
     /// folder, restoring folders) to a full refresh. That keeps the periodic UI refresh from loading every indexed path
     /// and recounting every folder while ingestion is writing, at the cost of the cards lagging a little. Completion,
     /// starting up and the manual actions always use the full path.
+    /// The data version of the repository says whether the numbers on screen are still right: when it has not changed,
+    /// neither the database nor the files per folder are read again.
     /// </summary>
-    private async Task RefreshLibraryStatsCoreAsync(bool full)
+    private async Task RefreshLibraryStatsCoreAsync(bool full, CancellationToken cancellationToken = default)
     {
         try
         {
-            // Counts and paths come from two light queries; the files themselves are only loaded when folders must be restored.
-            var stats = await _repository.GetAssetStatsAsync();
-            TotalIndexedAssets = stats.Total;
-            IndexedImageCount = stats.Images;
-            IndexedPdfCount = stats.Pdfs;
-            IndexedVideoCount = stats.Videos;
-            IndexedDocumentCount = stats.Documents;
-            HasIndexedAssets = stats.Total > 0;
-            CheckIndexModel(stats.Total);
+            // The data version is read before the queries: a write that happens while they run leaves the cached
+            // version behind the data, so the next refresh reads again instead of keeping a number that is too old.
+            long version = _repository.DataVersion;
+            bool countsAreCurrent = version >= 0 && version == _statsVersion;
+
+            // A read that happened a moment ago is not repeated either: the numbers on screen are at most a moment
+            // old, and a write in that window is picked up by the next refresh.
+            if (!countsAreCurrent && _statsAt != DateTime.MinValue && DateTime.UtcNow - _statsAt < MinimumStatsInterval)
+            {
+                countsAreCurrent = true;
+            }
+
+            if (!countsAreCurrent)
+            {
+                // Counts and paths come from two light queries; the files themselves are only loaded when folders must be restored.
+                var stats = await _repository.GetAssetStatsAsync(cancellationToken);
+                TotalIndexedAssets = stats.Total;
+                IndexedImageCount = stats.Images;
+                IndexedPdfCount = stats.Pdfs;
+                IndexedVideoCount = stats.Videos;
+                IndexedDocumentCount = stats.Documents;
+                HasIndexedAssets = stats.Total > 0;
+                CheckIndexModel(stats.Total);
+                _statsVersion = version;
+                _statsAt = DateTime.UtcNow;
+            }
 
             // While indexing, stop here: the hashes, per-folder counts and folder restoration are deferred to the full refresh.
             if (!full) return;
 
-            _indexedPaths = (await _repository.GetAssetHashesAsync()).Keys.ToList();
-            var folders = TargetFolders.ToList();
-            var paths = _indexedPaths;
-            _folderCounts = await Task.Run(() => FolderListing.CountFiles(folders, paths)); // off the UI thread
+            // The paths and the files per folder are only read again when the indexed data has changed.
+            if (version < 0 || version != _statsDataVersion)
+            {
+                var hashes = await _repository.GetAssetHashesAsync(cancellationToken);
+                var folders = TargetFolders.ToList();
+                // Turning the paths into a list and counting them walks every indexed file: that is done off the UI thread.
+                var counted = await Task.Run(() =>
+                {
+                    var paths = hashes.Keys.ToList();
+                    return (Paths: paths, Counts: FolderListing.CountFiles(folders, paths));
+                }, cancellationToken);
+                _indexedPaths = counted.Paths;
+                _folderCounts = counted.Counts;
+                _statsDataVersion = version;
+            }
             SyncFolderItems(recount: false); // the number of files per folder
 
             // Automatically restore folders from previously indexed assets if target folders is empty
-            if (TargetFolders.Count == 0 && stats.Total > 0 && !_store.Exists)
+            if (TargetFolders.Count == 0 && TotalIndexedAssets > 0 && !_store.Exists)
             {
-                var dirs = (await _repository.GetAllAssetsAsync())
+                var dirs = (await _repository.GetAllAssetsAsync(cancellationToken))
                     .Select(a => Path.GetDirectoryName(a.FilePath))
-                    .Where(d => !string.IsNullOrEmpty(d) && Directory.Exists(d))
+                    .Where(d => !string.IsNullOrEmpty(d))
+                    .Select(d => d!)
+                    .Where(Directory.Exists)
                     .Distinct(StringComparer.OrdinalIgnoreCase)
                     .ToList();
 
-                foreach (var dir in dirs)
-                {
-                    if (dir != null && !TargetFolders.Contains(dir))
-                    {
-                        TargetFolders.Add(dir);
-                    }
-                }
+                AddFolders(dirs);
             }
 
             HasFolders = TargetFolders.Count > 0;
+        }
+        catch (OperationCanceledException)
+        {
+            // The refresh was replaced by a newer one.
         }
         catch (Exception ex)
         {
@@ -461,10 +700,12 @@ public partial class LibraryViewModel : ObservableObject
     {
         try
         {
-            var settings = _store.Load();
+            // The settings of this profile were already read: they are not read again for every change.
+            var settings = _settings ??= _store.Load();
             settings.Folders = TargetFolders.ToList();
             settings.AutoIndex = AutoIndex;
             settings.VideoAutoSegment = VideoAutoSegment;
+            settings.UseFfmpegDecoder = UseFfmpegDecoder;
             settings.IndexImages = IndexImages;
             settings.IndexPdfs = IndexPdfs;
             settings.IndexVideos = IndexVideos;
@@ -486,11 +727,24 @@ public partial class LibraryViewModel : ObservableObject
     [RelayCommand]
     public async Task StartIndexingAsync()
     {
-        if (TargetFolders.Count == 0) return;
-
-        if (UnavailableEmbeddingService.ReasonOf(_embeddingService) is { } unavailableReason)
+        if (IsIndexing)
         {
-            ErrorMessage = unavailableReason;
+            IngestTrace.Write("app:indexing-start skipped (already running)");
+            return;
+        }
+        if (TargetFolders.Count == 0)
+        {
+            IngestTrace.Write("app:indexing-start skipped (no folders)");
+            return;
+        }
+        IngestTrace.Write($"app:indexing-start folders={TargetFolders.Count}");
+
+        // The engine is created in the background, so the run waits for it to be there (without the model nothing can
+        // be embedded). An engine that is really not available is reported with its reason.
+        bool engineReady = await _embeddingService.IsReadyAsync();
+        if (!engineReady)
+        {
+            ErrorMessage = UnavailableEmbeddingService.ReasonOf(_embeddingService) ?? Loc.T("Library.Engine.Initializing");
             return;
         }
 
@@ -630,6 +884,12 @@ public partial class LibraryViewModel : ObservableObject
         _indexedPaths = Array.Empty<string>();
         _folderCounts = TargetFolders.Distinct(StringComparer.OrdinalIgnoreCase)
             .ToDictionary(f => f, _ => 0, StringComparer.OrdinalIgnoreCase);
+
+        // The index is gone: the cached numbers and paths do not belong to it any more.
+        _statsVersion = -1;
+        _statsDataVersion = -1;
+        _statsAt = DateTime.MinValue;
+
         SyncFolderItems(recount: false);
         HasFolders = TargetFolders.Count > 0;
     }
