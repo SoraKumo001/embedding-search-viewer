@@ -205,6 +205,41 @@ public partial class App : Application
         return null;
     }
 
+    /// <summary>
+    /// The diagnostics API server, created the first time the switch turns it on (or when it starts on). With the switch
+    /// off, which is the default, it is never constructed, so its worker dependency is not pulled in early either.
+    /// </summary>
+    private DiagApiServer? _diagApi;
+
+    /// <summary>
+    /// Starts or stops the loopback diagnostics API for the current switch value. Called on the UI thread: at launch when
+    /// the switch starts on, and from the library page's option while the app runs. A failure is logged and never thrown:
+    /// the app runs without the diagnostics lane. Stop is safe when the server was never created or never started.
+    /// </summary>
+    private void ApplyDiagApiSwitch(bool enabled)
+    {
+        try
+        {
+            if (enabled)
+            {
+                if (_diagApi == null)
+                {
+                    _diagApi = Services.GetRequiredService<DiagApiServer>();
+                    AppDomain.CurrentDomain.ProcessExit += (_, _) => _diagApi?.Stop();
+                }
+                _diagApi.Start();
+            }
+            else
+            {
+                _diagApi?.Stop();
+            }
+        }
+        catch (Exception ex)
+        {
+            CrashLog.Write(enabled ? "DiagApi.Start" : "DiagApi.Stop", ex);
+        }
+    }
+
     protected override void OnLaunched(LaunchActivatedEventArgs args)
     {
         CurrentWindow = new MainWindow();
@@ -214,11 +249,17 @@ public partial class App : Application
 
         // The diagnostics API starts with the window (its port is ephemeral, so it has to be read from the log) and is
         // stopped when the process ends. A failure here must never keep the app from starting.
+        //
+        // The listener follows the RunDiagnosticsOptions switch: it is started at launch only when EnableDiagApi is on
+        // (the default is off, so no port is bound at all), and the same switch turned on the library page starts it
+        // while the app runs. A change is handed to the UI thread first: a PUT /v1/options that turns the switch off
+        // must still get its answer before the socket closes.
         try
         {
-            var diagApi = Services.GetRequiredService<DiagApiServer>();
-            diagApi.Start();
-            AppDomain.CurrentDomain.ProcessExit += (_, _) => diagApi.Stop();
+            var runDiagnostics = Services.GetRequiredService<RunDiagnosticsOptions>();
+            var dispatcher = Services.GetRequiredService<IUiDispatcher>();
+            runDiagnostics.EnableDiagApiChanged += enabled => dispatcher.Enqueue(() => ApplyDiagApiSwitch(enabled));
+            if (runDiagnostics.EnableDiagApi) ApplyDiagApiSwitch(true);
         }
         catch (Exception ex)
         {

@@ -292,6 +292,15 @@ public partial class LibraryViewModel : ObservableObject
 
     partial void OnUseFfmpegWorkerChanged(bool value) => _runDiagnostics.UseFfmpegWorker = value;
 
+    /// <summary>
+    /// When on, the loopback diagnostics API listens (see <c>DiagApiServer</c>); off by default, as before. The app
+    /// starts and stops the listener when this changes, so it applies at once. Not read by the worker.
+    /// </summary>
+    [ObservableProperty]
+    private bool _enableDiagApi;
+
+    partial void OnEnableDiagApiChanged(bool value) => _runDiagnostics.EnableDiagApi = value;
+
     // ---- the numbers of the run, shown while it runs ----
 
     /// <summary>
@@ -473,6 +482,7 @@ public partial class LibraryViewModel : ObservableObject
         FfmpegPermit = _runDiagnostics.FfmpegPermit;
         IgnoreDecoderMarkers = _runDiagnostics.IgnoreDecoderMarkers;
         FrameTracing = _runDiagnostics.FrameTracing;
+        EnableDiagApi = _runDiagnostics.EnableDiagApi;
 
         _worker.ProgressChanged += OnProgressChanged;
         TargetFolders.CollectionChanged += OnTargetFoldersChanged;

@@ -13,7 +13,8 @@ namespace EmbeddingSearchViewer.Infrastructure.Library;
 /// (<c>StartLocked</c>), so a change applies from the next run and never reshapes a running one. The decode path reads
 /// <see cref="IgnoreDecoderMarkers"/> per video, <see cref="FrameTracing"/> per frame and
 /// <see cref="UseFfmpegWorker"/> per video, so those three can be toggled while the app runs. All five are volatile:
-/// they are written on the UI thread and read on ingest threads.
+/// they are written on the UI thread and read on ingest threads. <see cref="EnableDiagApi"/> is not read by the ingest
+/// code at all: the app follows it and starts or stops the diagnostics API listener.
 /// </remarks>
 public sealed class RunDiagnosticsOptions
 {
@@ -34,12 +35,14 @@ public sealed class RunDiagnosticsOptions
     private const string IgnoreDecoderMarkersVariable = "ESV_IGNORE_DECODER_MARKERS";
     private const string FrameTracingVariable = "ESV_INGEST_TRACE_FRAMES";
     private const string FfmpegWorkerVariable = "ESV_FFMPEG_WORKER";
+    private const string DiagApiVariable = "ESV_DIAG_API";
 
     private volatile int _videoParallelism;
     private volatile int _ffmpegPermit;
     private volatile bool _ignoreDecoderMarkers;
     private volatile bool _frameTracing;
     private volatile bool _useFfmpegWorker;
+    private volatile bool _enableDiagApi;
 
     /// <summary>Reads the current environment flags as the starting values; every later change is in memory only.</summary>
     public RunDiagnosticsOptions()
@@ -49,6 +52,7 @@ public sealed class RunDiagnosticsOptions
         IgnoreDecoderMarkers = IsEnabled(IgnoreDecoderMarkersVariable);
         FrameTracing = IsEnabled(FrameTracingVariable);
         UseFfmpegWorker = IsEnabled(FfmpegWorkerVariable);
+        EnableDiagApi = IsEnabled(DiagApiVariable);
     }
 
     /// <summary>
@@ -101,6 +105,30 @@ public sealed class RunDiagnosticsOptions
         get => _useFfmpegWorker;
         set => _useFfmpegWorker = value;
     }
+
+    /// <summary>
+    /// When on, the loopback diagnostics API (the <c>DiagApiServer</c> in the app) listens; off by default, which is the
+    /// behaviour the app had before the switch existed (no socket, no bound port). Unlike the other switches this one is
+    /// not read by the ingest code: the app starts and stops the listener when it changes, so the change applies at once.
+    /// </summary>
+    public bool EnableDiagApi
+    {
+        get => _enableDiagApi;
+        set
+        {
+            // Raised only on a real change, so the app does not stop and start the listener for a repeated value.
+            if (_enableDiagApi == value) return;
+            _enableDiagApi = value;
+            EnableDiagApiChanged?.Invoke(value);
+        }
+    }
+
+    /// <summary>
+    /// Raised after <see cref="EnableDiagApi"/> changed, with the new value. The app subscribes and starts or stops the
+    /// diagnostics API listener; it is raised on the thread that made the change (the UI thread or an API request), so the
+    /// handler only hands the work on and never blocks.
+    /// </summary>
+    public event Action<bool>? EnableDiagApiChanged;
 
     private static int ParseInt(string name, int fallback)
         => int.TryParse(Environment.GetEnvironmentVariable(name), out int value) ? value : fallback;

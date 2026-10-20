@@ -312,6 +312,12 @@
                                 <TextBlock loc:L.Uid="Library.Diagnostics.UseWorker" TextWrapping="Wrap" />
                             </CheckBox.Content>
                         </CheckBox>
+                        <CheckBox IsChecked="{x:Bind ViewModel.EnableDiagApi, Mode=TwoWay}"
+                                  AutomationProperties.Name="Enable the Diagnostics API">
+                            <CheckBox.Content>
+                                <TextBlock loc:L.Uid="Library.Diagnostics.DiagApi" TextWrapping="Wrap" />
+                            </CheckBox.Content>
+                        </CheckBox>
                     </StackPanel>
 
                     <!-- Numbers of the running job, refreshed about once a second while it runs -->

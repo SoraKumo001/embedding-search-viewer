@@ -453,6 +453,10 @@ public sealed class DiagApiServer : IDisposable
         ignoreDecoderMarkers = _options.IgnoreDecoderMarkers,
         frameTracing = _options.FrameTracing,
         useFfmpegWorker = _options.UseFfmpegWorker,
+        // Turning this on through the API cannot be done: this answer only exists while the API already listens, so a
+        // PUT of true is a no-op and the switch is really turned on from the library page (or ESV_DIAG_API=1). A PUT of
+        // false does stop the API: the answer is still written, then the listener closes.
+        enableDiagApi = _options.EnableDiagApi,
         running = _worker.IsRunning,
         effectiveFrom = new
         {
@@ -461,6 +465,7 @@ public sealed class DiagApiServer : IDisposable
             ignoreDecoderMarkers = "immediate",
             frameTracing = "immediate",
             useFfmpegWorker = "immediate",
+            enableDiagApi = "immediate",
         },
         ranges = new
         {
@@ -470,9 +475,11 @@ public sealed class DiagApiServer : IDisposable
     };
 
     /// <summary>
-    /// Partial merge of the five diagnostics switches. Values outside the accepted range are clamped by the store, keys
+    /// Partial merge of the diagnostics switches. Values outside the accepted range are clamped by the store, keys
     /// that are not switches are reported in <c>ignored</c> and left alone. A run-bound knob (parallelism, permit)
     /// during a run rejects the whole request with 409 and applies nothing; retry it after the stop for the next run.
+    /// <c>enableDiagApi</c> is applied at once: true is a no-op (the API is answering, so it is already on; it is turned
+    /// on from the library page or <c>ESV_DIAG_API=1</c>) and false stops the listener after this answer is written.
     /// </summary>
     private async Task<ApiResponse> PutOptionsAsync(DiagRequest request, CancellationToken token)
     {
@@ -481,6 +488,7 @@ public sealed class DiagApiServer : IDisposable
         bool? ignoreDecoderMarkers = null;
         bool? frameTracing = null;
         bool? useFfmpegWorker = null;
+        bool? enableDiagApi = null;
         var ignored = new List<string>();
 
         try
@@ -513,6 +521,10 @@ public sealed class DiagApiServer : IDisposable
                         break;
                     case "useffmpegworker":
                         if (property.Value.ValueKind is JsonValueKind.True or JsonValueKind.False) useFfmpegWorker = property.Value.GetBoolean();
+                        else ignored.Add(property.Name);
+                        break;
+                    case "enablediagapi":
+                        if (property.Value.ValueKind is JsonValueKind.True or JsonValueKind.False) enableDiagApi = property.Value.GetBoolean();
                         else ignored.Add(property.Name);
                         break;
                     default:
@@ -564,6 +576,14 @@ public sealed class DiagApiServer : IDisposable
             _options.UseFfmpegWorker = useFfmpegWorker.Value;
             applied.Add("useFfmpegWorker");
         }
+        if (enableDiagApi.HasValue)
+        {
+            // The app follows the store (RunDiagnosticsOptions.EnableDiagApiChanged) and starts or stops the listener.
+            // A PUT of true cannot take effect here: the API is answering this request, so it is already on. A PUT of
+            // false stops the listener, and the app defers that until this answer has been written.
+            _options.EnableDiagApi = enableDiagApi.Value;
+            applied.Add("enableDiagApi");
+        }
 
         // The values are read back from the store, so a clamped value is what the caller sees.
         return new ApiResponse(200, new
@@ -575,6 +595,7 @@ public sealed class DiagApiServer : IDisposable
             ignoreDecoderMarkers = _options.IgnoreDecoderMarkers,
             frameTracing = _options.FrameTracing,
             useFfmpegWorker = _options.UseFfmpegWorker,
+            enableDiagApi = _options.EnableDiagApi,
             running = _worker.IsRunning,
             effectiveFrom = new
             {
@@ -583,6 +604,7 @@ public sealed class DiagApiServer : IDisposable
                 ignoreDecoderMarkers = "immediate",
                 frameTracing = "immediate",
                 useFfmpegWorker = "immediate",
+                enableDiagApi = "immediate",
             },
         });
     }

@@ -307,20 +307,26 @@
   <data name="Library.Diagnostics.Description.Text" xml:space="preserve">
     <value>Settings for trying out video ingestion. They are not saved in library.json and go back to their starting values when the app closes.</value>
   </data>
+  <data name="Library.Diagnostics.DiagApi.Text" xml:space="preserve">
+    <value>Enable the diagnostics API (127.0.0.1 only; it listens only while this is on)</value>
+  </data>
+  <data name="Library.Diagnostics.DiagApi.ToolTip" xml:space="preserve">
+    <value>Opens a diagnostics API for this PC only, on 127.0.0.1 and a free port. A connection needs the token printed on the console at start-up. Off by default, and no port is bound while it is off. A change applies at once and is not saved, so it goes back to off on restart.</value>
+  </data>
   <data name="Library.Diagnostics.FrameTracing.Text" xml:space="preserve">
     <value>Trace every frame</value>
   </data>
   <data name="Library.Diagnostics.FrameTracing.ToolTip" xml:space="preserve">
-    <value>Adds the start, the end and the time of every frame to the ingestion log. The log gets much longer.</value>
+    <value>Adds the start, the end and the time breakdown of every frame (gate wait, decode, encode, resize) to the ingestion log. Off by default; turning it on applies from the next frame. The log gets much longer.</value>
   </data>
   <data name="Library.Diagnostics.Header.Text" xml:space="preserve">
-    <value>Diagnostics options</value>
+    <value>Details (diagnostics; reset on restart)</value>
   </data>
   <data name="Library.Diagnostics.IgnoreMarkers.Text" xml:space="preserve">
     <value>Ignore the marker from an interrupted decode (use FFmpeg again)</value>
   </data>
   <data name="Library.Diagnostics.IgnoreMarkers.ToolTip" xml:space="preserve">
-    <value>A video marked by the app dying during an FFmpeg decode is decoded with FFmpeg again. Applies from the next video.</value>
+    <value>A video marked by the app dying during an FFmpeg decode is decoded with FFmpeg again. Off by default (with the marker present, the next run uses the Windows media stack once). A change applies from the next video and is not saved, so it goes back to off on restart.</value>
   </data>
   <data name="Library.Diagnostics.NoDecoder" xml:space="preserve">
     <value>no decoder numbers yet</value>
@@ -329,16 +335,16 @@
     <value>The counts apply from the next run.</value>
   </data>
   <data name="Library.Diagnostics.Parallelism.Text" xml:space="preserve">
-    <value>Videos processed at once (1-3)</value>
+    <value>Videos processed at once (1-3, default 3; applies from the next run)</value>
   </data>
   <data name="Library.Diagnostics.Permit.Text" xml:space="preserve">
-    <value>FFmpeg decodes at once (1-2)</value>
+    <value>FFmpeg decodes at once (1-2, default 1; 2 is for experiments and applies from the next run)</value>
   </data>
   <data name="Library.Diagnostics.UseWorker.Text" xml:space="preserve">
     <value>Run FFmpeg in a separate process (one per video; applies from the next video)</value>
   </data>
   <data name="Library.Diagnostics.UseWorker.ToolTip" xml:space="preserve">
-    <value>Moves the FFmpeg decode into a child process that shares no memory with the app. Even with several videos at once, FFmpeg then never runs concurrently in one process, so a decoder fault cannot take the app down. A video whose child died is decoded with the Windows media stack on the next run.</value>
+    <value>Moves the FFmpeg decode into a child process that shares no memory with the app. Even with several videos at once, FFmpeg then never runs concurrently in one process, so a decoder fault cannot take the app down. A video whose child died is decoded with the Windows media stack on the next run. Off by default; a change applies from the next video. Builds without the child executable ignore this switch (the in-process FFmpeg stays in use).</value>
   </data>
   <data name="Library.Diagnostics.Readout.Text" xml:space="preserve">
     <value>Numbers while running</value>

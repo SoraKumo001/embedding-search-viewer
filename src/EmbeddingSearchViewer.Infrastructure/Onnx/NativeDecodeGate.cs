@@ -74,13 +74,6 @@ public static class NativeDecodeGate
     public static readonly SemaphoreSlim MediaFoundationGate = new(1, 1);
 
     /// <summary>
-    /// Former single async gate shared by the FFmpeg and Media Foundation frame sources. Kept only so external
-    /// references keep compiling and are visible in review; nothing in this solution uses it any more.
-    /// </summary>
-    [Obsolete("Unused: FFmpeg and Media Foundation now have separate gates (FfmpegGate / MediaFoundationGate).")]
-    public static readonly SemaphoreSlim VideoGate = new(1, 1);
-
-    /// <summary>
     /// Replaces the FFmpeg gate with one of <paramref name="permit"/> permits, but only while the current gate is
     /// idle (fully released, no waiter): the worker calls this when a run starts, before any video is opened. If a
     /// section is still in flight the request is refused (false) and the caller keeps the current gate.

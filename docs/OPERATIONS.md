@@ -457,6 +457,127 @@ GPU が使えない（作成に失敗、実行中に失敗）ときは、自動�
 - `SearchQuery.AssetIdFilter` は、その動画のチャンクだけを対象にします（動画内の検索。`PassesFilters` で、ほかの絞り込みと同じ扱い）。`SearchViewModel.SearchInVideoAsync` が、最小類似度などは、メインの検索と同じ値を使って、最大 200 場面を返します。
 - 結果を、まとめない形に戻すと、場面の一覧は、その検索結果のうち、同じ動画のものから作ります。
 
+### 10.4.3 動画デコードの検証用スイッチ
+
+デコード経路（FFmpeg か Windows のメディア機能か、アプリの中か子プロセスか、同時に何本か）を、画面と API から切り替えて確かめるための仕組みです。**利用者向けの設定ではありません。既定値はすべて従来の動作**で、`library.json` のスキーマも変わりません（新しいキーは増えません）。保存されるのは、もとからある `UseFfmpegDecoder` だけで、残りは `RunDiagnosticsOptions`（プロセス内の 1 つの入れ物）に置き、アプリを閉じると消えます。
+
+**設定の置き場所**
+
+| スイッチ | 置き場所 | 既定 | 反映 |
+|---|---|---|---|
+| 動画のデコードに FFmpeg を使う（`UseFfmpegDecoder`） | `library.json`（画面のチェックボックス） | オン（true） | これから取り込む動画（動画ごと） |
+| 同時に処理する動画の本数（`VideoParallelism`） | インメモリ | 3（1〜3） | 次回の実行開始時（実行中は変えられない） |
+| FFmpeg の同時実行数（`FfmpegPermit`） | インメモリ | 1（1〜2） | 次回の実行開始時（実行中は変えられない） |
+| 前回の中断の印を無視する（`IgnoreDecoderMarkers`） | インメモリ | オフ | 動画ごと（即時） |
+| フレームごとの記録（`FrameTracing`） | インメモリ | オフ | フレームごと（即時） |
+| FFmpeg を別プロセスで動かす（`UseFfmpegWorker`） | インメモリ | オフ | 動画ごと（即時） |
+| 診断 API（`EnableDiagApi`） | インメモリ | オフ | 即時（リスナーの起動・停止） |
+| `ESV_*` の環境変数 | 起動時の初期値だけ | 上のとおり | 起動時（動いているアプリには効かない） |
+
+インメモリの値は保存しないので、再起動すると必ず既定（環境変数があればその値）に戻ります。とくに `IgnoreDecoderMarkers` は揮発で、再起動後は「印を尊重する」に戻ります。
+
+**デコーダの選択（動画 1 本ごとに評価）**
+
+```
+--no-ffmpeg（起動引数）                      → Media Foundation のみ（設定とスイッチより優先）
+UseFfmpegDecoder = false                     → Media Foundation のみ
+UseFfmpegWorker = true（worker が同梱）       → FFmpegWorker → Media Foundation
+上記以外（既定）                              → FFmpeg → Media Foundation
+マーカーあり（IgnoreDecoderMarkers = false）  → Media Foundation のみ（その 1 回だけ）
+```
+
+- チェーンは `App.xaml.cs` の `VideoSegmentExtractor` に渡すデリゲートで決まり、取り込みのたびに評価されます。実行中に切り替えても、走っている動画には影響せず、次の動画から適用されます。
+- 先頭のデコーダーがそのファイルを開けなければ（コーデック非対応など）、同じ動画を Media Foundation で読み直します。どちらも読めなければ、ファイル名だけでインデックスします（10.4.1）。
+- 子プロセスの worker は `FfmpegWorker\EmbeddingSearchViewer.FfmpegWorker.exe`（ビルド・公開でアプリの隣にコピー）。無いビルドでは `ChildProcessFrameSource.IsAvailable` が偽になり、`UseFfmpegWorker` は**黙って無視**されます（プロセス内の FFmpeg のまま）。起動時にクラッシュログへ 1 行だけ残ります。
+- `--no-ffmpeg` は設定もスイッチも上書きします（ヘッドレスの確認用）。
+
+**マーカー（`cache\video\<キー>\ffmpeg.active`）**
+
+マーカーは「前回の FFmpeg のデコードが、プロセスごと落としたかもしれない」という印です。動画のキャッシュ（キー）ごとに置きます。
+
+- **常時書込**: デコードを始める直前に、どの経路でも必ず書きます（`pid=<PID> started=<ISO 8601>`）。FFmpeg を使わない回でも書くので、「開始したのに消えていない＝落ちた」が成り立ちます。
+- **正常終了で削除**: デコードが戻ったら消します（`marker-cleared`）。埋め込みが失敗しても、デコードが最後まで進んでいれば消します。フレームが 1 枚も取れなかった場合も同じです。逆に、デコードが例外で終わったとき（コーデックが読めない、シークで失敗した）は残ります。危険の種類は分けず、「次の 1 回は Media Foundation」に倒すためです。
+- **落ちたとき**: アプリごと落ちれば、ファイルはそのまま残ります。子プロセスの worker が 0 でも 2 でもないコードで終わったとき（親が止めた場合を除く）は、親が `crashed=<ISO 8601>` と `exitCode=` を付けて書き直します（`worker-crash-marker`）。
+- **次回は 1 回だけ Media Foundation**: マーカーがあると、その動画だけ Media Foundation で読み（`marker-honored`）、読む前に自分のマーカーで置き換えます。だから、その実行が正常に終われば消え、途中で落ちれば残ります。
+- **`crashed=` は保持**: デコードが戻っても `ClearDecoderMarker` は消しません（`marker-kept-after-crash`）。「落ちた」という事実を、次の 1 回分の保証として残すためです。次の実行は Media Foundation で読み、その実行のマーカー（`crashed=` なし）に置き換わり、正常終了で消えます。
+- **無視フラグは揮発**: `IgnoreDecoderMarkers` がオンの間は、マーカーを読みません（ファイルはそのまま）。オン・オフは動画ごとに読むので即時に効きますが、保存しないので再起動でオフに戻ります。
+- 設定（場面の長さなど）を変えてキャッシュのキーが変われば、別の動画として扱われ、マーカーも引き継ぎません。
+
+**ゲート（`NativeDecodeGate`）**
+
+| ゲート | permit | 囲むもの |
+|---|---|---|
+| `Lock` | 1（同期ロック） | SkiaSharp などの同期のネイティブ処理 |
+| `FfmpegGate` | 1（既定。2 は実験のみ） | FFmpeg のフレーム取り出し、grabber の生成と破棄 |
+| `MediaFoundationGate` | 1（固定） | Media Foundation のサムネイル取得（`GetThumbnailAsync`） |
+
+- `Lock` は葉（いちばん内側）。この内側で `await` せず、ほかのロックも取りません。デコーダーのゲートを保持したまま `Lock` を取ることはあっても、その逆はありません。
+- FFmpeg と Media Foundation のゲートを同時に保持しません（片方を待つ前に、もう片方を離す）。スタックごとにゲートを分けてあるので、片方の詰まりがもう片方を止めません。
+- ゲートは 1 区間につき 1 回だけ読み、待ったインスタンスと離すインスタンスを揃えます（実行の間に差し替わるため）。
+- JPEG のエンコードは FFmpeg ゲートの外（WIC）。取り出したフレームは自分のピクセルバッファを持つので、grabber を触りません。
+- **permit = 2 は実験のみ**。このゲートが必要になったヒープ破損（`0xC0000374`）が 2 で起きるかを見るためのものです。測定が終わったら 1 に戻してください。差し替えは実行の開始時、ゲートが空（待ちもなし）のときだけ行い（`TryConfigureFfmpegPermit`）、空いていなければ適用せず `worker:ffmpeg-permit-not-applied` をログに残します。
+
+**環境変数（起動時の初期値だけ）**
+
+| 変数 | スイッチ | 既定 | 効くタイミング |
+|---|---|---|---|
+| `ESV_VIDEO_PARALLELISM` | `VideoParallelism` | 3 | 起動時（値は 1〜3 に丸め） |
+| `ESV_FFMPEG_PERMIT` | `FfmpegPermit` | 1 | 起動時（値は 1〜2 に丸め） |
+| `ESV_IGNORE_DECODER_MARKERS` | `IgnoreDecoderMarkers` | オフ | 起動時（動画ごとに読む値の初期値） |
+| `ESV_INGEST_TRACE_FRAMES` | `FrameTracing` | オフ | 起動時（フレームごとに読む値の初期値） |
+| `ESV_FFMPEG_WORKER` | `UseFfmpegWorker` | オフ | 起動時（worker の exe があるときだけ効く） |
+| `ESV_DIAG_API` | `EnableDiagApi` | オフ | 起動時（`1` なら起動と同時に待ち受ける） |
+
+- `App` のコンストラクタで 1 回だけ読みます。以後はインメモリの値が唯一の正で、環境変数を変えても動いているアプリには効きません。
+- 真偽は `"1"` の完全一致だけです（`"true"` や `"yes"` は無効）。数値は `int.TryParse` で、失敗したら既定。
+- **検証と CI 専用**。利用者の設定でも、リリースの既定値でもありません。CI（ヘッドレス）で経路を固定したいとき以外は設定しないでください。設定すると、次回の起動から既定値が変わります（`library.json` には影響しません）。
+
+**診断 API（`DiagApiServer`）**
+
+- **既定はオフ**。オフの間はソケットを開きません（ポートも確保しません）。オンにしたときだけ、`127.0.0.1` の空きポート（ephemeral、起動ごとに変わる）で待ち受けます。
+- **loopback のみ**。接続元がループバックでなければ、1 バイトも読まずに切ります。TLS・レート制限・利用者の区別はありません（この PC の中だけの検証用）。
+- **トークン**は、起動時に OS の乱数から 128 bit を作り、メモリにだけ持ちます。起動コンソールに 1 行だけ出ます。
+
+  ```
+  [DiagApi] listening on http://127.0.0.1:<port>/v1 - Authorization: Bearer <token>
+  ```
+
+  クラッシュログにはポートと「トークンは起動コンソール」という案内だけを書き、トークンはファイルに残しません。
+- **認証**は `Authorization: Bearer <token>` か `?token=<token>`。無い・違うときは 401（`WWW-Authenticate: Bearer`）。
+- **適用タイミング**は `GET /v1/options` の `effectiveFrom` が答えます。`videoParallelism` と `ffmpegPermit` は `nextRun`、`ignoreDecoderMarkers`・`frameTracing`・`useFfmpegWorker`・`enableDiagApi` は `immediate`。
+- **409**: 実行中（`running: true`）に `videoParallelism` か `ffmpegPermit` を送ると、リクエスト全体を適用せず 409 を返します（`effectiveFrom: "nextRun"` と `current`）。ほかのスイッチを同じ本文に入れていても、何も適用しません。停止してから送り直してください。
+- `PUT /v1/options` は部分マージです。範囲外の値は丸めた値を返し、未知のキーと型違いは `ignored` に入れて無視します。`enableDiagApi: true` は no-op（応答している時点でオン）、`false` はこの応答を書いたあとに待ち受けを止めます。
+- start / stop は画面のボタンと同じ経路（`LibraryViewModel`）を通ります。worker を直接は叩きません（モデルの確認も画面と同じ）。
+- **非永続**。`library.json` にもファイルにも保存しません。再起動するとオフ（`ESV_DIAG_API=1` のときだけ最初からオン）です。
+
+| メソッド | パス | 内容 |
+|---|---|---|
+| GET | `/v1`（`/` も同じ） | ルートの一覧 |
+| GET | `/v1/options` | 現在値、適用タイミング、範囲 |
+| PUT | `/v1/options` | 部分マージ（丸め、未知のキーは無視） |
+| POST | `/v1/index/start` | 画面と同じ経路で開始（エンジンとモデルの確認込み） |
+| POST | `/v1/index/stop` | 画面と同じ経路で停止 |
+| GET | `/v1/progress` | 最後の `IngestionProgress` |
+| GET | `/v1/stats` | 動画・デコーダー・段階の生の数値 |
+
+**`frame-timing` の見方**
+
+`FrameTracing` がオンのときだけ、フレームを 1 枚書けた場面ごとに 1 行出ます（`frame-write-begin` / `frame-write-end` も同時に出ます）。行は、ほかの取り込みログと同じ形です。
+
+```
+video:frame-timing decoder=FFmpeg segment=3 elapsedMs=1234 video=C:\... waitMs=12 extractMs=180 encodeMs=25 skiaMs=18
+```
+
+| 列 | 意味 |
+|---|---|
+| `elapsedMs` | そのフレームの呼び出し全体の経過（列の和より大きい分は、ファイルの書き込みなど） |
+| `waitMs` | ゲート待ち（FFmpeg は `FfmpegGate`、Media Foundation は `MediaFoundationGate`） |
+| `extractMs` | ゲートの中のデコード（Media Foundation はサムネイル取得） |
+| `encodeMs` | ゲートの外の JPEG エンコードとバッファのコピー（WIC） |
+| `skiaMs` | ゲートの外の Skia の縮小とエンコード |
+
+`waitMs` が大きいときは、同時実行の数か、ほかの動画のデコードが原因です。`extractMs` が大きいときはコーデックとシーク、`encodeMs` / `skiaMs` が大きいときはフレームの解像度（`truncateDim`）を見ます。既定はオフで、オンにするとログが場面の数だけ増えます。
+
 ### 10.5 守ること
 
 - **DirectML のセッションは、同時に `Run` しない**（失敗する）。セッションごとにロックがある。
@@ -480,6 +601,11 @@ GPU が使えない（作成に失敗、実行中に失敗）ときは、自動�
 | PDF のページ画像が、環境で 1.25 倍になる | `RenderToStreamAsync` が、表示倍率を掛ける | `WindowsPdfPageExtractor` が、最初のページで測って補正している |
 | 検索結果の上位が、同じスコアで並ぶ | 同一の埋め込み（白紙や、同じ画像のコピー） | 白紙は、インデックスしない。同一の埋め込みは、検索結果で 1 件にまとめられる |
 | 動画が取り込めない | FFmpeg も Media Foundation も、そのコーデックを読めない | ファイル名だけでインデックスされる。コーデックを確認する |
+| マーカーが残っていて、次の 1 回だけ Media Foundation になる | 正常。`crashed=` の印は、次の実行が正常に終わるまで残る | そのまま取り込ませる。すぐ FFmpeg に戻すなら「前回の中断の印を無視する」をオンにするか、`cache\video\<キー>\ffmpeg.active` を消す（10.4.3） |
+| 「FFmpeg を別のプロセスで動かす」をオンにしても、何も変わらない（ログにも出ない） | worker の exe がアプリの隣にない。スイッチは黙って無視される | `FfmpegWorker\EmbeddingSearchViewer.FfmpegWorker.exe` があるか確認する。無いビルドでは使えない（10.4.3） |
+| 診断 API のポートとトークンが分からない | ポートは起動ごとに変わり（ephemeral）、トークンはファイルに残らない | 起動コンソールの `[DiagApi] listening on ...` の行を読む。閉じたら起動し直す（10.4.3） |
+| 実行中に `PUT /v1/options` が 409 になる | 同時実行の数と FFmpeg の同時実行数は、実行中に変えられない | 停止してから送り直す。適用は次の実行から（10.4.3） |
+| フレームの記録をオンにしたのに `frame-timing` が出ない | フレームを 1 枚も書けていない（デコードに失敗している） | `video:extract-*` と `frame-write-failed` を見る。オンは次のフレームから効く（10.4.3） |
 | 起動時に「既存のインデックスを新しい保存場所へ移動できませんでした」と出る | 古いバージョンのアプリが、起動したまま、DB を開いている | すべてのウィンドウを閉じてから、起動し直す（9.1） |
 | 「別の埋め込みモデルで作成されています」と出る | インデックスを作ったモデルと、今のモデルが違う | ライブラリ管理で「クリア」してから、作り直す |
 

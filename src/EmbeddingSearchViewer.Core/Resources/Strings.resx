@@ -307,20 +307,26 @@
   <data name="Library.Diagnostics.Description.Text" xml:space="preserve">
     <value>動画の取り込みを試すための設定です。library.json には保存されず、アプリを閉じると元に戻ります。</value>
   </data>
+  <data name="Library.Diagnostics.DiagApi.Text" xml:space="preserve">
+    <value>診断 API を有効にする（127.0.0.1 のみ。オンの間だけ待ち受けます）</value>
+  </data>
+  <data name="Library.Diagnostics.DiagApi.ToolTip" xml:space="preserve">
+    <value>この PC の中だけで使う診断 API を、空いているポートで 127.0.0.1 にだけ開きます。接続には起動時のコンソールに表示されるトークンが必要です。既定はオフで、オフの間はポートを開きません。切り替えはすぐ適用され、設定は保存されないので再起動でオフに戻ります。</value>
+  </data>
   <data name="Library.Diagnostics.FrameTracing.Text" xml:space="preserve">
     <value>フレームごとの記録を残す</value>
   </data>
   <data name="Library.Diagnostics.FrameTracing.ToolTip" xml:space="preserve">
-    <value>取り込みログに、1 フレームごとの開始・終了と時間を書き足します。ログは多くなります。</value>
+    <value>取り込みログに、1 フレームごとの開始・終了と時間の内訳（待ち・デコード・エンコード・縮小）を書き足します。既定はオフ。オンにすると、次のフレームからすぐ適用されます。ログは多くなります。</value>
   </data>
   <data name="Library.Diagnostics.Header.Text" xml:space="preserve">
-    <value>検証用オプション</value>
+    <value>詳細（検証用・再起動でリセット）</value>
   </data>
   <data name="Library.Diagnostics.IgnoreMarkers.Text" xml:space="preserve">
     <value>前回の中断の印を無視する（FFmpeg で読み直す）</value>
   </data>
   <data name="Library.Diagnostics.IgnoreMarkers.ToolTip" xml:space="preserve">
-    <value>FFmpeg のデコード中にアプリが落ちた印が残っている動画も、FFmpeg で読み直します。次の動画から適用されます。</value>
+    <value>FFmpeg のデコード中にアプリが落ちた印が残っている動画も、FFmpeg で読み直します。既定はオフ（印があれば、次回 1 回だけ Windows のメディア機能で読みます）。切り替えは次の動画からすぐ適用され、保存されないので再起動でオフに戻ります。</value>
   </data>
   <data name="Library.Diagnostics.NoDecoder" xml:space="preserve">
     <value>デコーダの記録はまだありません</value>
@@ -329,16 +335,16 @@
     <value>同時実行の数は、次の実行から適用されます。</value>
   </data>
   <data name="Library.Diagnostics.Parallelism.Text" xml:space="preserve">
-    <value>同時に処理する動画の本数（1〜3）</value>
+    <value>同時に処理する動画の本数（1〜3、既定 3。次の実行から適用）</value>
   </data>
   <data name="Library.Diagnostics.Permit.Text" xml:space="preserve">
-    <value>FFmpeg の同時実行数（1〜2）</value>
+    <value>FFmpeg の同時実行数（1〜2、既定 1。2 は実験用で、次の実行から適用）</value>
   </data>
   <data name="Library.Diagnostics.UseWorker.Text" xml:space="preserve">
     <value>FFmpeg を別のプロセスで動かす（動画 1 本につき 1 プロセス。次の動画から適用されます）</value>
   </data>
   <data name="Library.Diagnostics.UseWorker.ToolTip" xml:space="preserve">
-    <value>FFmpeg のデコードを子プロセスに分け、アプリ本体とはメモリを共有しません。同時に複数の動画を処理しても FFmpeg が同じプロセスで並行しないため、デコーダの不具合でアプリが落ちるのを避けられます。子プロセスが異常終了した動画は、次回 Windows のメディア機能で読み直します。</value>
+    <value>FFmpeg のデコードを子プロセスに分け、アプリ本体とはメモリを共有しません。同時に複数の動画を処理しても FFmpeg が同じプロセスで並行しないため、デコーダの不具合でアプリが落ちるのを避けられます。子プロセスが異常終了した動画は、次回 Windows のメディア機能で読み直します。既定はオフで、切り替えは次の動画からすぐ適用されます。子プロセスの実行ファイルが同梱されていないビルドでは、この設定は効きません（アプリ内の FFmpeg のまま）。</value>
   </data>
   <data name="Library.Diagnostics.Readout.Text" xml:space="preserve">
     <value>実行中の数値</value>
