@@ -76,7 +76,40 @@
   <ItemGroup>
     <ProjectReference Include="..\EmbeddingSearchViewer.Core\EmbeddingSearchViewer.Core.csproj" />
     <ProjectReference Include="..\EmbeddingSearchViewer.Infrastructure\EmbeddingSearchViewer.Infrastructure.csproj" />
+    <!-- Built before the app, but never referenced: the worker is only ever started as a separate process. -->
+    <ProjectReference Include="..\EmbeddingSearchViewer.FfmpegWorker\EmbeddingSearchViewer.FfmpegWorker.csproj"
+                      ReferenceOutputAssembly="false" />
   </ItemGroup>
+
+  <!--
+    The FFmpeg worker is a process of its own, so its whole output (self-contained, see its project file) is copied as
+    one folder next to the app instead of being merged into the app's output: the two apps keep their own dependency
+    graphs. Only the files needed at run time are copied (no symbols, no import libraries).
+  -->
+  <Target Name="CopyFfmpegWorker" AfterTargets="Build">
+    <MSBuild Projects="$(MSBuildThisFileDirectory)..\EmbeddingSearchViewer.FfmpegWorker\EmbeddingSearchViewer.FfmpegWorker.csproj"
+             Targets="GetTargetPath"
+             Properties="Configuration=$(Configuration);Platform=$(Platform);RuntimeIdentifier=$(RuntimeIdentifier)">
+      <Output TaskParameter="TargetOutputs" ItemName="_FfmpegWorkerAssembly" />
+    </MSBuild>
+    <ItemGroup>
+      <_FfmpegWorkerFiles Include="%(_FfmpegWorkerAssembly.RootDir)%(_FfmpegWorkerAssembly.Directory)**\*"
+                          Exclude="%(_FfmpegWorkerAssembly.RootDir)%(_FfmpegWorkerAssembly.Directory)**\*.pdb;%(_FfmpegWorkerAssembly.RootDir)%(_FfmpegWorkerAssembly.Directory)**\*.lib" />
+    </ItemGroup>
+    <Copy SourceFiles="@(_FfmpegWorkerFiles)" DestinationFolder="$(OutDir)FfmpegWorker\%(RecursiveDir)" SkipUnchangedFiles="true" />
+  </Target>
+
+  <!-- "dotnet publish" copies the app's own output and the package assets; the worker folder is added here. -->
+  <Target Name="IncludeFfmpegWorkerInPublish" AfterTargets="ComputeResolvedFilesToPublishList"
+          Condition="Exists('$(OutDir)FfmpegWorker')">
+    <ItemGroup>
+      <_FfmpegWorkerPublishFiles Include="$(OutDir)FfmpegWorker\**\*" />
+      <ResolvedFileToPublish Include="@(_FfmpegWorkerPublishFiles)">
+        <RelativePath>FfmpegWorker\%(RecursiveDir)%(Filename)%(Extension)</RelativePath>
+        <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+      </ResolvedFileToPublish>
+    </ItemGroup>
+  </Target>
 
   <!--
     Defining the "HasPackageAndPublishMenuAddedByProject" property here allows the Solution

@@ -301,6 +301,57 @@
   <data name="Library.ComboBox01.Header" xml:space="preserve">
     <value>動画の場面の間隔（1 場面につき 1 枚のフレームを検索の対象にします）</value>
   </data>
+  <data name="Library.Diagnostics.Decoder" xml:space="preserve">
+    <value>{0} {1:F1} ms/枚（{2} 枚）</value>
+  </data>
+  <data name="Library.Diagnostics.Description.Text" xml:space="preserve">
+    <value>動画の取り込みを試すための設定です。library.json には保存されず、アプリを閉じると元に戻ります。</value>
+  </data>
+  <data name="Library.Diagnostics.FrameTracing.Text" xml:space="preserve">
+    <value>フレームごとの記録を残す</value>
+  </data>
+  <data name="Library.Diagnostics.FrameTracing.ToolTip" xml:space="preserve">
+    <value>取り込みログに、1 フレームごとの開始・終了と時間を書き足します。ログは多くなります。</value>
+  </data>
+  <data name="Library.Diagnostics.Header.Text" xml:space="preserve">
+    <value>検証用オプション</value>
+  </data>
+  <data name="Library.Diagnostics.IgnoreMarkers.Text" xml:space="preserve">
+    <value>前回の中断の印を無視する（FFmpeg で読み直す）</value>
+  </data>
+  <data name="Library.Diagnostics.IgnoreMarkers.ToolTip" xml:space="preserve">
+    <value>FFmpeg のデコード中にアプリが落ちた印が残っている動画も、FFmpeg で読み直します。次の動画から適用されます。</value>
+  </data>
+  <data name="Library.Diagnostics.NoDecoder" xml:space="preserve">
+    <value>デコーダの記録はまだありません</value>
+  </data>
+  <data name="Library.Diagnostics.NumbersHint.Text" xml:space="preserve">
+    <value>同時実行の数は、次の実行から適用されます。</value>
+  </data>
+  <data name="Library.Diagnostics.Parallelism.Text" xml:space="preserve">
+    <value>同時に処理する動画の本数（1〜3）</value>
+  </data>
+  <data name="Library.Diagnostics.Permit.Text" xml:space="preserve">
+    <value>FFmpeg の同時実行数（1〜2）</value>
+  </data>
+  <data name="Library.Diagnostics.UseWorker.Text" xml:space="preserve">
+    <value>FFmpeg を別のプロセスで動かす（動画 1 本につき 1 プロセス。次の動画から適用されます）</value>
+  </data>
+  <data name="Library.Diagnostics.UseWorker.ToolTip" xml:space="preserve">
+    <value>FFmpeg のデコードを子プロセスに分け、アプリ本体とはメモリを共有しません。同時に複数の動画を処理しても FFmpeg が同じプロセスで並行しないため、デコーダの不具合でアプリが落ちるのを避けられます。子プロセスが異常終了した動画は、次回 Windows のメディア機能で読み直します。</value>
+  </data>
+  <data name="Library.Diagnostics.Readout.Text" xml:space="preserve">
+    <value>実行中の数値</value>
+  </data>
+  <data name="Library.Diagnostics.SaveShare" xml:space="preserve">
+    <value> · 保存 {0:F1}%</value>
+  </data>
+  <data name="Library.Diagnostics.Separator" xml:space="preserve">
+    <value> · </value>
+  </data>
+  <data name="Library.Diagnostics.Videos" xml:space="preserve">
+    <value>{0} 本 / {1} 場面 · 取り出し {2:F1}s · 埋め込み {3:F1}s</value>
+  </data>
   <data name="Library.Done" xml:space="preserve">
     <value>すべてのインデックス作成が完了しました ({0}/{1} 件)</value>
   </data>

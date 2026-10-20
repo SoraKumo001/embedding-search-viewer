@@ -8,6 +8,7 @@ using EmbeddingSearchViewer.Infrastructure.Onnx;
 using SkiaSharp;
 using Windows.Media.Editing;
 using Windows.Storage;
+using Windows.Storage.Streams;
 
 namespace EmbeddingSearchViewer.Infrastructure.Ingestion;
 
@@ -24,9 +25,9 @@ public sealed class MediaFoundationFrameSource : IVideoFrameSource
 
     public async Task<IVideoFrameSession?> OpenAsync(string videoPath, CancellationToken cancellationToken)
     {
-        // Creating the clip opens Media Foundation's native source reader, so it shares the process-wide video gate
-        // with frame decode/encode and the FFmpeg stack (0xC0000374).
-        await NativeDecodeGate.VideoGate.WaitAsync(cancellationToken);
+        // Creating the clip opens Media Foundation's native source reader, so it is serialised with frame
+        // decode/encode through the process-wide Media Foundation gate (0xC0000374).
+        await NativeDecodeGate.MediaFoundationGate.WaitAsync(cancellationToken);
         try
         {
             try
@@ -60,14 +61,14 @@ public sealed class MediaFoundationFrameSource : IVideoFrameSource
         }
         finally
         {
-            NativeDecodeGate.VideoGate.Release();
+            NativeDecodeGate.MediaFoundationGate.Release();
         }
     }
 
     private sealed class Session : IVideoFrameSession
     {
         // Measured extraction is well under a second, so 120s is a generous ceiling that only a decoder which never
-        // returns can hit; abandoning the work keeps VideoGate (and the whole ingest) from stalling forever.
+        // returns can hit; abandoning the work keeps MediaFoundationGate (and the whole ingest) from stalling forever.
         private static readonly TimeSpan FrameTimeout = TimeSpan.FromSeconds(30);
 
         // A decoder that never returns must not block the whole ingest forever: after this long the gate is released
@@ -106,13 +107,20 @@ public sealed class MediaFoundationFrameSource : IVideoFrameSource
             // Disposal waits for the gate; a frame that starts after the dispose request would use a closed clip.
             if (_disposeRequested) return false;
 
-            // Media Foundation's thumbnail grab is native and shares the process-wide video gate with FFmpeg so the
-            // two codec stacks are never driven concurrently (0xC0000374). The section awaits, so it uses VideoGate.
+            // Media Foundation's thumbnail grab is native and uses the process-wide Media Foundation gate so this
+            // codec stack is never driven concurrently (0xC0000374). The section awaits, so it uses MediaFoundationGate.
             byte[] bytes;
             long startTicks = Stopwatch.GetTimestamp();
-            Task<byte[]>? abandoned = null;
+            // Bottleneck split for the frame-timing line: wait for the gate, the thumbnail grab inside it, then the
+            // out-of-gate stream copy and Skia encode. Diagnostic only; the control flow below is unchanged.
+            long waitMs;
+            long extractMs = 0;
+            long encodeMs = 0;
+            IRandomAccessStream? thumbnail = null;
+            Task<IRandomAccessStream>? abandoned = null;
             CancellationTokenSource? timeoutCts = null;
-            await NativeDecodeGate.VideoGate.WaitAsync(cancellationToken);
+            await NativeDecodeGate.MediaFoundationGate.WaitAsync(cancellationToken);
+            waitMs = ElapsedMs(startTicks); // everything before this point is the Media Foundation-gate wait
             try
             {
                 // The flag can be raised while this call waited for the gate; check again before touching the clip.
@@ -128,31 +136,34 @@ public sealed class MediaFoundationFrameSource : IVideoFrameSource
                 timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
                 timeoutCts.CancelAfter(FrameTimeout);
 
-                var work = GrabThumbnailAsync(timeoutCts.Token);
+                var work = GrabThumbnailAsync();
                 if (await Task.WhenAny(work, Task.Delay(FrameTimeout, timeoutCts.Token)) != work)
                 {
-                    // Timeout (or user cancel): the native call cannot be aborted. Keep holding VideoGate until it
+                    // Timeout (or user cancel): the native call cannot be aborted. Keep holding MediaFoundationGate until it
                     // finishes (see the finally below), otherwise the next video would drive Media Foundation while
                     // this call is still inside it: the concurrent native decode that corrupts the heap (0xC0000374).
                     _consecutiveTimeouts++;
                     abandoned = work;
+                    // A grab that lands after we stopped waiting still owns a stream; release it then.
+                    _ = work.ContinueWith(t => t.Result?.Dispose(), CancellationToken.None,
+                        TaskContinuationOptions.OnlyOnRanToCompletion, TaskScheduler.Default);
                     IngestTrace.Video("frame-timeout", _videoPath, "MediaFoundation", ElapsedMs(startTicks),
                         detail: $"positionMs={(long)position.TotalMilliseconds} consecutiveTimeouts={_consecutiveTimeouts} " +
                                 $"cancelled={cancellationToken.IsCancellationRequested}");
                     return false;
                 }
 
-                bytes = await work;
+                thumbnail = await work;
                 _consecutiveTimeouts = 0;
 
-                async Task<byte[]> GrabThumbnailAsync(CancellationToken ct)
+                // The only Media Foundation call in this method, so the only part MediaFoundationGate has to serialise.
+                // FrameTimeout bounds it: a grab that never returns must not hold the gate forever.
+                async Task<IRandomAccessStream> GrabThumbnailAsync()
                 {
-                    using var stream = await _composition.GetThumbnailAsync(position, _width, _height, VideoFramePrecision.NearestFrame);
-
-                    using var input = stream.AsStreamForRead();
-                    using var buffer = new MemoryStream();
-                    await input.CopyToAsync(buffer, ct);
-                    return buffer.ToArray();
+                    long extractStartTicks = Stopwatch.GetTimestamp();
+                    var grabbed = await _composition.GetThumbnailAsync(position, _width, _height, VideoFramePrecision.NearestFrame);
+                    extractMs = ElapsedMs(extractStartTicks);
+                    return grabbed;
                 }
             }
             finally
@@ -187,10 +198,25 @@ public sealed class MediaFoundationFrameSource : IVideoFrameSource
                 if (abandoned == null || abandoned.IsCompleted) timeoutCts?.Dispose();
                 else _ = abandoned.ContinueWith(_ => timeoutCts?.Dispose(), CancellationToken.None,
                     TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
-                NativeDecodeGate.VideoGate.Release();
+                NativeDecodeGate.MediaFoundationGate.Release();
+            }
+
+            // Outside the gate: GetThumbnailAsync has already produced the whole JPEG in an in-memory stream, so copying
+            // it out drives no Media Foundation object. encodeMs is the stream copy; Media Foundation has already
+            // produced JPEG bytes, so there is no separate encode step to measure (the field name stays for a uniform
+            // frame-timing line).
+            using (var stream = thumbnail!)
+            {
+                long copyStartTicks = Stopwatch.GetTimestamp();
+                using var input = stream.AsStreamForRead();
+                using var buffer = new MemoryStream();
+                await input.CopyToAsync(buffer, cancellationToken);
+                encodeMs = ElapsedMs(copyStartTicks);
+                bytes = buffer.ToArray();
             }
 
             SKData? jpeg;
+            long skiaStartTicks = Stopwatch.GetTimestamp();
             // NativeDecodeGate is a leaf: synchronous Skia only, no await, no other lock taken after it.
             lock (NativeDecodeGate.Lock)
             {
@@ -205,6 +231,7 @@ public sealed class MediaFoundationFrameSource : IVideoFrameSource
                 using var image = SKImage.FromBitmap(bitmap);
                 jpeg = image.Encode(SKEncodedImageFormat.Jpeg, 90);
             }
+            long skiaMs = ElapsedMs(skiaStartTicks);
 
             if (jpeg == null)
             {
@@ -225,6 +252,14 @@ public sealed class MediaFoundationFrameSource : IVideoFrameSource
                 {
                     IngestTrace.Video("frame-write-end", _videoPath, "MediaFoundation", ElapsedMs(startTicks),
                         detail: $"positionMs={(long)position.TotalMilliseconds} path={jpegPath}");
+                }
+                // One bottleneck line per written segment, alongside frame-write-end (the only per-segment success
+                // line), so normal logging volume is unchanged. Branching on the live diagnostics switch means it
+                // follows the store even when tracing is switched on mid-run.
+                if (IngestTrace.FrameDetailEnabled)
+                {
+                    IngestTrace.Video("frame-timing", _videoPath, "MediaFoundation", ElapsedMs(startTicks),
+                        detail: $"waitMs={waitMs} extractMs={extractMs} encodeMs={encodeMs} skiaMs={skiaMs}");
                 }
                 return true;
             }
@@ -248,9 +283,9 @@ public sealed class MediaFoundationFrameSource : IVideoFrameSource
             // TODO: MediaClip and MediaComposition (Windows.Media.Editing) expose no Close/Dispose, so the native
             // Media Foundation source reader behind the clip cannot be released deterministically here. What we can do
             // is drop our reference to the clip so the WinRT wrapper becomes collectable, and keep the session poisoned
-            // (dispose flag + gate) so nothing touches it again. Take the video gate so an abandoned frame grab
+            // (dispose flag + gate) so nothing touches it again. Take the Media Foundation gate so an abandoned grab
             // (SaveFrameAsync holds it until that call ends) cannot still be using the composition.
-            NativeDecodeGate.VideoGate.Wait();
+            NativeDecodeGate.MediaFoundationGate.Wait();
             try
             {
                 if (_abandonedOutstanding)
@@ -279,7 +314,7 @@ public sealed class MediaFoundationFrameSource : IVideoFrameSource
                     IngestTrace.Video("dispose-leak-todo", _videoPath, "MediaFoundation", 0,
                         detail: "MediaClip/MediaComposition are not IDisposable; the native reader is released only by GC");
                 }
-                NativeDecodeGate.VideoGate.Release();
+                NativeDecodeGate.MediaFoundationGate.Release();
             }
 
             return ValueTask.CompletedTask;

@@ -44,7 +44,22 @@ public class IngestionPipelineWorker
     /// <summary>Videos are decoded on the CPU and embedded on the GPU; several at once keep both busy.</summary>
     public const int DefaultVideoParallelism = 3;
 
-    private readonly SemaphoreSlim _videoSlots;
+    /// <summary>Highest FFmpeg permit count the diagnostics store may select (see <see cref="NativeDecodeGate"/>).</summary>
+    private const int MaxFfmpegPermit = 2;
+
+    // Rebuilt in StartLocked when the diagnostics store asks for another parallelism: a run keeps the slots it started
+    // with, so changing the setting never reshapes work that is in flight.
+    private SemaphoreSlim _videoSlots;
+    private int _videoParallelism;
+
+    /// <summary>Read at each run start; null keeps the fixed constructor value (tests, non-app callers).</summary>
+    private readonly Func<int>? _videoParallelismProvider;
+
+    /// <summary>Read at each run start; null keeps the historical 1 FFmpeg permit.</summary>
+    private readonly Func<int>? _ffmpegPermitProvider;
+
+    /// <summary>Read per video by <see cref="VideoMediaIngestor"/>; null keeps the historical false.</summary>
+    private readonly Func<bool>? _ignoreDecoderMarkers;
 
     // Saves come from the queue loop and from videos running in parallel; they are written one at a time.
     private readonly SemaphoreSlim _saveLock = new(1, 1);
@@ -158,7 +173,10 @@ public class IngestionPipelineWorker
         IndexExclusionStore? exclusions = null,
         Func<bool>? videoAutoSegment = null,
         Func<MediaTypeSelection>? mediaTypes = null,
-        EmptyEmbeddingSkipStore? emptyEmbeddingSkipsStore = null)
+        EmptyEmbeddingSkipStore? emptyEmbeddingSkipsStore = null,
+        Func<int>? videoParallelismProvider = null,
+        Func<int>? ffmpegPermitProvider = null,
+        Func<bool>? ignoreDecoderMarkers = null)
     {
         _mediaTypes = mediaTypes ?? (() => MediaTypeSelection.All);
         _exclusions = exclusions;
@@ -169,9 +187,14 @@ public class IngestionPipelineWorker
         _pdfIngestor = new PdfMediaIngestor(embeddingService, pdfExtractor);
         _officeIngestor = new OfficeMediaIngestor(embeddingService);
         _imageIngestor = new ImageMediaIngestor(embeddingService);
+        _videoParallelismProvider = videoParallelismProvider;
+        _ffmpegPermitProvider = ffmpegPermitProvider;
+        _ignoreDecoderMarkers = ignoreDecoderMarkers;
         _videoIngestor = new VideoMediaIngestor(
-            embeddingService, videoExtractor, VideoStats, Onnx.EmbeddingModelLocation.ModelTag(Onnx.EmbeddingModelLocation.DefaultPrecision));
-        _videoSlots = new SemaphoreSlim(Math.Max(1, videoParallelism));
+            embeddingService, videoExtractor, VideoStats, Onnx.EmbeddingModelLocation.ModelTag(Onnx.EmbeddingModelLocation.DefaultPrecision),
+            ignoreDecoderMarkers);
+        _videoParallelism = Math.Clamp(videoParallelism, 1, DefaultVideoParallelism);
+        _videoSlots = new SemaphoreSlim(_videoParallelism, _videoParallelism);
         string fixedCacheDirectory = cacheDirectory ?? Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "EmbeddingSearchViewer",
@@ -218,6 +241,7 @@ public class IngestionPipelineWorker
         StageStats.Reset();
         _knownHashes = null; // what is in the index is read again for each run
         _runWatch.Restart();
+        ApplyRunDiagnosticsLocked();
         lock (_workLock)
         {
             _workStarted = false;
@@ -240,6 +264,33 @@ public class IngestionPipelineWorker
                 if (ReferenceEquals(_processingTask, processing)) _isRunning = false;
             }
         }, CancellationToken.None, TaskContinuationOptions.OnlyOnFaulted, TaskScheduler.Default);
+    }
+
+    /// <summary>
+    /// Applies the diagnostics store to the knobs that must not change mid-run: the video slots and the FFmpeg gate.
+    /// Called under <see cref="_stateLock"/> with no run active (StartLocked returns early while one is), so the old
+    /// slots have no waiter and the old FFmpeg gate is idle.
+    /// </summary>
+    private void ApplyRunDiagnosticsLocked()
+    {
+        int wantedParallelism = Math.Clamp(
+            _videoParallelismProvider?.Invoke() ?? _videoParallelism, 1, DefaultVideoParallelism);
+        if (wantedParallelism != _videoParallelism || _videoSlots.CurrentCount != _videoParallelism)
+        {
+            var previous = _videoSlots;
+            _videoSlots = new SemaphoreSlim(wantedParallelism, wantedParallelism);
+            _videoParallelism = wantedParallelism;
+            previous.Dispose(); // no run is active: nothing holds or waits on the old slots
+        }
+
+        // The gate is replaced only while idle (TryConfigureFfmpegPermit checks). FFmpeg sections read the property
+        // once and release that same instance, so a swap at a run boundary is invisible to them.
+        int wantedPermit = Math.Clamp(
+            _ffmpegPermitProvider?.Invoke() ?? NativeDecodeGate.DefaultFfmpegPermit, 1, MaxFfmpegPermit);
+        if (!NativeDecodeGate.TryConfigureFfmpegPermit(wantedPermit))
+        {
+            IngestTrace.Write($"worker:ffmpeg-permit-not-applied wanted={wantedPermit}; a decode is still in flight");
+        }
     }
 
     public async Task StopAsync()

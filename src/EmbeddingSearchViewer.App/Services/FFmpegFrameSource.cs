@@ -28,8 +28,10 @@ public sealed class FFmpegFrameSource : IVideoFrameSource
     {
         FrameGrabber grabber;
         // Creating (opening the container) and discarding a grabber drives FFmpeg's native objects, so it is serialised
-        // with frame decode/encode through the same process-wide video gate (0xC0000374).
-        await NativeDecodeGate.VideoGate.WaitAsync(cancellationToken);
+        // with frame decode/encode through the process-wide FFmpeg gate (0xC0000374). The gate is read once: it is
+        // replaced between runs, and the release must land on the instance that was waited on.
+        SemaphoreSlim gate = NativeDecodeGate.FfmpegGate;
+        await gate.WaitAsync(cancellationToken);
         try
         {
             try
@@ -52,7 +54,7 @@ public sealed class FFmpegFrameSource : IVideoFrameSource
         }
         finally
         {
-            NativeDecodeGate.VideoGate.Release();
+            gate.Release();
         }
         return new Session(grabber, Path.GetFullPath(videoPath));
     }
@@ -60,7 +62,7 @@ public sealed class FFmpegFrameSource : IVideoFrameSource
     private sealed class Session : IVideoFrameSession
     {
         // Measured extraction is well under a second, so 120s is a generous ceiling that only a decoder which never
-        // returns can hit; abandoning the work keeps VideoGate (and the whole ingest) from stalling forever.
+        // returns can hit; abandoning the work keeps FfmpegGate (and the whole ingest) from stalling forever.
         private static readonly TimeSpan FrameTimeout = TimeSpan.FromSeconds(30);
 
         // A decoder that never returns must not block the whole ingest forever: after this long the gate is released
@@ -90,13 +92,25 @@ public sealed class FFmpegFrameSource : IVideoFrameSource
             // Disposal waits for the gate; a frame that starts after the dispose request would use a dead grabber.
             if (_disposeRequested) return false;
 
-            // FFmpeg's frame decode + WinRT JPEG encode are native and must not run concurrently (0xC0000374).
+            // Only FFmpeg's own frame decode needs the gate (0xC0000374). The returned VideoFrame carries its own pixel
+            // buffer (it is built from an IBuffer, independent of the grabber), so the JPEG encode below runs through
+            // WIC (Windows.Graphics.Imaging.BitmapEncoder) and does not need the FFmpeg gate held.
             // This section awaits, so it needs the async gate; the Skia work below stays under the sync leaf lock.
             byte[]? bytes;
+            VideoFrame? frame = null;
             long startTicks = Stopwatch.GetTimestamp();
-            Task<byte[]?>? abandoned = null;
+            // Bottleneck split for the frame-timing line: wait for the gate, the decode inside it, then the out-of-gate
+            // JPEG encode plus buffer copy, then the out-of-gate Skia resize/encode. Diagnostic only; the control flow
+            // below is unchanged.
+            long waitMs;
+            long extractMs = 0;
+            long encodeMs = 0;
+            Task<VideoFrame?>? abandoned = null;
             CancellationTokenSource? timeoutCts = null;
-            await NativeDecodeGate.VideoGate.WaitAsync(cancellationToken);
+            // Read the gate once: it is replaced between runs, and the release in the finally must use the same instance.
+            SemaphoreSlim gate = NativeDecodeGate.FfmpegGate;
+            await gate.WaitAsync(cancellationToken);
+            waitMs = ElapsedMs(startTicks); // everything before this point is the FFmpeg-gate wait
             try
             {
                 // The flag can be raised while this call waited for the gate; check again before touching the grabber.
@@ -112,22 +126,25 @@ public sealed class FFmpegFrameSource : IVideoFrameSource
                 timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
                 timeoutCts.CancelAfter(FrameTimeout);
 
-                var work = ExtractFrameAsync();
+                var work = DecodeFrameAsync();
                 if (await Task.WhenAny(work, Task.Delay(FrameTimeout, timeoutCts.Token)) != work)
                 {
-                    // Timeout (or user cancel): the native call cannot be aborted. Keep holding VideoGate until it
+                    // Timeout (or user cancel): the native call cannot be aborted. Keep holding FfmpegGate until it
                     // finishes (see the finally below), otherwise the next video would drive FFmpeg while this call
                     // is still inside it: the concurrent native decode that corrupts the heap (0xC0000374).
                     _consecutiveTimeouts++;
                     abandoned = work;
+                    // A decode that lands after we stopped waiting still owns a pixel buffer; release it then.
+                    _ = work.ContinueWith(t => t.Result?.Dispose(), CancellationToken.None,
+                        TaskContinuationOptions.OnlyOnRanToCompletion, TaskScheduler.Default);
                     IngestTrace.Video("frame-timeout", _videoPath, "FFmpeg", ElapsedMs(startTicks),
                         detail: $"positionMs={(long)position.TotalMilliseconds} consecutiveTimeouts={_consecutiveTimeouts} " +
                                 $"cancelled={cancellationToken.IsCancellationRequested}");
                     return false;
                 }
 
-                bytes = await work;
-                if (bytes == null)
+                frame = await work;
+                if (frame == null)
                 {
                     IngestTrace.Video("frame-null", _videoPath, "FFmpeg", ElapsedMs(startTicks),
                         detail: $"positionMs={(long)position.TotalMilliseconds}");
@@ -135,20 +152,14 @@ public sealed class FFmpegFrameSource : IVideoFrameSource
                 }
                 _consecutiveTimeouts = 0;
 
-                async Task<byte[]?> ExtractFrameAsync()
+                // The only FFmpeg call in this method, so the only part FfmpegGate has to serialise. FrameTimeout
+                // bounds it: a decoder that never returns must not hold the gate forever.
+                async Task<VideoFrame?> DecodeFrameAsync()
                 {
-                    using var frame = await _grabber.ExtractVideoFrameAsync(position, exactSeek: false, maxFrameSkip: MaxFrameSkipAfterKeyFrame);
-                    if (frame == null) return null;
-
-                    using var stream = new InMemoryRandomAccessStream();
-                    await frame.EncodeAsJpegAsync(stream);
-                    stream.Seek(0);
-
-                    using var reader = new DataReader(stream);
-                    await reader.LoadAsync((uint)stream.Size);
-                    var buffer = new byte[stream.Size];
-                    reader.ReadBytes(buffer);
-                    return buffer;
+                    long extractStartTicks = Stopwatch.GetTimestamp();
+                    var decoded = await _grabber.ExtractVideoFrameAsync(position, exactSeek: false, maxFrameSkip: MaxFrameSkipAfterKeyFrame);
+                    extractMs = ElapsedMs(extractStartTicks);
+                    return decoded;
                 }
             }
             finally
@@ -183,9 +194,29 @@ public sealed class FFmpegFrameSource : IVideoFrameSource
                 if (abandoned == null || abandoned.IsCompleted) timeoutCts?.Dispose();
                 else _ = abandoned.ContinueWith(_ => timeoutCts?.Dispose(), CancellationToken.None,
                     TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
-                NativeDecodeGate.VideoGate.Release();
+                gate.Release();
             }
 
+            // Outside the gate: encodeMs covers the JPEG encode plus the buffer copy out of the WinRT stream. Both only
+            // touch the frame's own pixel buffer and a WinRT in-memory stream, so neither uses FFmpeg or the grabber.
+            using (var frameToEncode = frame!)
+            {
+                long encodeStartTicks = Stopwatch.GetTimestamp();
+                using (var stream = new InMemoryRandomAccessStream())
+                {
+                    await frameToEncode.EncodeAsJpegAsync(stream);
+                    stream.Seek(0);
+
+                    using var reader = new DataReader(stream);
+                    await reader.LoadAsync((uint)stream.Size);
+                    var buffer = new byte[stream.Size];
+                    reader.ReadBytes(buffer);
+                    bytes = buffer;
+                }
+                encodeMs = ElapsedMs(encodeStartTicks);
+            }
+
+            long skiaStartTicks = Stopwatch.GetTimestamp();
             SKBitmap? bitmap = null;
             SKBitmap? resized = null;
             SKData? jpeg = null;
@@ -212,6 +243,7 @@ public sealed class FFmpegFrameSource : IVideoFrameSource
                 using var image = SKImage.FromBitmap(source);
                 jpeg = image.Encode(SKEncodedImageFormat.Jpeg, 90);
             }
+            long skiaMs = ElapsedMs(skiaStartTicks);
 
             if (jpeg == null)
             {
@@ -235,6 +267,14 @@ public sealed class FFmpegFrameSource : IVideoFrameSource
                 {
                     IngestTrace.Video("frame-write-end", _videoPath, "FFmpeg", ElapsedMs(startTicks),
                         detail: $"positionMs={(long)position.TotalMilliseconds} path={jpegPath}");
+                }
+                // One bottleneck line per written segment, alongside frame-write-end (the only per-segment success
+                // line), so normal logging volume is unchanged. Branching on the live diagnostics switch means it
+                // follows the store even when tracing is switched on mid-run.
+                if (IngestTrace.FrameDetailEnabled)
+                {
+                    IngestTrace.Video("frame-timing", _videoPath, "FFmpeg", ElapsedMs(startTicks),
+                        detail: $"waitMs={waitMs} extractMs={extractMs} encodeMs={encodeMs} skiaMs={skiaMs}");
                 }
                 return true;
             }
@@ -260,8 +300,9 @@ public sealed class FFmpegFrameSource : IVideoFrameSource
             // Tearing down the grabber also drives FFmpeg's native objects, so it takes the same gate as decode/encode.
             // SaveFrameAsync now holds the gate until an abandoned native call has finished (bounded), so once this
             // wait returns nothing is using _grabber any more. Dispose is synchronous, so the blocking wait is correct
-            // here (nothing awaits while the gate is held).
-            NativeDecodeGate.VideoGate.Wait();
+            // here (nothing awaits while the gate is held). Read the gate once: the release must match the wait.
+            SemaphoreSlim gate = NativeDecodeGate.FfmpegGate;
+            gate.Wait();
             try
             {
                 if (_abandonedOutstanding)
@@ -285,7 +326,7 @@ public sealed class FFmpegFrameSource : IVideoFrameSource
             }
             finally
             {
-                NativeDecodeGate.VideoGate.Release();
+                gate.Release();
             }
 
             return ValueTask.CompletedTask;

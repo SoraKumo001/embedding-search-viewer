@@ -12,6 +12,11 @@
     </Project>
     <Project Path="src/EmbeddingSearchViewer.Core/EmbeddingSearchViewer.Core.csproj" />
     <Project Path="src/EmbeddingSearchViewer.Infrastructure/EmbeddingSearchViewer.Infrastructure.csproj" />
+    <Project Path="src/EmbeddingSearchViewer.FfmpegWorker/EmbeddingSearchViewer.FfmpegWorker.csproj">
+      <Platform Solution="*|Any CPU" Project="x64" />
+      <Platform Solution="*|x64" Project="x64" />
+      <Platform Solution="*|ARM64" Project="ARM64" />
+    </Project>
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/EmbeddingSearchViewer.Tests/EmbeddingSearchViewer.Tests.csproj" />

@@ -5,6 +5,7 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using EmbeddingSearchViewer.Core.Services;
 using EmbeddingSearchViewer.Infrastructure.Core;
 
 namespace EmbeddingSearchViewer.Infrastructure.Ingestion;
@@ -60,6 +61,19 @@ public interface IVideoFrameSource
 }
 
 /// <summary>
+/// A frame source that needs the parameters of the extraction before it opens the file. The FFmpeg worker child
+/// process gets the segment length, the overlap and the segments to skip on its command line, and it has to write its
+/// frames into the video's cache directory; <see cref="IVideoFrameSource.OpenAsync"/> carries none of that.
+/// The extractor calls this once per extraction, so every video gets a source of its own (a source shared between
+/// videos stays stateless and is used as it is).
+/// </summary>
+public interface IVideoFrameSourceBinding
+{
+    IVideoFrameSource BindForExtraction(
+        string outputDirectory, int segmentSeconds, int overlapSeconds, IReadOnlySet<int>? alreadyDone, int maxSegments);
+}
+
+/// <summary>
 /// Plans the segments and grabs their frames. Frame sources are tried in order: the first one that can open the file
 /// and produce at least one frame wins, so the preferred decoder can be backed by another one for files it cannot read.
 /// </summary>
@@ -67,8 +81,11 @@ public sealed class VideoSegmentExtractor : IStreamingVideoSegmentExtractor
 {
     private readonly Func<IReadOnlyList<IVideoFrameSource>> _sourcesProvider;
 
-    public VideoSegmentExtractor(IEnumerable<IVideoFrameSource> sources)
-        : this(() => sources.ToList())
+    /// <summary>Where the per-decoder extraction totals go (shared process-wide unless one is injected).</summary>
+    private readonly VideoDecoderStats _decoderStats;
+
+    public VideoSegmentExtractor(IEnumerable<IVideoFrameSource> sources, VideoDecoderStats? decoderStats = null)
+        : this(() => sources.ToList(), decoderStats)
     {
     }
 
@@ -76,9 +93,10 @@ public sealed class VideoSegmentExtractor : IStreamingVideoSegmentExtractor
     /// The decoders are asked for on every extraction, so a decoder switched by a setting while the app runs applies to
     /// the videos indexed from then on (the sources are tried in order, see the class remarks).
     /// </summary>
-    public VideoSegmentExtractor(Func<IReadOnlyList<IVideoFrameSource>> sourcesProvider)
+    public VideoSegmentExtractor(Func<IReadOnlyList<IVideoFrameSource>> sourcesProvider, VideoDecoderStats? decoderStats = null)
     {
         _sourcesProvider = sourcesProvider;
+        _decoderStats = decoderStats ?? VideoDecoderStats.Shared;
     }
 
     /// <summary>
@@ -87,25 +105,7 @@ public sealed class VideoSegmentExtractor : IStreamingVideoSegmentExtractor
     /// A trailing sliver (under one second) that the previous segment already covers is dropped.
     /// </summary>
     public static IReadOnlyList<(int StartMs, int EndMs)> PlanSegments(TimeSpan duration, int segmentSeconds, int overlapSeconds)
-    {
-        var result = new List<(int, int)>();
-        if (duration <= TimeSpan.Zero || segmentSeconds <= 0) return result;
-
-        double step = segmentSeconds - overlapSeconds;
-        if (step <= 0) step = segmentSeconds;
-
-        double total = duration.TotalSeconds;
-        for (double start = 0; start < total; start += step)
-        {
-            double end = Math.Min(start + segmentSeconds, total);
-            if (result.Count > 0 && end - start < 1.0) break;
-            result.Add(((int)(start * 1000), (int)(end * 1000)));
-            if (end >= total) break;
-        }
-        return result;
-    }
-
-    private static readonly int[] SegmentSteps = { 15, 30, 60, 120, 180, 300 };
+        => VideoSegmentPlanner.PlanSegments(duration, segmentSeconds, overlapSeconds);
 
     /// <summary>
     /// The segment length to use for a video of the given duration: <paramref name="baseSeconds"/>, or, when that would
@@ -114,21 +114,11 @@ public sealed class VideoSegmentExtractor : IStreamingVideoSegmentExtractor
     /// segments. <paramref name="maxSegments"/> of 0 or less turns the adjustment off.
     /// </summary>
     public static int ResolveSegmentSeconds(TimeSpan duration, int baseSeconds, int maxSegments)
-    {
-        if (maxSegments <= 0 || baseSeconds <= 0) return baseSeconds;
-
-        int current = baseSeconds;
-        foreach (int step in SegmentSteps.Where(s => s > baseSeconds).Prepend(baseSeconds))
-        {
-            current = step;
-            if (PlanSegments(duration, step, Math.Min(3, step / 4)).Count <= maxSegments) break;
-        }
-        return current;
-    }
+        => VideoSegmentPlanner.ResolveSegmentSeconds(duration, baseSeconds, maxSegments);
 
     /// <summary>Where the frame of a segment is written, so a later run can find it again.</summary>
     public static string FramePath(string outputDirectory, string videoPath, int segmentIndex)
-        => Path.Combine(outputDirectory, $"{Path.GetFileNameWithoutExtension(videoPath)}_seg_{segmentIndex:D4}.jpg");
+        => VideoSegmentPlanner.FramePath(outputDirectory, videoPath, segmentIndex);
 
     public Task<IReadOnlyList<VideoSegmentContent>> ExtractAsync(
         string videoPath, string outputDirectory, int segmentSeconds, int overlapSeconds, CancellationToken cancellationToken = default)
@@ -151,9 +141,15 @@ public sealed class VideoSegmentExtractor : IStreamingVideoSegmentExtractor
             detail: $"size={fileSize} segmentSeconds={segmentSeconds} overlapSeconds={overlapSeconds} maxSegments={maxSegments} " +
                     $"decoders={string.Join(',', sources.Select(s => s.Name))}");
 
-        foreach (var source in sources)
+        foreach (var configured in sources)
         {
             cancellationToken.ThrowIfCancellationRequested();
+
+            // A source that needs the extraction parameters (the FFmpeg worker child) gets an instance of its own;
+            // every other source is stateless across videos and is used as it is.
+            IVideoFrameSource source = configured is IVideoFrameSourceBinding binding
+                ? binding.BindForExtraction(outputDirectory, segmentSeconds, overlapSeconds, alreadyDone, maxSegments)
+                : configured;
 
             long openStart = Stopwatch.GetTimestamp();
             IVideoFrameSession? session;
@@ -177,7 +173,7 @@ public sealed class VideoSegmentExtractor : IStreamingVideoSegmentExtractor
             await using (session)
             {
                 int effectiveSeconds = ResolveSegmentSeconds(session.Duration, segmentSeconds, maxSegments);
-                int effectiveOverlap = effectiveSeconds == segmentSeconds ? overlapSeconds : Math.Min(3, effectiveSeconds / 4);
+                int effectiveOverlap = VideoSegmentPlanner.ResolveOverlapSeconds(segmentSeconds, overlapSeconds, effectiveSeconds);
                 var plan = PlanSegments(session.Duration, effectiveSeconds, effectiveOverlap);
                 if (plan.Count == 0)
                 {
@@ -251,6 +247,9 @@ public sealed class VideoSegmentExtractor : IStreamingVideoSegmentExtractor
 
                 if (grabbed > 0)
                 {
+                    // Per-decoder totals for the future GET /v1/stats: the whole extraction of this video under the
+                    // decoder that produced its frames, next to the count of frames written.
+                    _decoderStats.Add(source.Name, Stopwatch.GetTimestamp() - videoStart, grabbed);
                     IngestTrace.Video("extract-ok", videoPath, source.Name, ElapsedMs(videoStart),
                         detail: $"segments={segments.Count} frames={grabbed}");
                     return segments;

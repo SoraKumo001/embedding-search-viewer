@@ -20,18 +20,37 @@ public class VideoMediaIngestor
     /// <summary>Frames are embedded in groups of this size while the decoder keeps working on the next ones.</summary>
     internal const int EmbedGroupSize = 8;
 
+    /// <summary>
+    /// Written just before decoding starts and removed once it finishes. Its presence means the previous decode of the
+    /// same video may have killed the process (FFmpeg is native code), so the next run uses Media Foundation only.
+    /// The FFmpeg worker (<see cref="ChildProcessFrameSource"/>) writes the same file when its child dies abnormally;
+    /// such a marker carries <see cref="CrashMarkerField"/> and is kept by <see cref="ClearDecoderMarker"/>.
+    /// </summary>
+    internal const string DecoderMarkerFileName = "ffmpeg.active";
+
+    /// <summary>Marks a marker that stands for a decode that died (as opposed to the one this run wrote itself).</summary>
+    internal const string CrashMarkerField = "crashed=";
+
     public VideoIngestStats Stats { get; }
 
     private readonly string _checkpointTag;
 
+    /// <summary>
+    /// Read per video: true when a leftover decoder marker is to be ignored (the diagnostics store's
+    /// <c>IgnoreDecoderMarkers</c>). Defaults to false, the historical behaviour.
+    /// </summary>
+    private readonly Func<bool> _ignoreDecoderMarkers;
+
     /// <param name="extractor">Defaults to the Windows media stack only; the app adds FFmpeg as a second decoder.</param>
     /// <param name="checkpointTag">Identifies the embedding model; saved partial work of another model is never reused.</param>
-    public VideoMediaIngestor(IEmbeddingService embeddingService, IVideoSegmentExtractor? extractor = null, VideoIngestStats? stats = null, string checkpointTag = "")
+    /// <param name="ignoreDecoderMarkers">Defaults to false: a marker from an earlier FFmpeg crash is honoured once.</param>
+    public VideoMediaIngestor(IEmbeddingService embeddingService, IVideoSegmentExtractor? extractor = null, VideoIngestStats? stats = null, string checkpointTag = "", Func<bool>? ignoreDecoderMarkers = null)
     {
         _embeddingService = embeddingService;
         _extractor = extractor ?? new VideoSegmentExtractor(new IVideoFrameSource[] { new MediaFoundationFrameSource() });
         Stats = stats ?? new VideoIngestStats();
         _checkpointTag = checkpointTag;
+        _ignoreDecoderMarkers = ignoreDecoderMarkers ?? (() => false);
     }
 
     public async Task<(MediaAsset Asset, List<MediaChunk> Chunks)> IngestAsync(
@@ -63,17 +82,40 @@ public class VideoMediaIngestor
         var checkpoint = new VideoCheckpoint(videoCacheDir, truncateDim);
         long videoStart = Stopwatch.GetTimestamp();
 
+        // A marker left next to the frames means an earlier run of this video died while FFmpeg was decoding it. It is
+        // honoured once (Windows media stack only) and then consumed, so a stale marker costs one slower run at most.
+        string markerPath = Path.Combine(videoCacheDir, DecoderMarkerFileName);
+        bool ignoreMarkers = _ignoreDecoderMarkers();
+        bool markerPresent = !ignoreMarkers && File.Exists(markerPath);
+        IVideoSegmentExtractor extractor = _extractor;
+        if (markerPresent)
+        {
+            extractor = new VideoSegmentExtractor(new IVideoFrameSource[] { new MediaFoundationFrameSource() });
+            IngestTrace.Video("marker-honored", filePath, "MediaFoundation", 0,
+                detail: $"marker={markerPath}; decoding with Media Foundation only");
+
+            // The crashed marker has now been honoured. It is replaced by this run's own marker so that a run which
+            // ends normally clears it again (the next run may use FFmpeg), while a run that dies during the decode
+            // still leaves it behind.
+            WriteDecoderMarker(markerPath, filePath);
+        }
+        else
+        {
+            WriteDecoderMarker(markerPath, filePath);
+        }
+
         IReadOnlyList<VideoSegmentContent> segments;
         List<MediaChunk> chunks;
-        if (_extractor is IStreamingVideoSegmentExtractor streaming)
+        if (extractor is IStreamingVideoSegmentExtractor streaming)
         {
             (segments, chunks) = await ExtractAndEmbedStreamingAsync(
-                streaming, asset, fi.Name, videoCacheDir, checkpoint, segmentDurationSec, overlapSec, truncateDim, maxSegments, onProgress, cancellationToken);
+                streaming, asset, fi.Name, videoCacheDir, markerPath, checkpoint, segmentDurationSec, overlapSec, truncateDim, maxSegments, onProgress, cancellationToken);
         }
         else
         {
             long t0 = Stopwatch.GetTimestamp();
-            segments = await _extractor.ExtractAsync(filePath, videoCacheDir, segmentDurationSec, overlapSec, cancellationToken);
+            segments = await extractor.ExtractAsync(filePath, videoCacheDir, segmentDurationSec, overlapSec, cancellationToken);
+            ClearDecoderMarker(markerPath, filePath); // the decode finished: the next run may use FFmpeg again
             Stats.AddExtract(Stopwatch.GetTimestamp() - t0);
 
             var frames = segments.Where(s => s.ThumbnailPath != null).ToList();
@@ -108,7 +150,7 @@ public class VideoMediaIngestor
     /// continues with the remaining segments.
     /// </summary>
     private async Task<(IReadOnlyList<VideoSegmentContent> Segments, List<MediaChunk> Chunks)> ExtractAndEmbedStreamingAsync(
-        IStreamingVideoSegmentExtractor extractor, MediaAsset asset, string fileName, string videoCacheDir, VideoCheckpoint checkpoint,
+        IStreamingVideoSegmentExtractor extractor, MediaAsset asset, string fileName, string videoCacheDir, string markerPath, VideoCheckpoint checkpoint,
         int segmentDurationSec, int overlapSec, int truncateDim, int maxSegments, Action<int, int>? onProgress, CancellationToken cancellationToken)
     {
         // Segments finished by an interrupted run. One whose frame is gone cannot be previewed, so it is done again.
@@ -179,11 +221,16 @@ public class VideoMediaIngestor
                     detail: $"embeddings={embeddings.Count}", ex: ex);
             }
             cts.Cancel(); // stop decoding for a video whose embedding failed (or that was cancelled)
-            try { await extraction; } catch { }
+            bool extracted = false;
+            try { await extraction; extracted = true; } catch { }
+            // The embedding failed, but a decode that ran to the end still clears the marker: the danger being tracked
+            // is a decoder crash, not an embedding error.
+            if (extracted) ClearDecoderMarker(markerPath, asset.FilePath);
             throw;
         }
 
         var segments = await extraction;
+        ClearDecoderMarker(markerPath, asset.FilePath); // the decode finished: the next run may use FFmpeg again
         var ordered = segments.Where(s => s.ThumbnailPath != null && embeddings.ContainsKey(s.Index)).ToList();
         var chunks = BuildChunks(asset, fileName, ordered, ordered.Select(s => embeddings[s.Index]).ToList());
         IngestTrace.Video("ingest-done", asset.FilePath, null, ElapsedMs(streamingStart),
@@ -236,6 +283,52 @@ public class VideoMediaIngestor
         => BuildChunks(asset, fileName, segments, await EmbedFramesAsync(asset, segments, truncateDim, cancellationToken));
 
     private static long ElapsedMs(long startTicks) => (long)((Stopwatch.GetTimestamp() - startTicks) * 1000.0 / Stopwatch.Frequency);
+
+    /// <summary>
+    /// Announces that a decode is starting. Only the existence of the file is read later; the content is diagnostic.
+    /// Failing to write it only costs the crash detection, never the video.
+    /// </summary>
+    private static void WriteDecoderMarker(string markerPath, string videoPath)
+    {
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(markerPath)!);
+            File.WriteAllText(markerPath, $"pid={Environment.ProcessId} started={DateTimeOffset.Now:O}{Environment.NewLine}");
+            IngestTrace.Video("marker-written", videoPath, null, 0, detail: $"marker={markerPath}");
+        }
+        catch (Exception ex)
+        {
+            IngestTrace.Video("marker-write-failed", videoPath, null, 0, detail: $"marker={markerPath}", ex: ex);
+        }
+    }
+
+    /// <summary>
+    /// Consumes the marker after a decode that returned: the next run of this video may use FFmpeg again. A marker the
+    /// worker's child left behind when it died is kept: the decode did not return, it crashed, and the next run has to
+    /// go straight to Media Foundation (the semantics the marker had when the app itself died in FFmpeg).
+    /// </summary>
+    private static void ClearDecoderMarker(string markerPath, string videoPath)
+    {
+        try
+        {
+            if (!File.Exists(markerPath)) return;
+
+            string? content = null;
+            try { content = File.ReadAllText(markerPath); } catch (IOException) { }
+            if (content != null && content.Contains(CrashMarkerField, StringComparison.Ordinal))
+            {
+                IngestTrace.Video("marker-kept-after-crash", videoPath, null, 0, detail: $"marker={markerPath}");
+                return;
+            }
+
+            File.Delete(markerPath);
+            IngestTrace.Video("marker-cleared", videoPath, null, 0, detail: $"marker={markerPath}");
+        }
+        catch (Exception ex)
+        {
+            IngestTrace.Video("marker-clear-failed", videoPath, null, 0, detail: $"marker={markerPath}", ex: ex);
+        }
+    }
 
     private async Task<MediaChunk> NameOnlyChunkAsync(MediaAsset asset, string fileName, int truncateDim, CancellationToken cancellationToken)
     {

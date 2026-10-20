@@ -249,6 +249,89 @@
                 </StackPanel>
             </Grid>
 
+            <!-- Diagnostics options: for trying out video ingestion. Kept in memory only (not written to library.json). -->
+            <Expander HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"
+                      Background="{ThemeResource LayerFillColorDefaultBrush}"
+                      BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1"
+                      CornerRadius="8">
+                <Expander.Header>
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <FontIcon Glyph="&#xE9D9;" FontSize="16" VerticalAlignment="Center"
+                                  Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                        <TextBlock loc:L.Uid="Library.Diagnostics.Header" VerticalAlignment="Center" />
+                    </StackPanel>
+                </Expander.Header>
+
+                <StackPanel Spacing="12" Margin="0,0,0,4">
+                    <TextBlock loc:L.Uid="Library.Diagnostics.Description"
+                               Style="{ThemeResource CaptionTextBlockStyle}" TextWrapping="Wrap"
+                               Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+
+                    <Grid ColumnDefinitions="*,*" ColumnSpacing="16">
+                        <StackPanel Spacing="6">
+                            <TextBlock loc:L.Uid="Library.Diagnostics.Parallelism" TextWrapping="Wrap" />
+                            <ComboBox SelectedValue="{x:Bind ViewModel.VideoParallelism, Mode=TwoWay}"
+                                      MinWidth="96" HorizontalAlignment="Left"
+                                      AutomationProperties.Name="Videos processed at once">
+                                <x:Int32>1</x:Int32>
+                                <x:Int32>2</x:Int32>
+                                <x:Int32>3</x:Int32>
+                            </ComboBox>
+                        </StackPanel>
+                        <StackPanel Grid.Column="1" Spacing="6">
+                            <TextBlock loc:L.Uid="Library.Diagnostics.Permit" TextWrapping="Wrap" />
+                            <ComboBox SelectedValue="{x:Bind ViewModel.FfmpegPermit, Mode=TwoWay}"
+                                      MinWidth="96" HorizontalAlignment="Left"
+                                      AutomationProperties.Name="FFmpeg decodes at once">
+                                <x:Int32>1</x:Int32>
+                                <x:Int32>2</x:Int32>
+                            </ComboBox>
+                        </StackPanel>
+                    </Grid>
+
+                    <TextBlock loc:L.Uid="Library.Diagnostics.NumbersHint"
+                               Style="{ThemeResource CaptionTextBlockStyle}" TextWrapping="Wrap"
+                               Foreground="{ThemeResource TextFillColorTertiaryBrush}" />
+
+                    <StackPanel Spacing="0">
+                        <CheckBox IsChecked="{x:Bind ViewModel.IgnoreDecoderMarkers, Mode=TwoWay}"
+                                  AutomationProperties.Name="Ignore Decoder Marker">
+                            <CheckBox.Content>
+                                <TextBlock loc:L.Uid="Library.Diagnostics.IgnoreMarkers" TextWrapping="Wrap" />
+                            </CheckBox.Content>
+                        </CheckBox>
+                        <CheckBox IsChecked="{x:Bind ViewModel.FrameTracing, Mode=TwoWay}"
+                                  AutomationProperties.Name="Trace Every Frame">
+                            <CheckBox.Content>
+                                <TextBlock loc:L.Uid="Library.Diagnostics.FrameTracing" TextWrapping="Wrap" />
+                            </CheckBox.Content>
+                        </CheckBox>
+                        <CheckBox IsChecked="{x:Bind ViewModel.UseFfmpegWorker, Mode=TwoWay}"
+                                  AutomationProperties.Name="Decode FFmpeg in a Separate Process">
+                            <CheckBox.Content>
+                                <TextBlock loc:L.Uid="Library.Diagnostics.UseWorker" TextWrapping="Wrap" />
+                            </CheckBox.Content>
+                        </CheckBox>
+                    </StackPanel>
+
+                    <!-- Numbers of the running job, refreshed about once a second while it runs -->
+                    <StackPanel Spacing="4"
+                                Visibility="{x:Bind ViewModel.DiagnosticsText, Mode=OneWay, Converter={StaticResource StringNotEmptyToVisibilityConverter}}">
+                        <TextBlock loc:L.Uid="Library.Diagnostics.Readout"
+                                   Style="{ThemeResource CaptionTextBlockStyle}"
+                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                        <Border Background="{ThemeResource CardBackgroundFillColorSecondaryBrush}"
+                                BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1"
+                                CornerRadius="6" Padding="10,8">
+                            <TextBlock Text="{x:Bind ViewModel.DiagnosticsText, Mode=OneWay}"
+                                       FontFamily="Cascadia Mono, Consolas" FontSize="12" TextWrapping="Wrap"
+                                       IsTextSelectionEnabled="True"
+                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                        </Border>
+                    </StackPanel>
+                </StackPanel>
+            </Expander>
+
             <!-- Files left out of the index because reading them failed repeatedly -->
             <Expander Header="{x:Bind ViewModel.ExcludedHeaderText, Mode=OneWay}"
                       HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"

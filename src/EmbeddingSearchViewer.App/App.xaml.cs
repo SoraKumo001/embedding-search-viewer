@@ -59,6 +59,12 @@ public partial class App : Application
         EmbeddingSearchViewer.Infrastructure.Library.AtomicJsonFile.SaveFailed = (path, ex) => CrashLog.Write($"Could not save {path}", ex);
         // The ingestion trace writes to the same file (opened per line, so a hard crash keeps the last lines).
         EmbeddingSearchViewer.Infrastructure.Core.IngestTrace.Sink = (line, ex) => CrashLog.Write(line, ex);
+
+        // Run diagnostics (video parallelism, FFmpeg permit, decoder markers, frame tracing, the FFmpeg worker child) live
+        // in one store. Its environment variables are read here, once, as the initial values; the worker reads the store
+        // at each run start and the frame path reads it per frame.
+        var runDiagnostics = new RunDiagnosticsOptions();
+        EmbeddingSearchViewer.Infrastructure.Core.IngestTrace.FrameDetailProvider = () => runDiagnostics.FrameTracing;
         // An error on the UI thread (for example while a progress update is drawn) is recorded and the app keeps running.
         UnhandledException += (_, e) =>
         {
@@ -73,6 +79,7 @@ public partial class App : Application
         services.AddSingleton<IUiDispatcher, WinUiDispatcher>();
         services.AddSingleton(_appSettingsStore);
         services.AddSingleton(_settings);
+        services.AddSingleton(runDiagnostics);
         services.AddSingleton<ProfileManager>(_ => new ProfileManager());
         
         services.AddSingleton<IMediaRepository>(sp => new ProfileScopedRepository(sp.GetRequiredService<ProfileManager>()));
@@ -94,10 +101,18 @@ public partial class App : Application
             // The decoder choice is read per run (like the media types), so a change applies to videos indexed from then on.
             var ffmpegSource = new FFmpegFrameSource();
             var mediaFoundationSource = new MediaFoundationFrameSource();
+            // The opt-in split: FFmpeg runs in a child process (one per video), so nothing native is shared between
+            // videos decoded at once. Off by default; the switch is read per video, like the decoder choice.
+            var ffmpegWorkerSource = new ChildProcessFrameSource(ResolveFfmpegWorkerPath());
             var videoExtractor = new VideoSegmentExtractor(() =>
-                ShouldUseFfmpegDecoder(settingsStore)
-                    ? new IVideoFrameSource[] { ffmpegSource, mediaFoundationSource }
-                    : new IVideoFrameSource[] { mediaFoundationSource });
+            {
+                if (!ShouldUseFfmpegDecoder(settingsStore)) return new IVideoFrameSource[] { mediaFoundationSource };
+                if (runDiagnostics.UseFfmpegWorker && ffmpegWorkerSource.IsAvailable)
+                {
+                    return new IVideoFrameSource[] { ffmpegWorkerSource, mediaFoundationSource };
+                }
+                return new IVideoFrameSource[] { ffmpegSource, mediaFoundationSource };
+            });
             var profiles = sp.GetRequiredService<ProfileManager>();
             return new IngestionPipelineWorker(repo, embeddingService, videoExtractor: videoExtractor, cacheDirectoryProvider: () => profiles.CacheDirectory,
                 videoSegmentSeconds: () => sp.GetRequiredService<LibrarySettingsStore>().Load().VideoSegmentSeconds,
@@ -108,7 +123,10 @@ public partial class App : Application
                     return new MediaTypeSelection(s.IndexImages, s.IndexPdfs, s.IndexVideos, s.IndexDocuments);
                 },
                 exclusions: sp.GetRequiredService<IndexExclusionStore>(),
-                emptyEmbeddingSkipsStore: sp.GetRequiredService<EmptyEmbeddingSkipStore>());
+                emptyEmbeddingSkipsStore: sp.GetRequiredService<EmptyEmbeddingSkipStore>(),
+                videoParallelismProvider: () => runDiagnostics.VideoParallelism,
+                ffmpegPermitProvider: () => runDiagnostics.FfmpegPermit,
+                ignoreDecoderMarkers: () => runDiagnostics.IgnoreDecoderMarkers);
         });
 
         services.AddSingleton<LibrarySettingsStore>(sp =>
@@ -144,6 +162,14 @@ public partial class App : Application
             StartupLanguageSetting));
         services.AddSingleton<ModelSetupViewModel>();
 
+        // The verification lane: a loopback-only diagnostics API. It is constructed with the services it reads (the
+        // options, the worker) and resolves the library view model on demand, so nothing else is created earlier.
+        services.AddSingleton<DiagApiServer>(sp => new DiagApiServer(
+            sp,
+            sp.GetRequiredService<IUiDispatcher>(),
+            sp.GetRequiredService<RunDiagnosticsOptions>(),
+            sp.GetRequiredService<IngestionPipelineWorker>()));
+
         Services = services.BuildServiceProvider();
     }
 
@@ -154,12 +180,50 @@ public partial class App : Application
     private static bool ShouldUseFfmpegDecoder(LibrarySettingsStore settingsStore)
         => !DisableFfmpegDecoder && settingsStore.Load().UseFfmpegDecoder;
 
+    /// <summary>
+    /// The FFmpeg worker executable, copied next to the app under <c>FfmpegWorker\</c> at build and publish time.
+    /// Null when it is not there: the worker switch then has nothing to offer, and the in-process decoders stay as
+    /// they are (which is also the default).
+    /// </summary>
+    private static string? ResolveFfmpegWorkerPath()
+    {
+        string baseDirectory = AppContext.BaseDirectory;
+        string[] candidates =
+        {
+            Path.Combine(baseDirectory, "FfmpegWorker", ChildProcessFrameSource.ExecutableFileName),
+            Path.Combine(baseDirectory, ChildProcessFrameSource.ExecutableFileName),
+        };
+
+        foreach (string candidate in candidates)
+        {
+            if (File.Exists(candidate)) return candidate;
+        }
+
+        CrashLog.Write(
+            $"The FFmpeg worker is not next to the app ({string.Join(", ", candidates)}); the in-process decoder is used",
+            null);
+        return null;
+    }
+
     protected override void OnLaunched(LaunchActivatedEventArgs args)
     {
         CurrentWindow = new MainWindow();
         MainWindowDispatcherQueue = CurrentWindow.DispatcherQueue;
         (Services.GetRequiredService<IUiDispatcher>() as WinUiDispatcher)?.Initialize(CurrentWindow.DispatcherQueue);
         CurrentWindow.Activate();
+
+        // The diagnostics API starts with the window (its port is ephemeral, so it has to be read from the log) and is
+        // stopped when the process ends. A failure here must never keep the app from starting.
+        try
+        {
+            var diagApi = Services.GetRequiredService<DiagApiServer>();
+            diagApi.Start();
+            AppDomain.CurrentDomain.ProcessExit += (_, _) => diagApi.Stop();
+        }
+        catch (Exception ex)
+        {
+            CrashLog.Write("DiagApi.Start", ex);
+        }
 
         // The watchers are set up after the window is up: the folders may sit on a slow drive, and the start must not
         // wait for them. The watchers themselves do not care about the thread they are created on.

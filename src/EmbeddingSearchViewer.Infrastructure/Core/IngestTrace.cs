@@ -22,11 +22,24 @@ public static class IngestTrace
     public static readonly AsyncLocal<int?> CurrentSegment = new();
 
     /// <summary>
-    /// Per-frame write tracing (write begin/end). Off by default: a normal video produces one line per segment otherwise,
-    /// which is too much for the error log. Set <c>ESV_INGEST_TRACE_FRAMES=1</c> when a crash needs that detail.
+    /// Per-frame write tracing (write begin/end and frame timing). Off by default: a normal video produces one line per
+    /// segment otherwise, which is too much for the error log. The store's <c>FrameTracing</c> switch is injected here
+    /// as <see cref="FrameDetailProvider"/>; without a provider the last value written to
+    /// <see cref="FrameDetailEnabled"/> is used (false, the default).
     /// </summary>
-    public static readonly bool FrameDetailEnabled =
-        string.Equals(Environment.GetEnvironmentVariable("ESV_INGEST_TRACE_FRAMES"), "1", StringComparison.Ordinal);
+    public static Func<bool>? FrameDetailProvider { get; set; }
+
+    /// <summary>
+    /// Whether the per-frame lines are written. Reads <see cref="FrameDetailProvider"/> (the diagnostics store) when it
+    /// is set, so a change applies to the next frame; the backing field is volatile for the provider-less case.
+    /// </summary>
+    public static bool FrameDetailEnabled
+    {
+        get => FrameDetailProvider?.Invoke() ?? _frameDetailEnabled;
+        set => _frameDetailEnabled = value;
+    }
+
+    private static volatile bool _frameDetailEnabled;
 
     /// <summary>Writes one line, then the exception's full text (through the sink). Never throws.</summary>
     public static void Write(string message, Exception? ex = null)

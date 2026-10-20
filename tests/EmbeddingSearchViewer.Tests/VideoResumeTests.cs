@@ -78,6 +78,20 @@ public sealed class VideoResumeTests : IDisposable
 
     private string CheckpointFile() => Directory.EnumerateFiles(Path.Combine(_dir, "cache", "video"), "checkpoint.bin", SearchOption.AllDirectories).Single();
 
+    /// <summary>
+    /// An interrupted run leaves its decoder marker behind (it is cleared only after a decode that returns), so the
+    /// next run of the same video would use Media Foundation only. These tests resume with a fake decoder, so they
+    /// consume the marker first: the crash fallback is not what they are about.
+    /// </summary>
+    private static void ConsumeDecoderMarkers(string cacheDirectory)
+    {
+        if (!Directory.Exists(cacheDirectory)) return;
+        foreach (var marker in Directory.EnumerateFiles(cacheDirectory, "ffmpeg.active", SearchOption.AllDirectories))
+        {
+            File.Delete(marker);
+        }
+    }
+
     // ---- resume ----
 
     [Fact]
@@ -97,6 +111,8 @@ public sealed class VideoResumeTests : IDisposable
         var saved = new VideoCheckpoint(Path.GetDirectoryName(CheckpointFile())!, 768).Load();
         Assert.InRange(saved.Count, 1, 30);
         Assert.Equal(saved.Keys.OrderBy(x => x), saved.Keys.OrderBy(x => x).Select((_, i) => i)); // a gap-free start: 0, 1, 2, ...
+
+        ConsumeDecoderMarkers(cache);
 
         // Second run: only what is missing is decoded and embedded.
         var second = new SegmentEmbedding();
@@ -136,6 +152,8 @@ public sealed class VideoResumeTests : IDisposable
         var saved = new VideoCheckpoint(dir, 768).Load();
         Assert.NotEmpty(saved);
         File.Delete(VideoSegmentExtractor.FramePath(dir, video, 0));
+
+        ConsumeDecoderMarkers(cache);
 
         var second = new SegmentEmbedding();
         var (_, chunks) = await new VideoMediaIngestor(second, Extractor(duration)).IngestAsync(video, cache);

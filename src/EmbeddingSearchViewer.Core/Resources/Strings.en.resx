@@ -301,6 +301,57 @@
   <data name="Library.ComboBox01.Header" xml:space="preserve">
     <value>Video scene length (one frame per scene is searched)</value>
   </data>
+  <data name="Library.Diagnostics.Decoder" xml:space="preserve">
+    <value>{0} {1:F1} ms/frame ({2} frames)</value>
+  </data>
+  <data name="Library.Diagnostics.Description.Text" xml:space="preserve">
+    <value>Settings for trying out video ingestion. They are not saved in library.json and go back to their starting values when the app closes.</value>
+  </data>
+  <data name="Library.Diagnostics.FrameTracing.Text" xml:space="preserve">
+    <value>Trace every frame</value>
+  </data>
+  <data name="Library.Diagnostics.FrameTracing.ToolTip" xml:space="preserve">
+    <value>Adds the start, the end and the time of every frame to the ingestion log. The log gets much longer.</value>
+  </data>
+  <data name="Library.Diagnostics.Header.Text" xml:space="preserve">
+    <value>Diagnostics options</value>
+  </data>
+  <data name="Library.Diagnostics.IgnoreMarkers.Text" xml:space="preserve">
+    <value>Ignore the marker from an interrupted decode (use FFmpeg again)</value>
+  </data>
+  <data name="Library.Diagnostics.IgnoreMarkers.ToolTip" xml:space="preserve">
+    <value>A video marked by the app dying during an FFmpeg decode is decoded with FFmpeg again. Applies from the next video.</value>
+  </data>
+  <data name="Library.Diagnostics.NoDecoder" xml:space="preserve">
+    <value>no decoder numbers yet</value>
+  </data>
+  <data name="Library.Diagnostics.NumbersHint.Text" xml:space="preserve">
+    <value>The counts apply from the next run.</value>
+  </data>
+  <data name="Library.Diagnostics.Parallelism.Text" xml:space="preserve">
+    <value>Videos processed at once (1-3)</value>
+  </data>
+  <data name="Library.Diagnostics.Permit.Text" xml:space="preserve">
+    <value>FFmpeg decodes at once (1-2)</value>
+  </data>
+  <data name="Library.Diagnostics.UseWorker.Text" xml:space="preserve">
+    <value>Run FFmpeg in a separate process (one per video; applies from the next video)</value>
+  </data>
+  <data name="Library.Diagnostics.UseWorker.ToolTip" xml:space="preserve">
+    <value>Moves the FFmpeg decode into a child process that shares no memory with the app. Even with several videos at once, FFmpeg then never runs concurrently in one process, so a decoder fault cannot take the app down. A video whose child died is decoded with the Windows media stack on the next run.</value>
+  </data>
+  <data name="Library.Diagnostics.Readout.Text" xml:space="preserve">
+    <value>Numbers while running</value>
+  </data>
+  <data name="Library.Diagnostics.SaveShare" xml:space="preserve">
+    <value> · save {0:F1}%</value>
+  </data>
+  <data name="Library.Diagnostics.Separator" xml:space="preserve">
+    <value> · </value>
+  </data>
+  <data name="Library.Diagnostics.Videos" xml:space="preserve">
+    <value>{0} videos / {1} scenes · extract {2:F1}s · embed {3:F1}s</value>
+  </data>
   <data name="Library.Done" xml:space="preserve">
     <value>Indexing is complete ({0}/{1} files)</value>
   </data>

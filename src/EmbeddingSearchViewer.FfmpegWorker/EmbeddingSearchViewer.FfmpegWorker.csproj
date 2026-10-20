@@ -1,0 +1,42 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The FFmpeg frame worker: one process per video, started by ChildProcessFrameSource. FFmpeg's native objects only
+    ever run inside this process, so several videos decoded at once cannot drive FFmpeg concurrently in one process
+    (the 0xC0000374 heap corruption). Pictures cross the process boundary as JPEG files; stdout carries one line per
+    finished segment ("SEG <index> <middleMs>") and one after opening the file ("DURATION <ms>").
+
+    Self-contained on purpose: the app ships self-contained, so the worker must run on a machine without a .NET
+    runtime installed. Its build output is copied next to the app under FfmpegWorker\.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net11.0-windows10.0.26100.0</TargetFramework>
+    <TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
+    <RootNamespace>EmbeddingSearchViewer_FfmpegWorker</RootNamespace>
+    <AssemblyName>EmbeddingSearchViewer.FfmpegWorker</AssemblyName>
+    <Platform Condition="'$(Platform)' == ''">x64</Platform>
+    <Platforms>x64;ARM64</Platforms>
+    <RuntimeIdentifier Condition="'$(Platform)' == 'ARM64'">win-arm64</RuntimeIdentifier>
+    <RuntimeIdentifier Condition="'$(RuntimeIdentifier)' == ''">win-x64</RuntimeIdentifier>
+    <SelfContained>true</SelfContained>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <!-- No trimming: FFmpegInteropX and SkiaSharp are reached through WinRT and native code. -->
+    <PublishTrimmed>false</PublishTrimmed>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- The same decoder and encoder the in-process FFmpeg source uses, so the frames look the same. -->
+    <PackageReference Include="FFmpegInteropX.Desktop.FFmpeg" Version="7.0.100" />
+    <PackageReference Include="FFmpegInteropX.Desktop.Lib" Version="2.0.0" />
+    <PackageReference Include="SkiaSharp" Version="4.153.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The segment plan and the frame file name come from Core, so parent and child plan identically. -->
+    <ProjectReference Include="..\EmbeddingSearchViewer.Core\EmbeddingSearchViewer.Core.csproj" />
+  </ItemGroup>
+
+</Project>
