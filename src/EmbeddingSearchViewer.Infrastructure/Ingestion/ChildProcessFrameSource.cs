@@ -70,7 +70,8 @@ public sealed class ChildProcessFrameSource : IVideoFrameSource, IVideoFrameSour
 
     /// <param name="executablePath">
     /// Full path to the worker executable, or null when it was not shipped. The app resolves it once; a missing worker
-    /// simply means this decoder is not offered (the flag is off by default, see <c>RunDiagnosticsOptions</c>).
+    /// simply means this decoder is not offered (<c>LibrarySettings.UseFfmpegWorker</c> then falls back to the in-process
+    /// FFmpeg chain).
     /// </param>
     public ChildProcessFrameSource(string? executablePath)
         : this(executablePath, null, 0, 0, 0, null)

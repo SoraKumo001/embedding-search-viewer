@@ -28,6 +28,13 @@ public class LibrarySettings
     /// </summary>
     public bool UseFfmpegDecoder { get; set; } = true;
 
+    /// <summary>
+    /// When true and <see cref="UseFfmpegDecoder"/> is on, FFmpeg runs in the bundled worker process instead of in the
+    /// app (the Windows media stack stays the fallback). Applies to videos indexed from now on; a file written before
+    /// the key existed keeps the previous behaviour (true). A missing worker executable falls back silently.
+    /// </summary>
+    public bool UseFfmpegWorker { get; set; } = true;
+
     /// <summary>How the folder list is ordered on screen (<see cref="FolderSortMode"/>); the saved order of <see cref="Folders"/> is not changed.</summary>
     public int FolderSortIndex { get; set; }
 

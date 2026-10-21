@@ -298,6 +298,12 @@
   <data name="Library.CheckBox06.Content" xml:space="preserve">
     <value>Use FFmpeg to decode videos (off uses the Windows media stack only; applies to videos indexed from now on)</value>
   </data>
+  <data name="Library.CheckBoxFfmpegWorker.Content" xml:space="preserve">
+    <value>Run FFmpeg in a separate process (on by default; turning it off, or a build without the child executable, keeps the decode inside the app)</value>
+  </data>
+  <data name="Library.CheckBoxFfmpegWorker.ToolTip" xml:space="preserve">
+    <value>Moves the FFmpeg decode into a child process that shares no memory with the app. Even with several videos at once, FFmpeg then never runs concurrently in one process, so a decoder fault cannot take the app down. A video whose child died is decoded with the Windows media stack on the next run. On by default, and applies to videos indexed from now on. A build without the child executable ignores this and keeps FFmpeg inside the app.</value>
+  </data>
   <data name="Library.ComboBox01.Header" xml:space="preserve">
     <value>Video scene length (one frame per scene is searched)</value>
   </data>
@@ -339,12 +345,6 @@
   </data>
   <data name="Library.Diagnostics.Permit.Text" xml:space="preserve">
     <value>FFmpeg decodes at once (1-2, default 1; 2 is for experiments and applies from the next run)</value>
-  </data>
-  <data name="Library.Diagnostics.UseWorker.Text" xml:space="preserve">
-    <value>Run FFmpeg in a separate process (one per video; applies from the next video)</value>
-  </data>
-  <data name="Library.Diagnostics.UseWorker.ToolTip" xml:space="preserve">
-    <value>Moves the FFmpeg decode into a child process that shares no memory with the app. Even with several videos at once, FFmpeg then never runs concurrently in one process, so a decoder fault cannot take the app down. A video whose child died is decoded with the Windows media stack on the next run. Off by default; a change applies from the next video. Builds without the child executable ignore this switch (the in-process FFmpeg stays in use).</value>
   </data>
   <data name="Library.Diagnostics.Readout.Text" xml:space="preserve">
     <value>Numbers while running</value>
@@ -456,6 +456,12 @@
   </data>
   <data name="Library.SettingsSaveFailed" xml:space="preserve">
     <value>Could not save the settings: {0}</value>
+  </data>
+  <data name="Library.Stats.Loading.ToolTip" xml:space="preserve">
+    <value>Loading the statistics</value>
+  </data>
+  <data name="Library.Stats.Placeholder.Text" xml:space="preserve">
+    <value>—</value>
   </data>
   <data name="Library.Status.Ready" xml:space="preserve">
     <value>Ready</value>

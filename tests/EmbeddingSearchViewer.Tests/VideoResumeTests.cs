@@ -343,4 +343,27 @@ public sealed class VideoResumeTests : IDisposable
         store.Save(settings);
         Assert.False(new LibrarySettingsStore(path).Load().UseFfmpegDecoder);
     }
+
+    [Fact]
+    public void Setting_FfmpegWorker_DefaultsToOn_AndSurvivesAMissingKeyOrASave()
+    {
+        string path = Path.Combine(_dir, "library-ffmpeg-worker.json");
+
+        // No file at all: the worker is on (a missing executable still falls back silently at run time).
+        Assert.True(new LibrarySettingsStore(path).Load().UseFfmpegWorker);
+
+        // A file written before the key existed keeps the previous behaviour, and the real keys are read as before.
+        File.WriteAllText(path, "{ \"VideoSegmentSeconds\": 15, \"UseFfmpegDecoder\": false }");
+        var migrated = new LibrarySettingsStore(path).Load();
+        Assert.True(migrated.UseFfmpegWorker);
+        Assert.False(migrated.UseFfmpegDecoder);
+        Assert.Equal(15, migrated.VideoSegmentSeconds);
+
+        // It round-trips when switched off.
+        var store = new LibrarySettingsStore(path);
+        var settings = store.Load();
+        settings.UseFfmpegWorker = false;
+        store.Save(settings);
+        Assert.False(new LibrarySettingsStore(path).Load().UseFfmpegWorker);
+    }
 }

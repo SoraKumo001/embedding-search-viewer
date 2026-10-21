@@ -85,6 +85,20 @@ public partial class LibraryViewModel : ObservableObject
     [ObservableProperty]
     private bool _hasIndexedAssets;
 
+    /// <summary>
+    /// True until the first numbers are read. The counts start at zero, so an empty library and a screen that is still
+    /// loading would look the same; the cards show a dash while this is set. It starts true so even the first frame,
+    /// before the page has run its start-up, does not show a zero that is not real.
+    /// </summary>
+    [ObservableProperty]
+    private bool _isStatsLoading = true;
+
+    /// <summary>True while the numbers of the start-up are still on their way; a later periodic refresh leaves the flag alone.</summary>
+    private bool _statsLoadPending;
+
+    /// <summary>True once the first read of the numbers has come back; a later visit of the page keeps them on screen.</summary>
+    private bool _statsShown;
+
     /// <summary>The folders to index, in the order they were added (this is what is saved and indexed).</summary>
     public ObservableCollection<string> TargetFolders { get; } = new();
 
@@ -246,10 +260,22 @@ public partial class LibraryViewModel : ObservableObject
         if (!_loadingSettings) SaveSettings();
     }
 
+    /// <summary>
+    /// When on, FFmpeg runs in a child process (one per video) instead of inside the app; off keeps it in the app. A
+    /// build without the child executable keeps it in the app even when this is on. Applies to videos indexed from now on.
+    /// </summary>
+    [ObservableProperty]
+    private bool _useFfmpegWorker = true;
+
+    partial void OnUseFfmpegWorkerChanged(bool value)
+    {
+        if (!_loadingSettings) SaveSettings();
+    }
+
     // ---- diagnostics switches for video ingestion (this session only) ----
     //
-    // The five values live in RunDiagnosticsOptions, one process-wide store that the worker reads (the two counts when
-    // a run starts, the three switches per video and per frame). Every change here is written straight to it, so the
+    // The four values live in RunDiagnosticsOptions, one process-wide store that the worker reads (the two counts when
+    // a run starts, the two switches per video and per frame). Every change here is written straight to it, so the
     // next run uses it, and none of them goes into SaveSettings: library.json keeps only the real settings, and the
     // values start again from the store (environment variables) at the next start.
 
@@ -285,12 +311,6 @@ public partial class LibraryViewModel : ObservableObject
     private bool _frameTracing;
 
     partial void OnFrameTracingChanged(bool value) => _runDiagnostics.FrameTracing = value;
-
-    /// <summary>When on, FFmpeg runs in a child process (one per video) instead of in the app. Read per video.</summary>
-    [ObservableProperty]
-    private bool _useFfmpegWorker;
-
-    partial void OnUseFfmpegWorkerChanged(bool value) => _runDiagnostics.UseFfmpegWorker = value;
 
     /// <summary>
     /// When on, the loopback diagnostics API listens (see <c>DiagApiServer</c>); off by default, as before. The app
@@ -515,6 +535,15 @@ public partial class LibraryViewModel : ObservableObject
     /// </summary>
     public async Task InitializeCoreAsync()
     {
+        // The counters are still zero until they are read, so the cards show a dash instead: on the first start-up
+        // (the field starts true) and again after a profile change, but not on a later visit of the page, where the
+        // numbers are already known and would only flicker away for the short light refresh.
+        if (!_statsShown)
+        {
+            IsStatsLoading = true;
+            _statsLoadPending = true;
+        }
+
         // The engine is created in the background (the app starts right away), so the screen says "initializing" at
         // once and is updated when the engine is there. Nothing here waits for the engine.
         IsEngineReady = false;
@@ -537,6 +566,7 @@ public partial class LibraryViewModel : ObservableObject
                 VideoSegmentIndex = Math.Max(0, VideoSegmentChoiceList.IndexOf(saved.VideoSegmentSeconds));
                 VideoAutoSegment = saved.VideoAutoSegment;
                 UseFfmpegDecoder = saved.UseFfmpegDecoder;
+                UseFfmpegWorker = saved.UseFfmpegWorker;
                 IndexImages = saved.IndexImages;
                 IndexPdfs = saved.IndexPdfs;
                 IndexVideos = saved.IndexVideos;
@@ -656,6 +686,12 @@ public partial class LibraryViewModel : ObservableObject
         _statsAt = DateTime.MinValue;
         _indexedPaths = Array.Empty<string>();
         _folderCounts = new();
+
+        // The numbers on the cards belong to the old profile: they are replaced by a dash until the new ones are read.
+        _statsShown = false;
+        IsStatsLoading = true;
+        _statsLoadPending = true;
+
         var pending = Interlocked.Exchange(ref _deferredRefreshCts, null);
         pending?.Cancel(); // not disposed: the refresh that uses it may still be running
 
@@ -748,6 +784,18 @@ public partial class LibraryViewModel : ObservableObject
         catch (Exception ex)
         {
             System.Diagnostics.Debug.WriteLine($"Error refreshing library stats: {ex.Message}");
+        }
+        finally
+        {
+            // Only the first read takes the dashes away: the periodic refresh while an index is being built must not
+            // make the numbers disappear and come back on every tick. A failed first read also ends the wait, so the
+            // cards do not stay on the dash for ever.
+            if (_statsLoadPending)
+            {
+                _statsLoadPending = false;
+                _statsShown = true;
+                IsStatsLoading = false;
+            }
         }
     }
 
@@ -865,6 +913,7 @@ public partial class LibraryViewModel : ObservableObject
             settings.AutoIndex = AutoIndex;
             settings.VideoAutoSegment = VideoAutoSegment;
             settings.UseFfmpegDecoder = UseFfmpegDecoder;
+            settings.UseFfmpegWorker = UseFfmpegWorker;
             settings.IndexImages = IndexImages;
             settings.IndexPdfs = IndexPdfs;
             settings.IndexVideos = IndexVideos;

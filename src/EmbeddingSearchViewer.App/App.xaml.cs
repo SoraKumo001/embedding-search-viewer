@@ -60,9 +60,9 @@ public partial class App : Application
         // The ingestion trace writes to the same file (opened per line, so a hard crash keeps the last lines).
         EmbeddingSearchViewer.Infrastructure.Core.IngestTrace.Sink = (line, ex) => CrashLog.Write(line, ex);
 
-        // Run diagnostics (video parallelism, FFmpeg permit, decoder markers, frame tracing, the FFmpeg worker child) live
-        // in one store. Its environment variables are read here, once, as the initial values; the worker reads the store
-        // at each run start and the frame path reads it per frame.
+        // Run diagnostics (video parallelism, FFmpeg permit, decoder markers, frame tracing) live in one store. Its
+        // environment variables are read here, once, as the initial values; the worker reads the store at each run
+        // start and the frame path reads it per frame. The FFmpeg worker choice is a saved setting instead.
         var runDiagnostics = new RunDiagnosticsOptions();
         EmbeddingSearchViewer.Infrastructure.Core.IngestTrace.FrameDetailProvider = () => runDiagnostics.FrameTracing;
         // An error on the UI thread (for example while a progress update is drawn) is recorded and the app keeps running.
@@ -102,12 +102,16 @@ public partial class App : Application
             var ffmpegSource = new FFmpegFrameSource();
             var mediaFoundationSource = new MediaFoundationFrameSource();
             // The opt-in split: FFmpeg runs in a child process (one per video), so nothing native is shared between
-            // videos decoded at once. Off by default; the switch is read per video, like the decoder choice.
+            // videos decoded at once. Saved with the library settings and read per run, like the decoder choice.
             var ffmpegWorkerSource = new ChildProcessFrameSource(ResolveFfmpegWorkerPath());
             var videoExtractor = new VideoSegmentExtractor(() =>
             {
-                if (!ShouldUseFfmpegDecoder(settingsStore)) return new IVideoFrameSource[] { mediaFoundationSource };
-                if (runDiagnostics.UseFfmpegWorker && ffmpegWorkerSource.IsAvailable)
+                // One read per run: the three choices (decoder, worker, missing executable) fall back silently to the
+                // in-process FFmpeg chain or to Media Foundation alone, which are the paths that existed before.
+                var settings = settingsStore.Load();
+                bool useFfmpeg = !DisableFfmpegDecoder && settings.UseFfmpegDecoder;
+                if (!useFfmpeg) return new IVideoFrameSource[] { mediaFoundationSource };
+                if (settings.UseFfmpegWorker && ffmpegWorkerSource.IsAvailable)
                 {
                     return new IVideoFrameSource[] { ffmpegWorkerSource, mediaFoundationSource };
                 }
@@ -174,16 +178,9 @@ public partial class App : Application
     }
 
     /// <summary>
-    /// Whether videos are decoded with FFmpeg first. The --no-ffmpeg flag wins over the setting; a change applies to the
-    /// videos indexed from then on (the extractor calls this per run).
-    /// </summary>
-    private static bool ShouldUseFfmpegDecoder(LibrarySettingsStore settingsStore)
-        => !DisableFfmpegDecoder && settingsStore.Load().UseFfmpegDecoder;
-
-    /// <summary>
     /// The FFmpeg worker executable, copied next to the app under <c>FfmpegWorker\</c> at build and publish time.
-    /// Null when it is not there: the worker switch then has nothing to offer, and the in-process decoders stay as
-    /// they are (which is also the default).
+    /// Null when it is not there: the worker setting then has nothing to offer, and the in-process FFmpeg chain stays
+    /// as it is (silent fallback, one line in the crash log).
     /// </summary>
     private static string? ResolveFfmpegWorkerPath()
     {

@@ -459,7 +459,7 @@ GPU が使えない（作成に失敗、実行中に失敗）ときは、自動�
 
 ### 10.4.3 動画デコードの検証用スイッチ
 
-デコード経路（FFmpeg か Windows のメディア機能か、アプリの中か子プロセスか、同時に何本か）を、画面と API から切り替えて確かめるための仕組みです。**利用者向けの設定ではありません。既定値はすべて従来の動作**で、`library.json` のスキーマも変わりません（新しいキーは増えません）。保存されるのは、もとからある `UseFfmpegDecoder` だけで、残りは `RunDiagnosticsOptions`（プロセス内の 1 つの入れ物）に置き、アプリを閉じると消えます。
+デコード経路（FFmpeg か Windows のメディア機能か、アプリの中か子プロセスか、同時に何本か）を、画面と API から切り替えて確かめるための仕組みです。既定値はすべて従来の動作です。**`UseFfmpegWorker` は通常の設定**で、`library.json` に保存され、既定はオンです（下の表を参照）。残りの検証用スイッチは `RunDiagnosticsOptions`（プロセス内の 1 つの入れ物）に置き、アプリを閉じると消えます。
 
 **設定の置き場所**
 
@@ -470,11 +470,11 @@ GPU が使えない（作成に失敗、実行中に失敗）ときは、自動�
 | FFmpeg の同時実行数（`FfmpegPermit`） | インメモリ | 1（1〜2） | 次回の実行開始時（実行中は変えられない） |
 | 前回の中断の印を無視する（`IgnoreDecoderMarkers`） | インメモリ | オフ | 動画ごと（即時） |
 | フレームごとの記録（`FrameTracing`） | インメモリ | オフ | フレームごと（即時） |
-| FFmpeg を別プロセスで動かす（`UseFfmpegWorker`） | インメモリ | オフ | 動画ごと（即時） |
+| FFmpeg を別プロセスで動かす（`UseFfmpegWorker`） | `library.json`（画面のチェックボックスと `PUT /v1/options`） | オン（true） | 次回の実行開始時（実行中の動画は変えない） |
 | 診断 API（`EnableDiagApi`） | インメモリ | オフ | 即時（リスナーの起動・停止） |
 | `ESV_*` の環境変数 | 起動時の初期値だけ | 上のとおり | 起動時（動いているアプリには効かない） |
 
-インメモリの値は保存しないので、再起動すると必ず既定（環境変数があればその値）に戻ります。とくに `IgnoreDecoderMarkers` は揮発で、再起動後は「印を尊重する」に戻ります。
+インメモリの値は保存しないので、再起動すると必ず既定（環境変数があればその値）に戻ります。とくに `IgnoreDecoderMarkers` は揮発で、再起動後は「印を尊重する」に戻ります。`UseFfmpegWorker` だけは `library.json` に残り、再起動後も前回の値です（キーが無い古いファイルはオンとして読まれます）。
 
 **デコーダの選択（動画 1 本ごとに評価）**
 
@@ -482,13 +482,14 @@ GPU が使えない（作成に失敗、実行中に失敗）ときは、自動�
 --no-ffmpeg（起動引数）                      → Media Foundation のみ（設定とスイッチより優先）
 UseFfmpegDecoder = false                     → Media Foundation のみ
 UseFfmpegWorker = true（worker が同梱）       → FFmpegWorker → Media Foundation
-上記以外（既定）                              → FFmpeg → Media Foundation
+UseFfmpegWorker = true（worker が無い）       → FFmpeg → Media Foundation（黙ってフォールバック）
+上記以外（worker がオフ）                     → FFmpeg → Media Foundation
 マーカーあり（IgnoreDecoderMarkers = false）  → Media Foundation のみ（その 1 回だけ）
 ```
 
-- チェーンは `App.xaml.cs` の `VideoSegmentExtractor` に渡すデリゲートで決まり、取り込みのたびに評価されます。実行中に切り替えても、走っている動画には影響せず、次の動画から適用されます。
+- チェーンは `App.xaml.cs` の `VideoSegmentExtractor` に渡すデリゲートで決まり、取り込みのたびに評価されます。`UseFfmpegDecoder` と `UseFfmpegWorker` は実行のたびに `library.json` から読みます。実行中に切り替えても、走っている実行には影響せず、次回の実行から適用されます（`IgnoreDecoderMarkers` だけは動画ごと）。
 - 先頭のデコーダーがそのファイルを開けなければ（コーデック非対応など）、同じ動画を Media Foundation で読み直します。どちらも読めなければ、ファイル名だけでインデックスします（10.4.1）。
-- 子プロセスの worker は `FfmpegWorker\EmbeddingSearchViewer.FfmpegWorker.exe`（ビルド・公開でアプリの隣にコピー）。無いビルドでは `ChildProcessFrameSource.IsAvailable` が偽になり、`UseFfmpegWorker` は**黙って無視**されます（プロセス内の FFmpeg のまま）。起動時にクラッシュログへ 1 行だけ残ります。
+- 子プロセスの worker は `FfmpegWorker\EmbeddingSearchViewer.FfmpegWorker.exe`（ビルド・公開でアプリの隣にコピー）。無いビルドでは `ChildProcessFrameSource.IsAvailable` が偽になり、**黙って**プロセス内の FFmpeg に戻ります。起動時にクラッシュログへ 1 行だけ残ります。
 - `--no-ffmpeg` は設定もスイッチも上書きします（ヘッドレスの確認用）。
 
 **マーカー（`cache\video\<キー>\ffmpeg.active`）**
@@ -525,12 +526,12 @@ UseFfmpegWorker = true（worker が同梱）       → FFmpegWorker → Media Fo
 | `ESV_FFMPEG_PERMIT` | `FfmpegPermit` | 1 | 起動時（値は 1〜2 に丸め） |
 | `ESV_IGNORE_DECODER_MARKERS` | `IgnoreDecoderMarkers` | オフ | 起動時（動画ごとに読む値の初期値） |
 | `ESV_INGEST_TRACE_FRAMES` | `FrameTracing` | オフ | 起動時（フレームごとに読む値の初期値） |
-| `ESV_FFMPEG_WORKER` | `UseFfmpegWorker` | オフ | 起動時（worker の exe があるときだけ効く） |
 | `ESV_DIAG_API` | `EnableDiagApi` | オフ | 起動時（`1` なら起動と同時に待ち受ける） |
 
 - `App` のコンストラクタで 1 回だけ読みます。以後はインメモリの値が唯一の正で、環境変数を変えても動いているアプリには効きません。
 - 真偽は `"1"` の完全一致だけです（`"true"` や `"yes"` は無効）。数値は `int.TryParse` で、失敗したら既定。
 - **検証と CI 専用**。利用者の設定でも、リリースの既定値でもありません。CI（ヘッドレス）で経路を固定したいとき以外は設定しないでください。設定すると、次回の起動から既定値が変わります（`library.json` には影響しません）。
+- `ESV_FFMPEG_WORKER` は廃止しました。worker の選択は `library.json` の `UseFfmpegWorker` だけが持ちます（環境変数との二重の真実源を作らないため）。
 
 **診断 API（`DiagApiServer`）**
 
@@ -544,11 +545,11 @@ UseFfmpegWorker = true（worker が同梱）       → FFmpegWorker → Media Fo
 
   クラッシュログにはポートと「トークンは起動コンソール」という案内だけを書き、トークンはファイルに残しません。
 - **認証**は `Authorization: Bearer <token>` か `?token=<token>`。無い・違うときは 401（`WWW-Authenticate: Bearer`）。
-- **適用タイミング**は `GET /v1/options` の `effectiveFrom` が答えます。`videoParallelism` と `ffmpegPermit` は `nextRun`、`ignoreDecoderMarkers`・`frameTracing`・`useFfmpegWorker`・`enableDiagApi` は `immediate`。
+- **適用タイミング**は `GET /v1/options` の `effectiveFrom` が答えます。`videoParallelism`・`ffmpegPermit`・`useFfmpegWorker` は `nextRun`、`ignoreDecoderMarkers`・`frameTracing`・`enableDiagApi` は `immediate`。
 - **409**: 実行中（`running: true`）に `videoParallelism` か `ffmpegPermit` を送ると、リクエスト全体を適用せず 409 を返します（`effectiveFrom: "nextRun"` と `current`）。ほかのスイッチを同じ本文に入れていても、何も適用しません。停止してから送り直してください。
-- `PUT /v1/options` は部分マージです。範囲外の値は丸めた値を返し、未知のキーと型違いは `ignored` に入れて無視します。`enableDiagApi: true` は no-op（応答している時点でオン）、`false` はこの応答を書いたあとに待ち受けを止めます。
+- `PUT /v1/options` は部分マージです。範囲外の値は丸めた値を返し、未知のキーと型違いは `ignored` に入れて無視します。`enableDiagApi: true` は no-op（応答している時点でオン）、`false` はこの応答を書いたあとに待ち受けを止めます。`useFfmpegWorker` は `LibrarySettings` の値で、画面のチェックボックスと同じ保存経路（`LibraryViewModel.SaveSettings`）を通して `library.json` に書きます。
 - start / stop は画面のボタンと同じ経路（`LibraryViewModel`）を通ります。worker を直接は叩きません（モデルの確認も画面と同じ）。
-- **非永続**。`library.json` にもファイルにも保存しません。再起動するとオフ（`ESV_DIAG_API=1` のときだけ最初からオン）です。
+- **`useFfmpegWorker` 以外は非永続**。`RunDiagnosticsOptions` の値は `library.json` にもファイルにも保存しません。再起動するとオフ（`ESV_DIAG_API=1` のときだけ最初からオン）です。`UseFfmpegWorker` だけは `library.json` に残ります。
 
 | メソッド | パス | 内容 |
 |---|---|---|

@@ -41,9 +41,10 @@ namespace EmbeddingSearchViewer_App.Services;
 /// <para>
 /// <b>Run-bound knobs.</b> Video parallelism and the FFmpeg permit are read by the worker when a run starts, so they
 /// cannot be changed while a run is in progress. A PUT that asks for one of them during a run is rejected as a whole
-/// (409, nothing applied) and the body declares that it applies from the next run; the other three switches (decoder
-/// markers, frame tracing, the FFmpeg worker) are read per video / per frame and can change at any time. The same rule
-/// is reported by <c>GET /v1/options</c> in <c>effectiveFrom</c>.
+/// (409, nothing applied) and the body declares that it applies from the next run; decoder markers and frame tracing
+/// are read per video / per frame and can change at any time. The FFmpeg worker choice is a saved setting
+/// (<c>LibrarySettings.UseFfmpegWorker</c>): it is persisted through the library view model's save path and applies to
+/// the videos of the next run. The same rule is reported by <c>GET /v1/options</c> in <c>effectiveFrom</c>.
 /// </para>
 /// </remarks>
 public sealed class DiagApiServer : IDisposable
@@ -74,6 +75,7 @@ public sealed class DiagApiServer : IDisposable
     private readonly IServiceProvider _services;
     private readonly IUiDispatcher _dispatcher;
     private readonly RunDiagnosticsOptions _options;
+    private readonly LibrarySettingsStore _settingsStore;
     private readonly IngestionPipelineWorker _worker;
     private readonly Action<IngestionProgress> _progressHandler;
 
@@ -98,6 +100,7 @@ public sealed class DiagApiServer : IDisposable
         _services = services;
         _dispatcher = dispatcher;
         _options = options;
+        _settingsStore = services.GetRequiredService<LibrarySettingsStore>();
         _worker = worker;
 
         // 128 bits from the OS RNG: 32 hex characters. Memory only, for the lifetime of the process.
@@ -452,7 +455,8 @@ public sealed class DiagApiServer : IDisposable
         ffmpegPermit = _options.FfmpegPermit,
         ignoreDecoderMarkers = _options.IgnoreDecoderMarkers,
         frameTracing = _options.FrameTracing,
-        useFfmpegWorker = _options.UseFfmpegWorker,
+        // Saved with the library settings (the same value the library page's checkbox writes), not a diagnostics value.
+        useFfmpegWorker = _settingsStore.Load().UseFfmpegWorker,
         // Turning this on through the API cannot be done: this answer only exists while the API already listens, so a
         // PUT of true is a no-op and the switch is really turned on from the library page (or ESV_DIAG_API=1). A PUT of
         // false does stop the API: the answer is still written, then the listener closes.
@@ -464,7 +468,8 @@ public sealed class DiagApiServer : IDisposable
             ffmpegPermit = "nextRun",
             ignoreDecoderMarkers = "immediate",
             frameTracing = "immediate",
-            useFfmpegWorker = "immediate",
+            // The library setting is read when a run starts, like the decoder choice.
+            useFfmpegWorker = "nextRun",
             enableDiagApi = "immediate",
         },
         ranges = new
@@ -480,6 +485,8 @@ public sealed class DiagApiServer : IDisposable
     /// during a run rejects the whole request with 409 and applies nothing; retry it after the stop for the next run.
     /// <c>enableDiagApi</c> is applied at once: true is a no-op (the API is answering, so it is already on; it is turned
     /// on from the library page or <c>ESV_DIAG_API=1</c>) and false stops the listener after this answer is written.
+    /// <c>useFfmpegWorker</c> is a saved library setting: it is written through the view model's save path and applies
+    /// to the videos of the next run.
     /// </summary>
     private async Task<ApiResponse> PutOptionsAsync(DiagRequest request, CancellationToken token)
     {
@@ -573,7 +580,16 @@ public sealed class DiagApiServer : IDisposable
         }
         if (useFfmpegWorker.HasValue)
         {
-            _options.UseFfmpegWorker = useFfmpegWorker.Value;
+            // A saved setting, not a diagnostics value: it goes through the library view model, whose property writes
+            // the settings file (the same path as the checkbox). The page may never have been opened, so its own
+            // start-up is run first: that loads the folders the save would otherwise write back as empty.
+            bool value = useFfmpegWorker.Value;
+            await _dispatcher.EnqueueAsync(async () =>
+            {
+                var viewModel = _services.GetRequiredService<LibraryViewModel>();
+                if (viewModel.TargetFolders.Count == 0) await viewModel.InitializeAsync();
+                viewModel.UseFfmpegWorker = value;
+            }).ConfigureAwait(false);
             applied.Add("useFfmpegWorker");
         }
         if (enableDiagApi.HasValue)
@@ -594,7 +610,7 @@ public sealed class DiagApiServer : IDisposable
             ffmpegPermit = _options.FfmpegPermit,
             ignoreDecoderMarkers = _options.IgnoreDecoderMarkers,
             frameTracing = _options.FrameTracing,
-            useFfmpegWorker = _options.UseFfmpegWorker,
+            useFfmpegWorker = _settingsStore.Load().UseFfmpegWorker,
             enableDiagApi = _options.EnableDiagApi,
             running = _worker.IsRunning,
             effectiveFrom = new
@@ -603,7 +619,7 @@ public sealed class DiagApiServer : IDisposable
                 ffmpegPermit = "nextRun",
                 ignoreDecoderMarkers = "immediate",
                 frameTracing = "immediate",
-                useFfmpegWorker = "immediate",
+                useFfmpegWorker = "nextRun",
                 enableDiagApi = "immediate",
             },
         });

@@ -298,6 +298,12 @@
   <data name="Library.CheckBox06.Content" xml:space="preserve">
     <value>動画のデコードに FFmpeg を使う（オフのときは Windows のメディア機能のみ。これから取り込む動画に適用されます）</value>
   </data>
+  <data name="Library.CheckBoxFfmpegWorker.Content" xml:space="preserve">
+    <value>FFmpeg を別のプロセスで動かす（オンが既定。オフのときと、子プロセスの実行ファイルが無いビルドではアプリ内で動く）</value>
+  </data>
+  <data name="Library.CheckBoxFfmpegWorker.ToolTip" xml:space="preserve">
+    <value>FFmpeg のデコードを子プロセスに分け、アプリ本体とはメモリを共有しない。同時に複数の動画を処理しても FFmpeg が 1 つのプロセスで並行しないため、デコーダの不具合でアプリが落ちるのを避けられる。子プロセスが異常終了した動画は、次回 Windows のメディア機能で読み直す。オンが既定で、これから取り込む動画に適用する。子プロセスの実行ファイルが無いビルドでは効かず、アプリ内の FFmpeg のまま動く。</value>
+  </data>
   <data name="Library.ComboBox01.Header" xml:space="preserve">
     <value>動画の場面の間隔（1 場面につき 1 枚のフレームを検索の対象にします）</value>
   </data>
@@ -339,12 +345,6 @@
   </data>
   <data name="Library.Diagnostics.Permit.Text" xml:space="preserve">
     <value>FFmpeg の同時実行数（1〜2、既定 1。2 は実験用で、次の実行から適用）</value>
-  </data>
-  <data name="Library.Diagnostics.UseWorker.Text" xml:space="preserve">
-    <value>FFmpeg を別のプロセスで動かす（動画 1 本につき 1 プロセス。次の動画から適用されます）</value>
-  </data>
-  <data name="Library.Diagnostics.UseWorker.ToolTip" xml:space="preserve">
-    <value>FFmpeg のデコードを子プロセスに分け、アプリ本体とはメモリを共有しません。同時に複数の動画を処理しても FFmpeg が同じプロセスで並行しないため、デコーダの不具合でアプリが落ちるのを避けられます。子プロセスが異常終了した動画は、次回 Windows のメディア機能で読み直します。既定はオフで、切り替えは次の動画からすぐ適用されます。子プロセスの実行ファイルが同梱されていないビルドでは、この設定は効きません（アプリ内の FFmpeg のまま）。</value>
   </data>
   <data name="Library.Diagnostics.Readout.Text" xml:space="preserve">
     <value>実行中の数値</value>
@@ -456,6 +456,12 @@
   </data>
   <data name="Library.SettingsSaveFailed" xml:space="preserve">
     <value>設定を保存できませんでした: {0}</value>
+  </data>
+  <data name="Library.Stats.Loading.ToolTip" xml:space="preserve">
+    <value>統計を読み込み中</value>
+  </data>
+  <data name="Library.Stats.Placeholder.Text" xml:space="preserve">
+    <value>—</value>
   </data>
   <data name="Library.Status.Ready" xml:space="preserve">
     <value>準備完了</value>

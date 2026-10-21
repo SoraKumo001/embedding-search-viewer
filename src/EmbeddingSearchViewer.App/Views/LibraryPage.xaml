@@ -37,6 +37,11 @@
                     <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
                         <FontIcon Glyph="&#xEC27;" FontSize="16" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" />
                         <TextBlock loc:L.Uid="Library.TextBlock04" FontWeight="SemiBold" VerticalAlignment="Center" />
+                        <!-- The numbers are read in the background: this says they are on their way, so a zero on the cards is not taken for an empty library. -->
+                        <ProgressRing Width="16" Height="16" VerticalAlignment="Center"
+                                      IsActive="{x:Bind ViewModel.IsStatsLoading, Mode=OneWay}"
+                                      Visibility="{x:Bind ViewModel.IsStatsLoading, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
+                                      loc:L.Uid="Library.Stats.Loading" />
                     </StackPanel>
                     <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4">
                         <Button loc:L.Uid="Library.Button01" Command="{x:Bind ViewModel.RefreshLibraryStatsCommand}"
@@ -80,7 +85,13 @@
                             BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="6" Padding="12,10">
                         <StackPanel Spacing="4">
                             <TextBlock loc:L.Uid="Library.TextBlock09" Style="{ThemeResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                            <TextBlock Text="{x:Bind ViewModel.TotalIndexedAssets, Mode=OneWay}" Style="{ThemeResource SubtitleTextBlockStyle}" FontWeight="Bold" />
+                            <Grid>
+                                <TextBlock Text="{x:Bind ViewModel.TotalIndexedAssets, Mode=OneWay}" Style="{ThemeResource SubtitleTextBlockStyle}" FontWeight="Bold"
+                                           Visibility="{x:Bind ViewModel.IsStatsLoading, Mode=OneWay, Converter={StaticResource InverseBoolToVisibilityConverter}}" />
+                                <TextBlock loc:L.Uid="Library.Stats.Placeholder" Style="{ThemeResource SubtitleTextBlockStyle}" FontWeight="Bold"
+                                           Foreground="{ThemeResource TextFillColorTertiaryBrush}"
+                                           Visibility="{x:Bind ViewModel.IsStatsLoading, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}" />
+                            </Grid>
                         </StackPanel>
                     </Border>
 
@@ -92,7 +103,13 @@
                                 <FontIcon Glyph="&#xEB9F;" FontSize="12" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" />
                                 <TextBlock loc:L.Uid="Library.TextBlock10" Style="{ThemeResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                             </StackPanel>
-                            <TextBlock Text="{x:Bind ViewModel.IndexedImageCount, Mode=OneWay}" Style="{ThemeResource SubtitleTextBlockStyle}" FontWeight="Bold" />
+                            <Grid>
+                                <TextBlock Text="{x:Bind ViewModel.IndexedImageCount, Mode=OneWay}" Style="{ThemeResource SubtitleTextBlockStyle}" FontWeight="Bold"
+                                           Visibility="{x:Bind ViewModel.IsStatsLoading, Mode=OneWay, Converter={StaticResource InverseBoolToVisibilityConverter}}" />
+                                <TextBlock loc:L.Uid="Library.Stats.Placeholder" Style="{ThemeResource SubtitleTextBlockStyle}" FontWeight="Bold"
+                                           Foreground="{ThemeResource TextFillColorTertiaryBrush}"
+                                           Visibility="{x:Bind ViewModel.IsStatsLoading, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}" />
+                            </Grid>
                         </StackPanel>
                     </Border>
 
@@ -104,7 +121,13 @@
                                 <FontIcon Glyph="&#xEA90;" FontSize="12" Foreground="{ThemeResource SystemFillColorCautionBrush}" />
                                 <TextBlock loc:L.Uid="Library.TextBlock11" Style="{ThemeResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                             </StackPanel>
-                            <TextBlock Text="{x:Bind ViewModel.IndexedPdfCount, Mode=OneWay}" Style="{ThemeResource SubtitleTextBlockStyle}" FontWeight="Bold" />
+                            <Grid>
+                                <TextBlock Text="{x:Bind ViewModel.IndexedPdfCount, Mode=OneWay}" Style="{ThemeResource SubtitleTextBlockStyle}" FontWeight="Bold"
+                                           Visibility="{x:Bind ViewModel.IsStatsLoading, Mode=OneWay, Converter={StaticResource InverseBoolToVisibilityConverter}}" />
+                                <TextBlock loc:L.Uid="Library.Stats.Placeholder" Style="{ThemeResource SubtitleTextBlockStyle}" FontWeight="Bold"
+                                           Foreground="{ThemeResource TextFillColorTertiaryBrush}"
+                                           Visibility="{x:Bind ViewModel.IsStatsLoading, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}" />
+                            </Grid>
                         </StackPanel>
                     </Border>
 
@@ -116,7 +139,13 @@
                                 <FontIcon Glyph="&#xE714;" FontSize="12" Foreground="{ThemeResource SystemFillColorCriticalBrush}" />
                                 <TextBlock loc:L.Uid="Library.TextBlock12" Style="{ThemeResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                             </StackPanel>
-                            <TextBlock Text="{x:Bind ViewModel.IndexedVideoCount, Mode=OneWay}" Style="{ThemeResource SubtitleTextBlockStyle}" FontWeight="Bold" />
+                            <Grid>
+                                <TextBlock Text="{x:Bind ViewModel.IndexedVideoCount, Mode=OneWay}" Style="{ThemeResource SubtitleTextBlockStyle}" FontWeight="Bold"
+                                           Visibility="{x:Bind ViewModel.IsStatsLoading, Mode=OneWay, Converter={StaticResource InverseBoolToVisibilityConverter}}" />
+                                <TextBlock loc:L.Uid="Library.Stats.Placeholder" Style="{ThemeResource SubtitleTextBlockStyle}" FontWeight="Bold"
+                                           Foreground="{ThemeResource TextFillColorTertiaryBrush}"
+                                           Visibility="{x:Bind ViewModel.IsStatsLoading, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}" />
+                            </Grid>
                         </StackPanel>
                     </Border>
 
@@ -128,7 +157,13 @@
                                 <FontIcon Glyph="&#xE8A5;" FontSize="12" Foreground="{ThemeResource SystemFillColorSuccessBrush}" />
                                 <TextBlock loc:L.Uid="Library.TextBlock20" Style="{ThemeResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                             </StackPanel>
-                            <TextBlock Text="{x:Bind ViewModel.IndexedDocumentCount, Mode=OneWay}" Style="{ThemeResource SubtitleTextBlockStyle}" FontWeight="Bold" />
+                            <Grid>
+                                <TextBlock Text="{x:Bind ViewModel.IndexedDocumentCount, Mode=OneWay}" Style="{ThemeResource SubtitleTextBlockStyle}" FontWeight="Bold"
+                                           Visibility="{x:Bind ViewModel.IsStatsLoading, Mode=OneWay, Converter={StaticResource InverseBoolToVisibilityConverter}}" />
+                                <TextBlock loc:L.Uid="Library.Stats.Placeholder" Style="{ThemeResource SubtitleTextBlockStyle}" FontWeight="Bold"
+                                           Foreground="{ThemeResource TextFillColorTertiaryBrush}"
+                                           Visibility="{x:Bind ViewModel.IsStatsLoading, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}" />
+                            </Grid>
                         </StackPanel>
                     </Border>
                 </Grid>
@@ -222,6 +257,9 @@
                     <CheckBox loc:L.Uid="Library.CheckBox06"
                               IsChecked="{x:Bind ViewModel.UseFfmpegDecoder, Mode=TwoWay}"
                               AutomationProperties.Name="Use FFmpeg for Video Decoding" />
+                    <CheckBox loc:L.Uid="Library.CheckBoxFfmpegWorker"
+                              IsChecked="{x:Bind ViewModel.UseFfmpegWorker, Mode=TwoWay}"
+                              AutomationProperties.Name="Decode FFmpeg in a Separate Process" />
                     <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
                         <TextBlock Text="{x:Bind ViewModel.CurrentStatusMessage, Mode=OneWay}" VerticalAlignment="Center"
                                    Style="{ThemeResource CaptionTextBlockStyle}" TextTrimming="CharacterEllipsis" />
@@ -304,12 +342,6 @@
                                   AutomationProperties.Name="Trace Every Frame">
                             <CheckBox.Content>
                                 <TextBlock loc:L.Uid="Library.Diagnostics.FrameTracing" TextWrapping="Wrap" />
-                            </CheckBox.Content>
-                        </CheckBox>
-                        <CheckBox IsChecked="{x:Bind ViewModel.UseFfmpegWorker, Mode=TwoWay}"
-                                  AutomationProperties.Name="Decode FFmpeg in a Separate Process">
-                            <CheckBox.Content>
-                                <TextBlock loc:L.Uid="Library.Diagnostics.UseWorker" TextWrapping="Wrap" />
                             </CheckBox.Content>
                         </CheckBox>
                         <CheckBox IsChecked="{x:Bind ViewModel.EnableDiagApi, Mode=TwoWay}"
