@@ -683,7 +683,7 @@
     <value>The profile was not found.</value>
   </data>
   <data name="Restore.Confirm.Body" xml:space="preserve">
-    <value>This replaces the profile "{0}" with the contents of the backup. The current index, folder settings and search history of that profile are lost. Your original images, PDFs and videos are not deleted.</value>
+    <value>This replaces the profile "{0}" with the contents of the backup. The current index, folder settings and search history of that profile are lost. Your original images, PDFs, videos and Office documents are not deleted.</value>
   </data>
   <data name="Restore.Confirm.Primary" xml:space="preserve">
     <value>Restore</value>
@@ -1007,7 +1007,7 @@
     <value>Cannot create the profile</value>
   </data>
   <data name="Shell.Delete.Body" xml:space="preserve">
-    <value>Deletes the index, the cache, the folder settings and the search history of the selected profile. Your original images, PDFs and videos are not deleted.</value>
+    <value>Deletes the index, the cache, the folder settings and the search history of the selected profile. Your original images, PDFs, videos and Office documents are not deleted.</value>
   </data>
   <data name="Shell.Delete.Primary" xml:space="preserve">
     <value>Delete</value>

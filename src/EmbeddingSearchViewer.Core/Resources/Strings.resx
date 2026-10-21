@@ -152,7 +152,7 @@
     <value>既定のフォトアプリで開く</value>
   </data>
   <data name="ImagePreview.OpenInExplorerButton.ToolTip" xml:space="preserve">
-    <value>エクスプローラーで、このファイルの場所を開く</value>
+    <value>エクスプローラーでこのファイルの場所を開く</value>
   </data>
   <data name="ImagePreview.TextBlock01.Text" xml:space="preserve">
     <value>エクスプローラーで開く</value>
@@ -176,10 +176,10 @@
     <value> ほか {0} 件</value>
   </data>
   <data name="Ingest.Failed.RetryNext" xml:space="preserve">
-    <value>。もう一度インデックスを作成すると、再度、試します。</value>
+    <value>。もう一度インデックスを作成すると再度試行します。</value>
   </data>
   <data name="Ingest.Failed.WillExclude" xml:space="preserve">
-    <value>。壊れている可能性が高いので、次回から、インデックスの対象から外します（「ライブラリ管理」の「外したファイル」で、解除できます）。</value>
+    <value>。ファイルが破損している可能性があるため、次回からインデックス対象から除外します（「ライブラリ管理」の「除外ファイル」から解除できます）。</value>
   </data>
   <data name="Ingest.FileOpenFailed" xml:space="preserve">
     <value>ファイルを開けませんでした</value>
@@ -239,7 +239,7 @@
     <value>対象に戻す</value>
   </data>
   <data name="Library.Button08.ToolTip" xml:space="preserve">
-    <value>次回のインデックス作成で、もう一度、試します</value>
+    <value>次回のインデックス作成で再度試行します</value>
   </data>
   <data name="Library.Button09.Content" xml:space="preserve">
     <value>すべて対象に戻す</value>
@@ -248,7 +248,7 @@
     <value>エクスプローラーで開く</value>
   </data>
   <data name="Library.Button10.ToolTip" xml:space="preserve">
-    <value>ファイルを選択した状態で、エクスプローラーを開きます</value>
+    <value>ファイルを選択した状態でエクスプローラーを開きます</value>
   </data>
   <data name="Library.TextBlock19.Text" xml:space="preserve">
     <value>インデックスに入れるファイルの種類（変更は、次回のインデックス作成から有効です。すでに入っているファイルは、そのまま残ります）</value>
@@ -293,16 +293,16 @@
     <value>インデックスをクリアしました ({0} 件)</value>
   </data>
   <data name="Library.CheckBox01.Content" xml:space="preserve">
-    <value>長い動画は、場面の間隔を自動で広げる（1 本あたり、最大 400 場面まで）</value>
+    <value>長尺動画の場面間隔を自動で広げる（1本あたり最大400場面まで）</value>
   </data>
   <data name="Library.CheckBox06.Content" xml:space="preserve">
     <value>動画のデコードに FFmpeg を使う（オフのときは Windows のメディア機能のみ。これから取り込む動画に適用されます）</value>
   </data>
   <data name="Library.CheckBoxFfmpegWorker.Content" xml:space="preserve">
-    <value>FFmpeg を別のプロセスで動かす（オンが既定。オフのときと、子プロセスの実行ファイルが無いビルドではアプリ内で動く）</value>
+    <value>FFmpeg を別プロセスで実行する（推奨。オフ時や子プロセスがない場合はアプリ内で実行）</value>
   </data>
   <data name="Library.CheckBoxFfmpegWorker.ToolTip" xml:space="preserve">
-    <value>FFmpeg のデコードを子プロセスに分け、アプリ本体とはメモリを共有しない。同時に複数の動画を処理しても FFmpeg が 1 つのプロセスで並行しないため、デコーダの不具合でアプリが落ちるのを避けられる。子プロセスが異常終了した動画は、次回 Windows のメディア機能で読み直す。オンが既定で、これから取り込む動画に適用する。子プロセスの実行ファイルが無いビルドでは効かず、アプリ内の FFmpeg のまま動く。</value>
+    <value>FFmpeg のデコードを子プロセスに分離し、アプリ本体とメモリを共有しません。同時に複数の動画を処理しても FFmpeg が単一プロセス内で並行動作しないため、デコーダーの不具合によるアプリのクラッシュを防止できます。子プロセスが異常終了した動画は、次回 Windows のメディア機能で読み直します。オンが既定で、これから取り込む動画に適用されます。子プロセスの実行ファイルが無いビルドでは無効となり、アプリ内動作のままとなります。</value>
   </data>
   <data name="Library.ComboBox01.Header" xml:space="preserve">
     <value>動画の場面の間隔（1 場面につき 1 枚のフレームを検索の対象にします）</value>
@@ -362,7 +362,7 @@
     <value>すべてのインデックス作成が完了しました ({0}/{1} 件)</value>
   </data>
   <data name="Library.Done.Excluded" xml:space="preserve">
-    <value>。前回、読み込めなかった {0} 件は、対象から外しています</value>
+    <value>。前回読み込めなかった {0} 件は対象から除外しています</value>
   </data>
   <data name="Library.Done.Skipped" xml:space="preserve">
     <value>。うち {0} 件は白紙(ほぼ一色)のため対象外にしました</value>
@@ -383,16 +383,16 @@
     <value>ONNX DirectML エンジン準備完了</value>
   </data>
   <data name="Library.Excluded.NoneToRestore" xml:space="preserve">
-    <value>外したファイルはありません</value>
+    <value>除外されたファイルはありません</value>
   </data>
   <data name="Library.Excluded.Restored" xml:space="preserve">
-    <value>{0} を、次回のインデックスの対象に戻しました</value>
+    <value>{0} を次回のインデックス対象に戻しました</value>
   </data>
   <data name="Library.Excluded.RestoredAll" xml:space="preserve">
-    <value>外していた {0} 件を、次回のインデックスの対象に戻しました</value>
+    <value>除外していた {0} 件を次回のインデックス対象に戻しました</value>
   </data>
   <data name="Library.ExcludedHeader" xml:space="preserve">
-    <value>インデックスから外したファイル ({0} 件)</value>
+    <value>インデックス除外ファイル ({0} 件)</value>
   </data>
   <data name="Library.IndexModelMismatch" xml:space="preserve">
     <value>このインデックスは別の埋め込みモデルで作成されています。検索結果が正しくならないため、「クリア」してからインデックスを作り直してください。</value>
@@ -518,10 +518,10 @@
     <value>「フォルダを追加」ボタンをクリックするか、フォルダをここにドラッグ&amp;ドロップしてください。</value>
   </data>
   <data name="Library.TextBlock17.Text" xml:space="preserve">
-    <value>間隔を長くすると、長い動画の取り込みが速くなりますが、検索できる場面は粗くなります。変更は、これから取り込む動画に適用されます（取り込み済みの動画は、「クリア」してから作り直してください）。</value>
+    <value>間隔を長くすると動画の取り込みが高速化されますが、検索できる場面の間隔は粗くなります。変更はこれから取り込む動画に適用されます（取り込み済みの動画に反映する場合は、「クリア」後にインデックスを再作成してください）。</value>
   </data>
   <data name="Library.TextBlock18.Text" xml:space="preserve">
-    <value>読み込みを、何度か試しても失敗したファイルは、壊れている可能性が高いので、次回から、インデックスの対象から外しています。ファイルを直したり、置き換えたりして、サイズや更新日時が変わると、自動で、対象に戻ります。</value>
+    <value>複数回読み込みに失敗したファイルは破損している可能性が高いため、次回からインデックス対象から除外されます。ファイルを修正または置き換えてサイズや更新日時が変更されると、自動的に対象へ復帰します。</value>
   </data>
   <data name="Library.ToggleSwitch01.Header" xml:space="preserve">
     <value>フォルダを監視して自動でインデックスを更新</value>
@@ -653,7 +653,7 @@
     <value>レンダリング失敗: {0}</value>
   </data>
   <data name="PdfPreview.OpenInExplorerButton.ToolTip" xml:space="preserve">
-    <value>エクスプローラーで、このファイルの場所を開く</value>
+    <value>エクスプローラーでこのファイルの場所を開く</value>
   </data>
   <data name="PdfPreview.TextBlock02.Text" xml:space="preserve">
     <value>エクスプローラーで開く</value>
@@ -683,7 +683,7 @@
     <value>プロファイルが見つかりません。</value>
   </data>
   <data name="Restore.Confirm.Body" xml:space="preserve">
-    <value>バックアップの内容でプロファイル「{0}」を置き換えます。このプロファイルの現在のインデックス、フォルダ設定、検索履歴は失われます。元の画像・PDF・動画は削除されません。</value>
+    <value>バックアップの内容でプロファイル「{0}」を上書き復元します。このプロファイルの現在のインデックス、フォルダ設定、検索履歴は上書きされます。元の画像・PDF・動画・Office 文書は削除されません。</value>
   </data>
   <data name="Restore.Confirm.Primary" xml:space="preserve">
     <value>復元</value>
@@ -770,7 +770,7 @@
     <value>動画を 1 件にまとめる</value>
   </data>
   <data name="Search.CheckBox02.ToolTip" xml:space="preserve">
-    <value>同じ動画の場面を 1 件にまとめます。選ぶと、プレビューの下に、一致した場面が並びます</value>
+    <value>同一動画の複数場面を1件にまとめます。選択すると、プレビューの下に一致した場面が一覧表示されます</value>
   </data>
   <data name="Search.ComboBoxItem01.Content" xml:space="preserve">
     <value>すべてのメディア</value>
@@ -833,7 +833,7 @@
     <value>ピン留めする</value>
   </data>
   <data name="Search.History.PinLimit" xml:space="preserve">
-    <value>ピン留めできるのは、{0} 件までです。</value>
+    <value>ピン留めできるのは {0} 件までです。</value>
   </data>
   <data name="Search.History.Unpin" xml:space="preserve">
     <value>ピン留めを外す</value>
@@ -842,7 +842,7 @@
     <value>検索の条件も履歴に残す</value>
   </data>
   <data name="Search.CheckBox03.ToolTip" xml:space="preserve">
-    <value>オンにすると、履歴から呼び出したときに、種類・類似度・並べ替え・絞り込みも元に戻ります。履歴の項目は、クリックで再実行、右クリックでピン留めと削除です</value>
+    <value>オンにすると、履歴から呼び出した際にメディア種別・類似度・並べ替え・絞り込み条件も復元されます。履歴項目をクリックで再実行、右クリックでピン留めや削除ができます</value>
   </data>
   <data name="Search.History.Empty" xml:space="preserve">
     <value>履歴はありません</value>
@@ -920,7 +920,7 @@
     <value>埋め込みが完全に一致する別ファイルがあります (結果には1件だけ表示)</value>
   </data>
   <data name="Search.TextBlock05.ToolTip" xml:space="preserve">
-    <value>この動画の、一致した場面の数です。選ぶと、プレビューの下に一覧が出ます</value>
+    <value>この動画内で一致した場面の数です。選択すると、プレビューの下に一覧が表示されます</value>
   </data>
   <data name="Search.TextBlock06.Text" xml:space="preserve">
     <value>並べ替え</value>
@@ -959,7 +959,7 @@
     <value>自動（Windows の設定に合わせる）</value>
   </data>
   <data name="Settings.LanguageHint.Text" xml:space="preserve">
-    <value>表示する言語です。変更は、アプリを再起動したときに反映されます。「自動」は、Windows の表示言語に合わせます。</value>
+    <value>表示言語を設定します。変更はアプリの再起動後に反映されます。「自動」は Windows の表示言語に合わせます。</value>
   </data>
   <data name="Settings.LanguageTitle.Text" xml:space="preserve">
     <value>言語 / Language</value>
@@ -1007,7 +1007,7 @@
     <value>プロファイルを作成できません</value>
   </data>
   <data name="Shell.Delete.Body" xml:space="preserve">
-    <value>選んだプロファイルの、インデックスとキャッシュ、フォルダの設定、検索の履歴を削除します。元の画像・PDF・動画は削除しません。</value>
+    <value>選択したプロファイルのインデックス、キャッシュ、フォルダ設定、検索履歴を削除します。元の画像・PDF・動画・Office 文書は削除されません。</value>
   </data>
   <data name="Shell.Delete.Primary" xml:space="preserve">
     <value>削除</value>
@@ -1109,7 +1109,7 @@
     <value>既定のメディアプレイヤーで開く</value>
   </data>
   <data name="VideoPreview.OpenInExplorerButton.ToolTip" xml:space="preserve">
-    <value>エクスプローラーで、このファイルの場所を開く</value>
+    <value>エクスプローラーでこのファイルの場所を開く</value>
   </data>
   <data name="VideoPreview.TextBlock02.Text" xml:space="preserve">
     <value>エクスプローラーで開く</value>
