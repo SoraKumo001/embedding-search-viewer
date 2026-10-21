@@ -76,15 +76,22 @@
   <ItemGroup>
     <ProjectReference Include="..\EmbeddingSearchViewer.Core\EmbeddingSearchViewer.Core.csproj" />
     <ProjectReference Include="..\EmbeddingSearchViewer.Infrastructure\EmbeddingSearchViewer.Infrastructure.csproj" />
-    <!-- Built before the app, but never referenced: the worker is only ever started as a separate process. -->
+    <!--
+      Built before the app, but never referenced: the worker is only ever started as a separate process. The worker is
+      built framework-dependent so that this reference is allowed (a self-contained executable cannot be referenced
+      by a non self-contained one: NETSDK1151). The self-contained copy that ships is produced by the publish target
+      below.
+    -->
     <ProjectReference Include="..\EmbeddingSearchViewer.FfmpegWorker\EmbeddingSearchViewer.FfmpegWorker.csproj"
                       ReferenceOutputAssembly="false" />
   </ItemGroup>
 
   <!--
-    The FFmpeg worker is a process of its own, so its whole output (self-contained, see its project file) is copied as
-    one folder next to the app instead of being merged into the app's output: the two apps keep their own dependency
-    graphs. Only the files needed at run time are copied (no symbols, no import libraries).
+    The FFmpeg worker is a process of its own, so its output is copied as one folder next to the app instead of being
+    merged into the app's output: the two apps keep their own dependency graphs. This is the worker's normal (framework
+    dependent) build output, which is enough to run it from bin\ on a machine with the .NET runtime. What ships (the
+    zip, the installer and the MSIX) is replaced with a self-contained publish in IncludeFfmpegWorkerInPublish below.
+    Only the files needed at run time are copied (no symbols, no import libraries).
   -->
   <Target Name="CopyFfmpegWorker" AfterTargets="Build">
     <MSBuild Projects="$(MSBuildThisFileDirectory)..\EmbeddingSearchViewer.FfmpegWorker\EmbeddingSearchViewer.FfmpegWorker.csproj"
@@ -99,11 +106,30 @@
     <Copy SourceFiles="@(_FfmpegWorkerFiles)" DestinationFolder="$(OutDir)FfmpegWorker\%(RecursiveDir)" SkipUnchangedFiles="true" />
   </Target>
 
-  <!-- "dotnet publish" copies the app's own output and the package assets; the worker folder is added here. -->
+  <!--
+    Everything that is shipped needs a self-contained worker (the target machine has no .NET runtime), even though the
+    worker project is framework-dependent so that the app can reference it. Running "dotnet publish" as its own process
+    publishes the worker self-contained without the SDK comparing its SelfContained with the app's (NETSDK1151 never
+    applies to it). The output goes to an intermediate folder, and its files replace the build copy in the publish list
+    (this also feeds the MSIX payload, which collects the publish items).
+  -->
   <Target Name="IncludeFfmpegWorkerInPublish" AfterTargets="ComputeResolvedFilesToPublishList"
-          Condition="Exists('$(OutDir)FfmpegWorker')">
+          Condition="'$(RuntimeIdentifier)' != '' and '$(DesignTimeBuild)' != 'true' and '$(IsPublishable)' == 'true'">
+    <PropertyGroup>
+      <_FfmpegWorkerPublishDir>$([MSBuild]::EnsureTrailingSlash('$(BaseIntermediateOutputPath)'))FfmpegWorkerPublish\</_FfmpegWorkerPublishDir>
+      <!-- DOTNET_HOST_PATH is set by the .NET CLI; fall back to dotnet on PATH when MSBuild.exe (Visual Studio) is used. -->
+      <_DotnetHost Condition="'$(DOTNET_HOST_PATH)' != ''">$(DOTNET_HOST_PATH)</_DotnetHost>
+      <_DotnetHost Condition="'$(_DotnetHost)' == ''">dotnet</_DotnetHost>
+    </PropertyGroup>
+    <RemoveDir Directories="$(_FfmpegWorkerPublishDir)" />
+    <Exec WorkingDirectory="$(MSBuildProjectDirectory)"
+          Command="&quot;$(_DotnetHost)&quot; publish &quot;$(MSBuildThisFileDirectory)..\EmbeddingSearchViewer.FfmpegWorker\EmbeddingSearchViewer.FfmpegWorker.csproj&quot; -c $(Configuration) -r $(RuntimeIdentifier) -p:Platform=$(Platform) --self-contained true --nologo -o &quot;$(_FfmpegWorkerPublishDir)&quot;" />
     <ItemGroup>
-      <_FfmpegWorkerPublishFiles Include="$(OutDir)FfmpegWorker\**\*" />
+      <!-- Drop any worker files that a previous target may have put into the publish list (e.g. the build copy). -->
+      <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)"
+            Condition="$([System.String]::Copy('%(ResolvedFileToPublish.RelativePath)').StartsWith('FfmpegWorker\'))" />
+      <_FfmpegWorkerPublishFiles Include="$(_FfmpegWorkerPublishDir)**\*"
+                                 Exclude="$(_FfmpegWorkerPublishDir)**\*.pdb;$(_FfmpegWorkerPublishDir)**\*.lib" />
       <ResolvedFileToPublish Include="@(_FfmpegWorkerPublishFiles)">
         <RelativePath>FfmpegWorker\%(RecursiveDir)%(Filename)%(Extension)</RelativePath>
         <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>

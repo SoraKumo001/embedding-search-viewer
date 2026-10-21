@@ -6,8 +6,12 @@
     (the 0xC0000374 heap corruption). Pictures cross the process boundary as JPEG files; stdout carries one line per
     finished segment ("SEG <index> <middleMs>") and one after opening the file ("DURATION <ms>").
 
-    Self-contained on purpose: the app ships self-contained, so the worker must run on a machine without a .NET
-    runtime installed. Its build output is copied next to the app under FfmpegWorker\.
+    Framework-dependent on purpose: the app references this project, and a self-contained executable cannot be
+    referenced by the app when it is built framework-dependent (NETSDK1151). The worker that ships therefore has to be
+    published self-contained on its own: the app's publish target runs "dotnet publish" with SelfContained=true for
+    this project and puts the result next to the app under FfmpegWorker\. The app's normal build copies this project's
+    (framework-dependent) build output there, which is enough to run it on a machine that has the .NET runtime (a dev
+    machine).
   -->
   <PropertyGroup>
     <OutputType>Exe</OutputType>
@@ -19,7 +23,19 @@
     <Platforms>x64;ARM64</Platforms>
     <RuntimeIdentifier Condition="'$(Platform)' == 'ARM64'">win-arm64</RuntimeIdentifier>
     <RuntimeIdentifier Condition="'$(RuntimeIdentifier)' == ''">win-x64</RuntimeIdentifier>
-    <SelfContained>true</SelfContained>
+    <!--
+      No <SelfContained>true</SelfContained> here: the app's ProjectReference would fail with NETSDK1151. The
+      shipped, self-contained copy is produced by the app's publish target (see EmbeddingSearchViewer.App.csproj).
+      "dotnet publish -p:SelfContained=true" (a global property) still overrides this, so the worker can be
+      published on its own.
+    -->
+    <!--
+      The worker is never loaded as a library (the app only starts it as a separate process), so the SDK must not
+      compare its SelfContained with the referencing project's: the app is framework-dependent in CI but self-contained
+      when built through its publish profile (win-x64.pubxml). Without this, one of the two would fail with NETSDK1150
+      or NETSDK1151.
+    -->
+    <ShouldBeValidatedAsExecutableReference>false</ShouldBeValidatedAsExecutableReference>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <InvariantGlobalization>true</InvariantGlobalization>
