@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Threading.Tasks;
 using EmbeddingSearchViewer.Core.Localization;
 using EmbeddingSearchViewer.Infrastructure.Library;
 using EmbeddingSearchViewer_App.Services;
@@ -19,9 +18,6 @@ public sealed partial class MainWindow : Window
     // Bounds of the window while it is in the normal state; a maximized window reports the whole screen instead.
     private RectInt32? _normalBounds;
 
-    // The saved place is restored once; the content can be loaded again later.
-    private bool _placementRestored;
-
     public MainWindow()
     {
         InitializeComponent();
@@ -38,48 +34,17 @@ public sealed partial class MainWindow : Window
         };
         AppWindow.Closing += (_, _) => SavePlacement();
 
-        // The saved place is restored after the window is up: reading the screens and the file may take a moment,
-        // and the start must not wait for them.
-        if (Content is FrameworkElement root) root.Loaded += OnContentLoaded;
-    }
-
-    private void OnContentLoaded(object sender, RoutedEventArgs e)
-    {
-        if (_placementRestored) return;
-        _placementRestored = true;
-        _ = RestorePlacementAsync();
+        // The saved place is applied here, before the window is shown: restoring it after the first paint made the
+        // window appear at the default size and jump to the saved one a moment later.
+        RestorePlacement();
     }
 
     /// <summary>Puts the window where it was at the last exit, unless that is no longer sensible on the current screens.</summary>
-    private async Task RestorePlacementAsync()
+    private void RestorePlacement()
     {
-        (List<ScreenRect> Screens, WindowPlacement? Saved)? data = null;
         try
         {
-            // The screens and the file are read on a worker thread: both may take a moment.
-            data = await Task.Run(ReadPlacement);
-        }
-        catch (Exception ex)
-        {
-            // The screens can only be read from the UI thread now and then: try again on this thread.
-            CrashLog.Write("Window placement (background)", ex);
-            try
-            {
-                data = ReadPlacement();
-            }
-            catch (Exception retry)
-            {
-                CrashLog.Write("Window placement", retry);
-            }
-        }
-
-        if (data == null) return; // the default place is kept
-
-        var (screens, saved) = data.Value;
-
-        // Everything below touches the window, so it happens on the UI thread.
-        void Apply()
-        {
+            var (screens, saved) = ReadPlacement();
             var placement = WindowPlacementValidator.Validate(saved, screens);
             if (placement == null)
             {
@@ -94,9 +59,10 @@ public sealed partial class MainWindow : Window
                 presenter.Maximize();
             }
         }
-
-        if (DispatcherQueue.HasThreadAccess) Apply();
-        else DispatcherQueue.TryEnqueue(() => Apply());
+        catch (Exception ex)
+        {
+            CrashLog.Write("Window placement", ex); // the default place is kept
+        }
     }
 
     /// <summary>The screens of the moment and the placement of the last exit.</summary>
