@@ -95,7 +95,7 @@ gh release delete v0.1.0 --cleanup-tag --yes
 |---|---|
 | Read and validate the version | `version.txt` を読み、`1.2.3` または `1.2.3-beta.1` の形式かを検証する。空や不正な値は、分かりやすいメッセージで失敗する |
 | Skip if this version is already released | タグまたはリリースがあれば、以降のステップをスキップする |
-| Set up .NET | `11.0.x`（`dotnet-quality: preview`）。.NET 11 が正式版になったら、`dotnet-quality` の行を削除する |
+| Set up .NET | `10.0.x` |
 | Cache NuGet packages | `~/.nuget/packages`。キーは `*.csproj` と `Directory.Build.props` のハッシュ |
 | Build | `dotnet build EmbeddingSearchViewer.slnx -c Release` |
 | Test | `--filter "Requires!=WindowsMedia"`（下記） |
@@ -149,13 +149,13 @@ version.txt ──→ Directory.Build.props ──→ 全プロジェクトの V
 ```powershell
 dotnet build EmbeddingSearchViewer.slnx
 dotnet test tests/EmbeddingSearchViewer.Tests/EmbeddingSearchViewer.Tests.csproj
-.\src\EmbeddingSearchViewer.App\bin\x64\Debug\net11.0-windows10.0.26100.0\win-x64\EmbeddingSearchViewer.App.exe
+.\src\EmbeddingSearchViewer.App\bin\x64\Debug\net10.0-windows10.0.26100.0\win-x64\EmbeddingSearchViewer.App.exe
 ```
 
-- 必要なもの: .NET 11 SDK、Windows App SDK（NuGet で復元される）。
+- 必要なもの: .NET 10 SDK、Windows App SDK（NuGet で復元される）。
 - モデルが `%LOCALAPPDATA%\EmbeddingSearchViewer\models\embeddinggemma-2-ONNX\` にあれば、モデルが必要なテスト（13 件）も実行されます。なければ、自動でスキップされます。
 - テストプロジェクトは、アプリ（WinUI）を参照できないので、UI に依存しない ViewModel（`SearchViewModel`、`ModelSetupViewModel`）のソースを、リンクして使っています。
-- `Infrastructure` と `Tests` は、`net11.0-windows10.0.26100.0` です（Windows の PDF レンダラや Media Foundation を使うため）。
+- `Infrastructure` と `Tests` は、`net10.0-windows10.0.26100.0` です（Windows の PDF レンダラや Media Foundation を使うため）。
 
 ---
 
