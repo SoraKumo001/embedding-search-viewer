@@ -173,7 +173,7 @@ public sealed class ExifOrientationTests : IDisposable
         {
             canvas.Translate(0, 240);
             canvas.RotateDegrees(-90);
-            canvas.DrawBitmap(upright, 0, 0);
+            canvas.DrawBitmap(upright, 0, 0, new SKSamplingOptions());
         }
         var uprightPath = SaveJpeg("upright.jpg", upright, orientation: null);
         var taggedPath = SaveJpeg("sideways_tagged.jpg", sideways, orientation: 6);

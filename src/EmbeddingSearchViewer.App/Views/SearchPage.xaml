@@ -172,7 +172,7 @@
                                 </Grid.ContextFlyout>
                                 <!-- Thumbnail -->
                                 <Border Grid.Column="0" Width="56" Height="56" CornerRadius="4" Background="{ThemeResource CardBackgroundFillColorSecondaryBrush}">
-                                    <Image Source="{x:Bind Chunk.PreviewImagePath, Mode=OneWay}" Stretch="Uniform" />
+                                    <Image Source="{x:Bind Chunk.PreviewImagePath, Mode=OneTime}" Stretch="Uniform" />
                                 </Border>
 
                                 <!-- Details -->
@@ -268,7 +268,7 @@
                             <DataTemplate x:DataType="models:SearchResultItem">
                                 <StackPanel Width="180" Spacing="4" Padding="2">
                                     <Border Width="176" Height="99" CornerRadius="4" Background="{ThemeResource CardBackgroundFillColorSecondaryBrush}">
-                                        <Image Source="{x:Bind Chunk.PreviewImagePath, Mode=OneWay}" Stretch="Uniform" />
+                                        <Image Source="{x:Bind Chunk.PreviewImagePath, Mode=OneTime}" Stretch="Uniform" />
                                     </Border>
                                     <Grid ColumnDefinitions="*,Auto">
                                         <TextBlock Text="{x:Bind SceneTimeText}" Style="{ThemeResource CaptionTextBlockStyle}"

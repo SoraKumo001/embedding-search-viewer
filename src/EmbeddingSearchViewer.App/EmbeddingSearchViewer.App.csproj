@@ -3,6 +3,8 @@
     <OutputType>WinExe</OutputType>
     <TargetFramework>net10.0-windows10.0.26100.0</TargetFramework>
     <TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
+    <!-- MVVMTK0045 only matters for AOT / trimmed WinRT marshalling, which this app does not use (PublishTrimmed is off); the [ObservableProperty] fields are kept. -->
+    <NoWarn>$(NoWarn);MVVMTK0045</NoWarn>
     <RootNamespace>EmbeddingSearchViewer_App</RootNamespace>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon Condition="Exists('Assets\AppIcon.ico')">Assets\AppIcon.ico</ApplicationIcon>
