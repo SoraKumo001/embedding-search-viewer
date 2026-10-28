@@ -15,7 +15,7 @@ internal static class SearchPostProcessing
 {
     /// <summary>True when the query restricts candidates by media type, a single asset or metadata.</summary>
     internal static bool HasSelectiveFilters(SearchQuery query) =>
-        query.MediaTypeFilter.HasValue || query.AssetIdFilter.HasValue || query.HasMetadataFilters;
+        query.MediaTypeFilter.HasValue || query.AssetIdFilter.HasValue || query.ExcludeAssetId.HasValue || query.HasMetadataFilters;
 
     /// <summary>
     /// Replaces the scenes of each video by one result at the rank of its best scene; that result lists all the matching

@@ -141,13 +141,27 @@ public class HybridSearchEngine
         _embeddingService = embeddingService;
     }
 
+    /// <summary>
+    /// The stored embedding of one indexed chunk, or null when it has none. This is the query vector of a "find similar"
+    /// search, so the file is not embedded a second time.
+    /// </summary>
+    public async Task<float[]?> GetChunkEmbeddingAsync(Guid chunkId, CancellationToken cancellationToken = default)
+    {
+        var embeddings = await _repository.GetEmbeddingsByChunkIdsAsync(new[] { chunkId }, cancellationToken).ConfigureAwait(false);
+        return embeddings.TryGetValue(chunkId, out var embedding) && embedding.Length > 0 ? embedding : null;
+    }
+
     public async Task<IReadOnlyList<SearchResultItem>> SearchAsync(
         SearchQuery query,
         CancellationToken cancellationToken = default)
     {
         // 1. Generate query embedding
         float[]? queryEmbedding = null;
-        if (!string.IsNullOrWhiteSpace(query.QueryImagePath))
+        if (query.QueryEmbedding is { Length: > 0 } ready)
+        {
+            queryEmbedding = ready;
+        }
+        else if (!string.IsNullOrWhiteSpace(query.QueryImagePath))
         {
             queryEmbedding = await _embeddingService.GenerateQueryEmbeddingAsync(
                 query.QueryImagePath,
@@ -484,6 +498,7 @@ public class HybridSearchEngine
     {
         if (query.MediaTypeFilter is { } mediaType && asset.MediaType != mediaType) return false;
         if (query.AssetIdFilter is { } assetId && asset.Id != assetId) return false;
+        if (query.ExcludeAssetId is { } excluded && asset.Id == excluded) return false;
         if (query.ModifiedFromUtc is { } from && asset.LastModifiedUtc < from) return false;
         if (query.ModifiedToUtc is { } to && asset.LastModifiedUtc >= to) return false;
         if (query.MinSizeBytes is { } min && asset.FileSizeBytes < min) return false;

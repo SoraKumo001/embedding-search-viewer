@@ -105,6 +105,37 @@ public sealed class SearchViewModelTests : IDisposable
     }
 
     [Fact]
+    public async Task FindSimilar_UsesStoredEmbedding_ExcludesSourceAndSkipsHistory()
+    {
+        var source = _repo.Add(@"C:\p\source.png", 0f);
+        _repo.Add(@"C:\p\near.png", 0.1f);
+        _repo.Add(@"C:\p\far.png", 1.0f);
+        _embedding.Fail = true; // a similar search must not generate an embedding
+        var item = new SearchResultItem { Asset = source, Chunk = _repo.Chunks[0] };
+
+        await _vm.FindSimilarAsync(item);
+
+        Assert.Null(_vm.ErrorMessage);
+        Assert.Equal(new[] { "near.png", "far.png" }, Names(_vm));
+        Assert.Contains("source.png", _vm.ResultsHeaderText);
+        Assert.Equal(string.Empty, _vm.QueryText);
+        Assert.Empty(_history.Load());
+    }
+
+    [Fact]
+    public async Task FindSimilar_WithoutStoredEmbedding_ReportsError()
+    {
+        var source = _repo.Add(@"C:\p\source.png", 0f);
+        var chunk = _repo.Chunks[0];
+        chunk.Embedding = Array.Empty<float>();
+
+        await _vm.FindSimilarAsync(new SearchResultItem { Asset = source, Chunk = chunk });
+
+        Assert.NotNull(_vm.ErrorMessage);
+        Assert.Empty(_vm.SearchResults);
+    }
+
+    [Fact]
     public async Task Search_WithNoMatches_ShowsNoResultsMessage()
     {
         await _vm.SearchCommand.ExecuteAsync(null);

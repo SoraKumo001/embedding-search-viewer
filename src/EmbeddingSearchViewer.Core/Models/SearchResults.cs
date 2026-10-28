@@ -9,6 +9,16 @@ public class SearchQuery
     public string QueryText { get; set; } = string.Empty;
     public string? QueryImagePath { get; set; }
     public string? QueryAudioPath { get; set; }
+
+    /// <summary>
+    /// A ready-made query vector (the stored embedding of an indexed chunk, for "find similar"). When set it is used as is:
+    /// no embedding is generated from the text, image or audio of the query.
+    /// </summary>
+    public float[]? QueryEmbedding { get; set; }
+
+    /// <summary>The results never include this asset (the file a similar search started from).</summary>
+    public Guid? ExcludeAssetId { get; set; }
+
     public MediaType? MediaTypeFilter { get; set; }
     public int TruncateDim { get; set; } = 768;
     public int TopK { get; set; } = 20;

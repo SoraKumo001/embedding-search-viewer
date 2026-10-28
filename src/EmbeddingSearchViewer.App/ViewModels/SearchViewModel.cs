@@ -125,6 +125,57 @@ public partial class SearchViewModel : ObservableObject
     [ObservableProperty]
     private string? _queryImagePath;
 
+    /// <summary>The file a "find similar" search started from: its stored embedding is the query. Not kept in the history.</summary>
+    private sealed record SimilarSource(float[] Embedding, Guid AssetId, string FileName);
+
+    private SimilarSource? _similar;
+
+    // Typing a text or choosing an image starts an ordinary search again.
+    partial void OnQueryTextChanged(string value)
+    {
+        if (!string.IsNullOrWhiteSpace(value)) _similar = null;
+    }
+
+    partial void OnQueryImagePathChanged(string? value)
+    {
+        if (!string.IsNullOrWhiteSpace(value)) _similar = null;
+    }
+
+    /// <summary>
+    /// Looks for files similar to a result, using the embedding that is already stored for it (no second embedding run).
+    /// The file itself is left out of the results.
+    /// </summary>
+    public async Task FindSimilarAsync(SearchResultItem item, CancellationToken cancellationToken = default)
+    {
+        float[]? embedding;
+        try
+        {
+            embedding = item.Chunk.Embedding is { Length: > 0 } stored
+                ? stored
+                : await _searchEngine.GetChunkEmbeddingAsync(item.Chunk.Id, cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = Loc.T("Search.Error", ex.Message);
+            return;
+        }
+
+        if (embedding == null)
+        {
+            ErrorMessage = Loc.T("Search.NoEmbedding");
+            return;
+        }
+
+        QueryText = string.Empty;
+        QueryImagePath = null;
+        _similar = new SimilarSource(embedding, item.Asset.Id, item.Asset.FileName);
+        await SearchCommand.ExecuteAsync(null);
+    }
+
     [ObservableProperty]
     private int _selectedMediaTypeIndex = 0; // 0: All, 1: Pdf, 2: Image, 3: Video
 
@@ -198,7 +249,7 @@ public partial class SearchViewModel : ObservableObject
     partial void OnGroupVideosChanged(bool value)
     {
         // Show the same search in the other form right away.
-        bool hasQuery = !string.IsNullOrWhiteSpace(QueryText) || !string.IsNullOrWhiteSpace(QueryImagePath);
+        bool hasQuery = _similar != null || !string.IsNullOrWhiteSpace(QueryText) || !string.IsNullOrWhiteSpace(QueryImagePath);
         if (!_applyingHistory && hasQuery && SearchResults.Count > 0 && !IsSearching) _ = SearchCommand.ExecuteAsync(null);
     }
 
@@ -372,6 +423,7 @@ public partial class SearchViewModel : ObservableObject
     /// <summary>Clears the query and the results of the previous profile; they do not belong to the new index.</summary>
     public void ResetForProfileChange()
     {
+        _similar = null;
         QueryText = string.Empty;
         QueryImagePath = null;
         _rawResults = new List<SearchResultItem>();
@@ -386,7 +438,8 @@ public partial class SearchViewModel : ObservableObject
     [RelayCommand]
     public async Task SearchAsync(CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(QueryText) && string.IsNullOrWhiteSpace(QueryImagePath))
+        var similar = _similar;
+        if (similar == null && string.IsNullOrWhiteSpace(QueryText) && string.IsNullOrWhiteSpace(QueryImagePath))
         {
             return;
         }
@@ -409,6 +462,8 @@ public partial class SearchViewModel : ObservableObject
             {
                 QueryText = QueryText.Trim(),
                 QueryImagePath = QueryImagePath,
+                QueryEmbedding = similar?.Embedding,
+                ExcludeAssetId = similar?.AssetId,
                 MediaTypeFilter = filter,
                 MinSimilarity = MinSimilarity,
                 TruncateDim = TruncateDim,
@@ -424,7 +479,7 @@ public partial class SearchViewModel : ObservableObject
 
             var results = await Task.Run(() => _searchEngine.SearchAsync(query, cancellationToken), cancellationToken);
 
-            if (!string.IsNullOrWhiteSpace(QueryText) || !string.IsNullOrWhiteSpace(QueryImagePath))
+            if (similar == null && (!string.IsNullOrWhiteSpace(QueryText) || !string.IsNullOrWhiteSpace(QueryImagePath)))
             {
                 _historyStore.Add(new SearchHistoryEntry
                 {
@@ -438,7 +493,9 @@ public partial class SearchViewModel : ObservableObject
             SearchResults.Clear();
             ApplySort();
 
-            ResultsHeaderText = Loc.T("Search.ResultsHeader", SearchResults.Count);
+            ResultsHeaderText = similar == null
+                ? Loc.T("Search.ResultsHeader", SearchResults.Count)
+                : Loc.T("Search.ResultsHeader.Similar", similar.FileName, SearchResults.Count);
             EmptyStateText = SearchResults.Count == 0 ? Loc.T("Search.Empty.NoMatch") : string.Empty;
 
             if (SearchResults.Count > 0)
@@ -480,6 +537,7 @@ public partial class SearchViewModel : ObservableObject
     [RelayCommand]
     public void Clear()
     {
+        _similar = null;
         QueryText = string.Empty;
         QueryImagePath = null;
         _rawResults = new List<SearchResultItem>();

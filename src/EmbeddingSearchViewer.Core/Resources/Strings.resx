@@ -857,16 +857,19 @@
     <value>パスをコピー</value>
   </data>
   <data name="Search.MenuFlyoutItem04.Text" xml:space="preserve">
-    <value>この画像に似たものを検索</value>
+    <value>このファイルに似たものを検索</value>
+  </data>
+  <data name="Search.NoEmbedding" xml:space="preserve">
+    <value>この項目には保存済みの埋め込みがないため、類似検索できません</value>
+  </data>
+  <data name="Search.ResultsHeader.Similar" xml:space="preserve">
+    <value>「{0}」に似た結果 ({1} 件)</value>
   </data>
   <data name="Search.MinSimilarity.AtLeast" xml:space="preserve">
     <value>{0:P0} 以上</value>
   </data>
   <data name="Search.MinSimilarity.None" xml:space="preserve">
     <value>制限なし</value>
-  </data>
-  <data name="Search.NoQueryImage" xml:space="preserve">
-    <value>この項目には検索に使える画像がありません</value>
   </data>
   <data name="Search.NumberBox01.Header" xml:space="preserve">
     <value>最小サイズ (MB)</value>

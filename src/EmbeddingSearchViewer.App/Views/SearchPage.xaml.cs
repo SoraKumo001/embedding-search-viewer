@@ -196,13 +196,6 @@ public sealed partial class SearchPage : Page
 
     private static SearchResultItem? ItemOf(object sender) => (sender as FrameworkElement)?.Tag as SearchResultItem;
 
-    private static string? PreviewPathOf(SearchResultItem item)
-    {
-        var path = item.Chunk.PreviewImagePath;
-        if (!string.IsNullOrEmpty(path) && File.Exists(path)) return path;
-        return item.Asset.MediaType == MediaType.Image && File.Exists(item.Asset.FilePath) ? item.Asset.FilePath : null;
-    }
-
     private void ResultMenu_OpenExternal_Click(object sender, RoutedEventArgs e)
     {
         if (ItemOf(sender) is { } item && File.Exists(item.Asset.FilePath))
@@ -232,14 +225,9 @@ public sealed partial class SearchPage : Page
 
     private async void ResultMenu_SimilarSearch_Click(object sender, RoutedEventArgs e)
     {
-        if (ItemOf(sender) is { } item && PreviewPathOf(item) is { } path)
+        if (ItemOf(sender) is { } item)
         {
-            ViewModel.SetQueryImage(path);
-            await ViewModel.SearchCommand.ExecuteAsync(null);
-        }
-        else
-        {
-            ViewModel.ErrorMessage = Loc.T("Search.NoQueryImage");
+            await ViewModel.FindSimilarAsync(item);
         }
     }
 

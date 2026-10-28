@@ -857,16 +857,19 @@
     <value>Copy path</value>
   </data>
   <data name="Search.MenuFlyoutItem04.Text" xml:space="preserve">
-    <value>Search for images similar to this one</value>
+    <value>Search for files similar to this one</value>
+  </data>
+  <data name="Search.NoEmbedding" xml:space="preserve">
+    <value>This item has no stored embedding, so a similar search is not possible</value>
+  </data>
+  <data name="Search.ResultsHeader.Similar" xml:space="preserve">
+    <value>Similar to "{0}" ({1})</value>
   </data>
   <data name="Search.MinSimilarity.AtLeast" xml:space="preserve">
     <value>{0:P0} or more</value>
   </data>
   <data name="Search.MinSimilarity.None" xml:space="preserve">
     <value>No limit</value>
-  </data>
-  <data name="Search.NoQueryImage" xml:space="preserve">
-    <value>This item has no image that can be used for a search</value>
   </data>
   <data name="Search.NumberBox01.Header" xml:space="preserve">
     <value>Minimum size (MB)</value>

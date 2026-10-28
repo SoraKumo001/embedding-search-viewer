@@ -330,4 +330,82 @@ public class HybridSearchEngineTests
         await engine.SearchAsync(query);
         Assert.Equal(2, repo.AssetChunkLoadCount);
     }
+
+    private class ThrowingEmbeddingService : IEmbeddingService
+    {
+        public Task<bool> IsReadyAsync(CancellationToken cancellationToken = default) => Task.FromResult(true);
+
+        public Task<float[]> GenerateQueryEmbeddingAsync(string query, string modality = "text", int truncateDim = 768, CancellationToken cancellationToken = default)
+            => throw new InvalidOperationException("the query embedding must not be generated");
+
+        public Task<IReadOnlyList<float[]>> GenerateBatchEmbeddingsAsync(IEnumerable<EmbeddingItemInput> items, int truncateDim = 768, CancellationToken cancellationToken = default)
+            => throw new InvalidOperationException("not used");
+    }
+
+    private static (MockMediaRepository Repo, MediaAsset Source, MediaAsset Other, MediaChunk SourceChunk) SimilarFixture()
+    {
+        var repo = new MockMediaRepository();
+        MediaAsset Asset(string name) => new() { Id = Guid.NewGuid(), FileName = name, FilePath = "C:\\test\\" + name, MediaType = MediaType.Image };
+        var source = Asset("source.png");
+        var other = Asset("other.png");
+        repo.Assets.Add(source);
+        repo.Assets.Add(other);
+
+        MediaChunk Chunk(MediaAsset a, float second) => new()
+        {
+            Id = Guid.NewGuid(),
+            AssetId = a.Id,
+            Modality = ModalityType.Image,
+            Embedding = new[] { 1f, second, 0f }
+        };
+        var sourceChunk = Chunk(source, 0f);
+        repo.Chunks.Add(sourceChunk);
+        repo.Chunks.Add(Chunk(other, 0.1f));
+        return (repo, source, other, sourceChunk);
+    }
+
+    [Fact]
+    public async Task SearchAsync_QueryEmbedding_SkipsEmbeddingGenerationAndExcludesSourceAsset()
+    {
+        var (repo, source, other, sourceChunk) = SimilarFixture();
+        var engine = new HybridSearchEngine(repo, new ThrowingEmbeddingService());
+
+        var results = await engine.SearchAsync(new SearchQuery
+        {
+            QueryEmbedding = sourceChunk.Embedding,
+            ExcludeAssetId = source.Id,
+            EnableFts = false,
+            MinSimilarity = 0f
+        });
+
+        var hit = Assert.Single(results);
+        Assert.Equal(other.Id, hit.Asset.Id);
+    }
+
+    [Fact]
+    public async Task SearchAsync_QueryEmbedding_WithoutExclusionFindsSourceFirst()
+    {
+        var (repo, source, _, sourceChunk) = SimilarFixture();
+        var engine = new HybridSearchEngine(repo, new ThrowingEmbeddingService());
+
+        var results = await engine.SearchAsync(new SearchQuery
+        {
+            QueryEmbedding = sourceChunk.Embedding,
+            EnableFts = false,
+            MinSimilarity = 0f
+        });
+
+        Assert.Equal(2, results.Count);
+        Assert.Equal(source.Id, results[0].Asset.Id);
+    }
+
+    [Fact]
+    public async Task GetChunkEmbeddingAsync_ReturnsStoredEmbeddingOrNull()
+    {
+        var (repo, _, _, sourceChunk) = SimilarFixture();
+        var engine = new HybridSearchEngine(repo, new ThrowingEmbeddingService());
+
+        Assert.Equal(sourceChunk.Embedding, await engine.GetChunkEmbeddingAsync(sourceChunk.Id));
+        Assert.Null(await engine.GetChunkEmbeddingAsync(Guid.NewGuid()));
+    }
 }
